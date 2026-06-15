@@ -1,0 +1,31 @@
+root@srv1609330:/home/mmwearerp/htdocs/erp.mmwear.in# pm2 logs mmwear-erp --lines 50 --nostream
+[TAILING] Tailing last 50 lines for [mmwear-erp] process (change the value with --lines option)
+/root/.pm2/logs/mmwear-erp-error.log last 50 lines:
+38|mmwear- |     at ModuleLoader.resolveSync (node:internal/modules/esm/loader:740:52)
+38|mmwear- |     at #resolve (node:internal/modules/esm/loader:673:17)
+38|mmwear- |     at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:593:35)
+38|mmwear- |     at node:internal/modules/esm/loader:622:32
+38|mmwear- |     at TracingChannel.tracePromise (node:diagnostics_channel:362:14) {
+38|mmwear- |   code: 'ERR_MODULE_NOT_FOUND',
+38|mmwear- |   url: 'file:///home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/dist/index.mjs'
+38|mmwear- | }
+38|mmwear- | Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/dist/index.mjs' imported from /usr/lib/node_modules/pm2/lib/ProcessContainerFork.js
+38|mmwear- |     at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+38|mmwear- |     at moduleResolve (node:internal/modules/esm/resolve:865:10)
+38|mmwear- |     at defaultResolve (node:internal/modules/esm/resolve:992:11)
+38|mmwear- |     at #cachedDefaultResolve (node:internal/modules/esm/loader:691:20)
+38|mmwear- |     at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:708:38)
+38|mmwear- |     at ModuleLoader.resolveSync (node:internal/modules/esm/loader:740:52)
+38|mmwear- |     at #resolve (node:internal/modules/esm/loader:673:17)
+38|mmwear- |     at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:593:35)
+38|mmwear- |     at node:internal/modules/esm/loader:622:32
+38|mmwear- |     at TracingChannel.tracePromise (node:diagnostics_channel:362:14) {
+38|mmwear- |   code: 'ERR_MODULE_NOT_FOUND',
+38|mmwear- |   url: 'file:///home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/dist/index.mjs'
+38|mmwear- | }
+38|mmwear- | Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/dist/index.mjs' imported from /usr/lib/node_modules/pm2/lib/ProcessContainerFork.js
+38|mmwear- |     at finalizeResolution (node:internal/modules/esm/resolve:271:11)
+38|mmwear- |     at moduleResolve (node:internal/modules/esm/resolve:865:10)
+38|mmwear- |     at defaultResolve (node:internal/modules/esm/resolve:992:11)
+38|mmwear- |     at #cachedDefaultResolve (node:internal/modules/esm/loader:691:20)
+38|mmwear- |     at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:708:38)
