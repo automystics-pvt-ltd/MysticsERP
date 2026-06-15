@@ -1,0 +1,107 @@
+modules = ["nodejs-20", "web", "bash", "python-3.11", "postgresql-16"]
+
+[deployment]
+router = "application"
+deploymentTarget = "autoscale"
+run = ["bash", "-c", "NODE_ENV=production exec node --enable-source-maps --env-file-if-exists=.env artifacts/api-server/dist/index.mjs"]
+build = ["bash", "-c", "pnpm --filter @workspace/inventory run build && pnpm --filter @workspace/api-server run build"]
+
+[deployment.postBuild]
+args = ["pnpm", "store", "prune"]
+env = { "CI" = "true" }
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "typecheck"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "lint-org-scope"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "test"
+
+[[workflows.workflow]]
+name = "typecheck"
+author = "agent"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/api-server typecheck"
+
+[[workflows.workflow]]
+name = "lint-org-scope"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/api-server lint:org-scope"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "test"
+author = "agent"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/api-server test"
+
+[agent]
+stack = "BEST_EFFORT_FALLBACK"
+expertMode = true
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 20000
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 8081
+externalPort = 8081
+
+[[ports]]
+localPort = 8082
+externalPort = 3001
+
+[[ports]]
+localPort = 9999
+externalPort = 3002
+
+[[ports]]
+localPort = 18174
+externalPort = 3000
+
+[userenv]
+
+[userenv.shared]
+PORT = "8080"
+NODE_ENV = "development"
+LOG_LEVEL = "info"
+APP_ENCRYPTION_KEY = "2c38c33adb5f7482aa2e483b4a459d3a8ce84e5c6a63dc33868cbcc13050965d"
+
+[nix]
+channel = "stable-25_05"

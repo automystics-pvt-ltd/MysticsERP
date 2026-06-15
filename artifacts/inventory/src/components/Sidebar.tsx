@@ -1,0 +1,577 @@
+import { useCallback, useEffect, useState } from "react";
+import { Link, useLocation } from "wouter";
+import { cn } from "@/lib/utils";
+import {
+  LayoutDashboard,
+  Package,
+  Users,
+  Truck,
+  Warehouse,
+  AlertTriangle,
+  ArrowLeftRight,
+  Repeat,
+  ShoppingCart,
+  ShoppingBag,
+  ScanLine,
+  IndianRupee,
+  BarChart3,
+  Blocks,
+  Scissors,
+  Settings,
+  UserCog,
+  Boxes,
+  ChevronsLeft,
+  ChevronsRight,
+  ChevronRight,
+  ShieldCheck,
+  CalendarCheck,
+  ClipboardList,
+  GitMerge,
+  ListChecks,
+} from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { useGetCurrentOrganization, useGetMe } from "@/lib/queryKeys";
+import { Skeleton } from "@/components/ui/skeleton";
+import type { LucideIcon } from "lucide-react";
+import { useOptionalSidebarCollapse } from "./SidebarContext";
+import { useImageSrc } from "@/hooks/use-image-src";
+import { useMyPermissions } from "@/hooks/usePermissions";
+
+interface SidebarProps {
+  className?: string;
+  onNavigate?: () => void;
+  /**
+   * When false, the sidebar always renders in expanded mode and ignores the
+   * shared collapse state (used by the mobile sheet). Defaults to true.
+   */
+  collapsible?: boolean;
+}
+
+interface NavItem {
+  name: string;
+  href: string;
+  icon: LucideIcon;
+  /** RBAC module key — used to hide items the user has no permissions for */
+  module?: string;
+}
+
+interface NavSection {
+  label: string;
+  items: NavItem[];
+}
+
+const platformSection: NavSection = {
+  label: "Platform",
+  items: [{ name: "Admin", href: "/admin", icon: ShieldCheck }],
+};
+
+const navSections: NavSection[] = [
+  {
+    label: "Overview",
+    items: [
+      { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, module: "dashboard" },
+      { name: "Pending Approvals", href: "/approvals", icon: ListChecks, module: "settings" },
+    ],
+  },
+  {
+    label: "Inventory",
+    items: [
+      { name: "Items", href: "/items", icon: Package, module: "items" },
+      { name: "Barcodes", href: "/barcodes", icon: ScanLine, module: "barcodes" },
+      { name: "Warehouses", href: "/warehouses", icon: Warehouse, module: "warehouses" },
+      { name: "Stock Transfers", href: "/transfers", icon: ArrowLeftRight, module: "stock_transfers" },
+      { name: "Write-offs", href: "/write-offs", icon: AlertTriangle, module: "write_offs" },
+    ],
+  },
+  {
+    label: "Sales",
+    items: [
+      { name: "POS", href: "/pos", icon: ScanLine, module: "pos" },
+      { name: "Day Closing", href: "/pos/sessions", icon: CalendarCheck, module: "pos" },
+      { name: "Sales Orders", href: "/sales-orders", icon: ShoppingCart, module: "sales_orders" },
+      { name: "Payments", href: "/payments", icon: IndianRupee, module: "payments" },
+      { name: "Customers", href: "/customers", icon: Users, module: "customers" },
+    ],
+  },
+  {
+    label: "Purchasing",
+    items: [
+      { name: "Purchase Orders", href: "/purchase-orders", icon: ShoppingBag, module: "purchase_orders" },
+      { name: "Job Work", href: "/job-work", icon: Scissors, module: "job_work" },
+      { name: "Supplier Payments", href: "/supplier-payments", icon: IndianRupee, module: "supplier_payments" },
+      { name: "Suppliers", href: "/suppliers", icon: Truck, module: "suppliers" },
+    ],
+  },
+  {
+    label: "Insights",
+    items: [{ name: "Reports", href: "/reports", icon: BarChart3, module: "reports" }],
+  },
+  {
+    label: "Workspace",
+    items: [
+      { name: "Users & Roles", href: "/team", icon: UserCog, module: "team" },
+      { name: "Integrations", href: "/integrations", icon: Blocks, module: "integrations" },
+      { name: "POS Counters", href: "/pos/counters", icon: Boxes, module: "pos" },
+      { name: "Approval Workflows", href: "/settings/approval-workflows", icon: GitMerge, module: "settings" },
+      { name: "Audit Log", href: "/settings/audit-log", icon: ClipboardList, module: "settings" },
+      { name: "Settings", href: "/settings", icon: Settings, module: "settings" },
+    ],
+  },
+];
+
+function isActivePath(location: string, href: string): boolean {
+  if (href === "/dashboard") return location === "/dashboard";
+  return location === href || location.startsWith(href + "/");
+}
+
+const COLLAPSED_SECTIONS_KEY = "mystics.sidebar.collapsedSections";
+
+function loadCollapsedSections(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = window.localStorage.getItem(COLLAPSED_SECTIONS_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return new Set();
+    return new Set(arr.filter((x): x is string => typeof x === "string"));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveCollapsedSections(value: Set<string>) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      COLLAPSED_SECTIONS_KEY,
+      JSON.stringify([...value]),
+    );
+  } catch {
+    /* ignore quota / privacy errors */
+  }
+}
+
+function useCollapsedSections(location: string) {
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() =>
+    loadCollapsedSections(),
+  );
+
+  useEffect(() => {
+    saveCollapsedSections(collapsedSections);
+  }, [collapsedSections]);
+
+  useEffect(() => {
+    setCollapsedSections((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const section of navSections) {
+        if (
+          next.has(section.label) &&
+          section.items.some((it) => isActivePath(location, it.href))
+        ) {
+          next.delete(section.label);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [location]);
+
+  const toggleSection = useCallback((label: string) => {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) {
+        next.delete(label);
+      } else {
+        next.add(label);
+      }
+      return next;
+    });
+  }, []);
+
+  return { collapsedSections, toggleSection };
+}
+
+export function Sidebar({
+  className,
+  onNavigate,
+  collapsible = true,
+}: SidebarProps) {
+  const [location] = useLocation();
+  const { data: org, isLoading: orgLoading } = useGetCurrentOrganization();
+  const orgAny = org as (typeof org & { sidebarLogoUrl?: string | null; loginLogoUrl?: string | null }) | undefined;
+  const { src: orgLogoSrc } = useImageSrc(orgAny?.sidebarLogoUrl ?? org?.logoUrl);
+  const { src: loginLogoSrc } = useImageSrc(orgAny?.loginLogoUrl ?? org?.logoUrl);
+  const { data: me } = useGetMe();
+
+  useEffect(() => {
+    if (loginLogoSrc) {
+      try { localStorage.setItem("__erp_org_logo_src", loginLogoSrc); } catch { /* ignore */ }
+    } else if (org && !orgAny?.loginLogoUrl && !org.logoUrl) {
+      try { localStorage.removeItem("__erp_org_logo_src"); } catch { /* ignore */ }
+    }
+  }, [loginLogoSrc, org, orgAny?.loginLogoUrl]);
+
+  const ctx = useOptionalSidebarCollapse();
+  const collapsed = collapsible && ctx ? ctx.collapsed : false;
+  const toggle = ctx?.toggle;
+  const { collapsedSections, toggleSection } = useCollapsedSections(location);
+
+  const { data: perms } = useMyPermissions();
+  const isSuperAdmin = me?.user.isSuperAdmin ?? false;
+  const visibleSections = navSections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((it) => {
+        if (isSuperAdmin) return true;
+        if (!me || !perms) return true;
+        if (!it.module) return true;
+        return (perms.permissions[it.module]?.length ?? 0) > 0;
+      }),
+    }))
+    .filter((section) => section.items.length > 0);
+
+  return (
+    <TooltipProvider delayDuration={120} disableHoverableContent>
+      <div
+        className={cn(
+          "flex h-full flex-col bg-sidebar border-r border-sidebar-border",
+          className,
+        )}
+        data-collapsed={collapsed ? "true" : "false"}
+      >
+        {/* Brand */}
+        <div
+          className={cn(
+            "flex h-16 items-center border-b border-sidebar-border shrink-0",
+            collapsed ? "justify-center px-2" : "px-5",
+          )}
+        >
+          <Link
+            href="/dashboard"
+            onClick={onNavigate}
+            className={cn(
+              "flex items-center group",
+              collapsed ? "justify-center" : "gap-2.5",
+            )}
+            data-testid="link-logo"
+          >
+            {orgLogoSrc ? (
+              <div className="h-8 w-8 rounded-lg overflow-hidden ring-1 ring-sidebar-border shadow-sm shrink-0">
+                <img
+                  src={orgLogoSrc}
+                  alt={org?.name ?? "Logo"}
+                  className="h-full w-full object-cover"
+                />
+              </div>
+            ) : (
+              <div className="relative h-8 w-8 rounded-lg bg-sidebar-primary flex items-center justify-center shadow-sm shrink-0">
+                <Boxes className="h-4 w-4 text-sidebar-primary-foreground" strokeWidth={2.5} />
+              </div>
+            )}
+            {!collapsed && (
+              <div className="flex flex-col leading-tight">
+                <span className="text-[15px] font-semibold tracking-tight text-sidebar-foreground">
+                  {org?.name ?? "MM Wear"}
+                </span>
+                <span className="text-[9px] font-semibold tracking-[0.08em] uppercase bg-gradient-to-r from-violet-400 via-fuchsia-400 to-pink-400 bg-clip-text text-transparent drop-shadow-sm">
+                  ✦ Powered by Automystics
+                </span>
+              </div>
+            )}
+          </Link>
+        </div>
+
+        {/* Nav sections */}
+        <ScrollArea className="flex-1">
+          <nav
+            className={cn(
+              "py-4",
+              collapsed ? "px-2 space-y-2" : "px-3 space-y-2",
+            )}
+          >
+            {visibleSections.map((section, sectionIdx) => {
+              const sectionHasActive = section.items.some((it) =>
+                isActivePath(location, it.href),
+              );
+              const sectionOpen =
+                !collapsedSections.has(section.label) || sectionHasActive;
+              const items = section.items.map((item) => {
+                const active = isActivePath(location, item.href);
+                const link = (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    onClick={onNavigate}
+                    aria-current={active ? "page" : undefined}
+                    aria-label={collapsed ? item.name : undefined}
+                    data-testid={`link-nav-${item.name
+                      .toLowerCase()
+                      .replace(/\s+/g, "-")}`}
+                    className={cn(
+                      "group relative flex items-center rounded-md text-sm font-medium transition-all duration-150",
+                      collapsed
+                        ? "h-10 w-10 mx-auto justify-center"
+                        : "gap-3 px-3 py-2",
+                      active
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+                    )}
+                  >
+                    {active && !collapsed && (
+                      <span
+                        aria-hidden
+                        className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r-full bg-sidebar-primary"
+                      />
+                    )}
+                    {active && collapsed && (
+                      <span
+                        aria-hidden
+                        className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-r-full bg-sidebar-primary"
+                      />
+                    )}
+                    <item.icon
+                      className={cn(
+                        "h-[17px] w-[17px] shrink-0 transition-colors",
+                        active
+                          ? "text-sidebar-accent-foreground"
+                          : "text-sidebar-foreground/50 group-hover:text-sidebar-foreground",
+                      )}
+                      strokeWidth={active ? 2.25 : 2}
+                    />
+                    {!collapsed && (
+                      <span className="truncate">{item.name}</span>
+                    )}
+                  </Link>
+                );
+                if (!collapsed) return link;
+                return (
+                  <Tooltip key={item.name}>
+                    <TooltipTrigger asChild>{link}</TooltipTrigger>
+                    <TooltipContent side="right" sideOffset={8}>
+                      {item.name}
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              });
+
+              if (collapsed) {
+                return (
+                  <div key={section.label}>
+                    {sectionIdx > 0 && (
+                      <div
+                        aria-hidden
+                        className="mx-2 mb-2 h-px bg-sidebar-border/70"
+                      />
+                    )}
+                    <div className="space-y-0.5">{items}</div>
+                  </div>
+                );
+              }
+
+              return (
+                <Collapsible
+                  key={section.label}
+                  open={sectionOpen}
+                  onOpenChange={() => toggleSection(section.label)}
+                  className="space-y-1"
+                >
+                  <CollapsibleTrigger
+                    data-testid={`btn-sidebar-section-${section.label
+                      .toLowerCase()
+                      .replace(/\s+/g, "-")}`}
+                    className="group flex w-full items-center justify-between rounded-md px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-sidebar-foreground/40 hover:text-sidebar-foreground/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+                    aria-expanded={sectionOpen}
+                    aria-controls={`sidebar-section-${section.label
+                      .toLowerCase()
+                      .replace(/\s+/g, "-")}`}
+                  >
+                    <span>{section.label}</span>
+                    <ChevronRight
+                      className={cn(
+                        "h-3.5 w-3.5 shrink-0 transition-transform duration-200",
+                        sectionOpen && "rotate-90",
+                      )}
+                      strokeWidth={2.25}
+                      aria-hidden
+                    />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent
+                    id={`sidebar-section-${section.label
+                      .toLowerCase()
+                      .replace(/\s+/g, "-")}`}
+                    className="space-y-0.5"
+                  >
+                    {items}
+                  </CollapsibleContent>
+                </Collapsible>
+              );
+            })}
+
+            {/* Platform admin — only rendered for super admins */}
+            {me?.user.isSuperAdmin
+              ? (() => {
+                  const section = platformSection;
+                  const sectionHasActive = section.items.some((it) =>
+                    isActivePath(location, it.href),
+                  );
+                  const sectionOpen =
+                    !collapsedSections.has(section.label) || sectionHasActive;
+                  const items = section.items.map((item) => {
+                    const active = isActivePath(location, item.href);
+                    const link = (
+                      <Link
+                        key={item.name}
+                        href={item.href}
+                        onClick={onNavigate}
+                        aria-current={active ? "page" : undefined}
+                        aria-label={collapsed ? item.name : undefined}
+                        data-testid={`link-nav-${item.name
+                          .toLowerCase()
+                          .replace(/\s+/g, "-")}`}
+                        className={cn(
+                          "group relative flex items-center rounded-md text-sm font-medium transition-all duration-150",
+                          collapsed
+                            ? "h-10 w-10 mx-auto justify-center"
+                            : "gap-3 px-3 py-2",
+                          active
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                            : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+                        )}
+                      >
+                        {active && (
+                          <span
+                            aria-hidden
+                            className={cn(
+                              "absolute left-0 top-1.5 bottom-1.5 rounded-r-full bg-sidebar-primary",
+                              collapsed ? "w-[2px]" : "w-[3px]",
+                            )}
+                          />
+                        )}
+                        <item.icon
+                          className={cn(
+                            "h-[17px] w-[17px] shrink-0 transition-colors",
+                            active
+                              ? "text-sidebar-accent-foreground"
+                              : "text-sidebar-foreground/50 group-hover:text-sidebar-foreground",
+                          )}
+                          strokeWidth={active ? 2.25 : 2}
+                        />
+                        {!collapsed && (
+                          <span className="truncate">{item.name}</span>
+                        )}
+                      </Link>
+                    );
+                    if (!collapsed) return link;
+                    return (
+                      <Tooltip key={item.name}>
+                        <TooltipTrigger asChild>{link}</TooltipTrigger>
+                        <TooltipContent side="right" sideOffset={8}>
+                          {item.name}
+                        </TooltipContent>
+                      </Tooltip>
+                    );
+                  });
+
+                  if (collapsed) {
+                    return (
+                      <div key={section.label}>
+                        <div
+                          aria-hidden
+                          className="mx-2 mb-2 h-px bg-sidebar-border/70"
+                        />
+                        <div className="space-y-0.5">{items}</div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <Collapsible
+                      key={section.label}
+                      open={sectionOpen}
+                      onOpenChange={() => toggleSection(section.label)}
+                      className="space-y-1"
+                    >
+                      <CollapsibleTrigger
+                        data-testid={`btn-sidebar-section-${section.label
+                          .toLowerCase()
+                          .replace(/\s+/g, "-")}`}
+                        className="group flex w-full items-center justify-between rounded-md px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-sidebar-foreground/40 hover:text-sidebar-foreground/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+                        aria-expanded={sectionOpen}
+                      >
+                        <span>{section.label}</span>
+                        <ChevronRight
+                          className={cn(
+                            "h-3.5 w-3.5 shrink-0 transition-transform duration-200",
+                            sectionOpen && "rotate-90",
+                          )}
+                          strokeWidth={2.25}
+                          aria-hidden
+                        />
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="space-y-0.5">
+                        {items}
+                      </CollapsibleContent>
+                    </Collapsible>
+                  );
+                })()
+              : null}
+          </nav>
+        </ScrollArea>
+
+        {/* Collapse toggle (desktop only) */}
+        {collapsible && toggle && (
+          <div
+            className={cn(
+              "border-t border-sidebar-border",
+              collapsed ? "p-2" : "px-3 py-2",
+            )}
+          >
+            {collapsed ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={toggle}
+                    aria-label="Expand sidebar"
+                    aria-expanded={false}
+                    data-testid="btn-sidebar-toggle"
+                    className="flex h-9 w-9 mx-auto items-center justify-center rounded-md text-sidebar-foreground/50 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground transition-colors"
+                  >
+                    <ChevronsRight className="h-4 w-4" strokeWidth={2.25} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right" sideOffset={8}>
+                  Expand sidebar
+                </TooltipContent>
+              </Tooltip>
+            ) : (
+              <button
+                type="button"
+                onClick={toggle}
+                aria-label="Collapse sidebar"
+                aria-expanded={true}
+                data-testid="btn-sidebar-toggle"
+                className="flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-xs font-medium text-sidebar-foreground/50 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground transition-colors"
+              >
+                <ChevronsLeft className="h-4 w-4" strokeWidth={2.25} />
+                <span>Collapse sidebar</span>
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </TooltipProvider>
+  );
+}

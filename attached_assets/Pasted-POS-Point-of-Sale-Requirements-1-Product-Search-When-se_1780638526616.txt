@@ -1,0 +1,84 @@
+POS (Point of Sale) Requirements
+1. Product Search
+•	When searching products in POS, show only products available in the POS Store.
+•	Do not display products from other warehouses or stores.
+•	Search should work by Product Name, SKU, and Barcode.
+2. POS Screen Layout
+Move fields in the following order:
+1.	Mode of Sale
+2.	Customer Name
+3.	Phone Number
+4.	Bag Selection
+5.	Payment Method
+6.	Order Summary
+Mode of Sale
+•	Move “Mode of Sale” to the top of the Tender section.
+•	Default value should be “POS”.
+3. Remove Warehouse
+•	Remove the Warehouse dropdown completely from the POS screen.
+•	POS should automatically use the configured POS Store stock.
+4. Bag Management
+•	Bag should be optional, not mandatory.
+•	Move Bag selection below the Phone Number field.
+•	Allow users to select bag quantity.
+•	When bags are added to an order:
+o	Deduct the selected bag quantity from stock automatically.
+o	Stock should be updated after successful payment.
+5. Payment Methods
+Keep only:
+•	Cash
+•	UPI
+•	Card
+Remove:
+•	Bank
+•	Other
+6. Discounts
+Item-wise Discount
+Already available and working correctly.
+Support:
+•	Percentage (%) Discount
+•	Fixed Amount Discount
+Order-level Discount
+Add discount functionality for the entire order.
+Support:
+•	Percentage (%) Discount
+•	Fixed Amount Discount
+Examples:
+Subtotal: ₹5000
+10% Discount → Final Total: ₹4500
+₹500 Discount → Final Total: ₹4500
+Calculation Flow
+Subtotal → Item Discount → Order Discount → Tax → Final Total
+Totals should automatically recalculate whenever discounts are applied.
+7. Thermal Bill Printing
+Create a professional thermal receipt format.
+Receipt should include:
+Header
+•	Company Logo
+•	Shop Name
+•	Shop Address
+•	Phone Number
+•	GST Number (if applicable)
+Bill Information
+•	Invoice Number
+•	Date & Time
+•	Cashier Name
+•	Customer Name
+•	Customer Phone Number
+Item Details
+•	Product Name
+•	Quantity
+•	Price
+•	Item Discount
+•	Total Amount
+Summary
+•	Subtotal
+•	Order Discount
+•	Tax
+•	Grand Total
+•	Payment Method
+Footer
+•	Thank You Message
+•	Return/Exchange Policy (Optional)
+•	Website or Social Media Details (Optional)
+The thermal bill should be properly aligned and optimized for 58mm and 80mm thermal printers.

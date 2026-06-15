@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1779600868316,
+      "tag": "0000_empty_eddie_brock",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1780596332004,
+      "tag": "0001_brave_power_pack",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780833600000,
+      "tag": "0002_multi_channel_warehouse",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1781110314135,
+      "tag": "0003_prod_delta",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1781481600000,
+      "tag": "0004_avg_cost_items",
+      "breakpoints": true
+    }
+  ]
+}

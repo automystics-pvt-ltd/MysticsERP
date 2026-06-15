@@ -1,0 +1,724 @@
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import {
+  db,
+  salesOrdersTable,
+  salesOrderLinesTable,
+  shipmentsTable,
+  shipmentLinesTable,
+  itemsTable,
+  itemBundleComponentsTable,
+  itemWarehouseStockTable,
+  stockMovementsTable,
+  customersTable,
+  warehousesTable,
+  customerPaymentsTable,
+  customerPaymentAllocationsTable,
+  salesChannelWarehouseDefaultsTable,
+  organizationsTable,
+} from "@workspace/db";
+import { computeOrderTotals, nextOrderNumber } from "./orderHelpers";
+import { toNum, toStr } from "./numeric";
+import { getDefaultWarehouseId } from "./tenant";
+import { getOrCreateWalkInCustomerId } from "./walkInCustomer";
+
+export const POS_PAYMENT_MODES = [
+  "cash",
+  "card",
+  "upi",
+  "bank",
+  "other",
+] as const;
+export type PosPaymentMode = (typeof POS_PAYMENT_MODES)[number];
+
+export interface PosCheckoutLineInput {
+  itemId: number;
+  quantity: number;
+  unitPrice?: number; // overrides item.salePrice when provided
+  taxRate?: number; // overrides item.taxRate when provided
+  // Per-line discount. Operator may set EITHER percent (0-100) OR a
+  // flat amount in rupees. If both arrive, percent wins. Discount
+  // applies BEFORE tax on (qty * unitPrice).
+  discountPercent?: number;
+  discountAmount?: number;
+  description?: string | null;
+}
+
+export interface PosPaymentEntry {
+  mode: PosPaymentMode;
+  amount: number;
+  referenceNumber?: string | null;
+  bankAccountLabel?: string | null;
+  notes?: string | null;
+}
+
+export interface PosCheckoutInput {
+  lines: PosCheckoutLineInput[];
+  customerId?: number | null;
+  warehouseId?: number | null;
+  /** @deprecated Use payments array instead */
+  payment?: PosPaymentEntry;
+  /** Split payment entries — replaces the single payment field when provided */
+  payments?: PosPaymentEntry[];
+  notes?: string | null;
+  // Optional walk-in customer details. Captured on the order's `notes`
+  // field — we deliberately do NOT create a permanent customer row for
+  // walk-ins (per the task spec) so the customers list isn't polluted
+  // with one-off retail buyers. Only used when no customerId is given.
+  customerName?: string | null;
+  customerPhone?: string | null;
+  // Mode of sale captured at the POS. Stored at the top of the order's
+  // `notes` field so it shows up wherever sales-order notes are displayed
+  // without requiring a schema migration.
+  saleChannel?: PosSaleChannel | null;
+  // Order-level discount applied on top of any per-line discounts.
+  // Reduces the final order total (not the taxable base per line).
+  orderDiscountAmount?: number | null;
+  // Active POS session ID. When provided, the sales order is linked to
+  // the session so the reconciliation report can query by session rather
+  // than by time-window + warehouse (which breaks with concurrent sessions
+  // at the same warehouse).
+  sessionId?: number | null;
+}
+
+export const POS_SALE_CHANNELS = [
+  "pos",
+  "walkin",
+  "website",
+  "store",
+  "whatsapp",
+  "phone",
+  "instagram",
+  "other",
+] as const;
+export type PosSaleChannel = (typeof POS_SALE_CHANNELS)[number];
+
+const SALE_CHANNEL_LABELS: Record<PosSaleChannel, string> = {
+  pos: "POS",
+  walkin: "Walk-in",
+  website: "Website",
+  store: "Store",
+  whatsapp: "WhatsApp",
+  phone: "Phone",
+  instagram: "Instagram",
+  other: "Other",
+};
+
+export interface PosCheckoutResult {
+  salesOrderId: number;
+  orderNumber: string;
+  customerId: number;
+  warehouseId: number;
+  customerPaymentId: number;
+  receiptUrl: string;
+  subtotal: string;
+  taxTotal: string;
+  total: string;
+  orderDiscountAmount: string;
+}
+
+export class PosValidationError extends Error {
+  constructor(
+    public httpMessage: string,
+    public httpStatus: number = 400,
+  ) {
+    super(httpMessage);
+  }
+}
+
+/**
+ * One-shot retail checkout. Wraps everything in a single transaction
+ * so a stock-out, payment write, or invoice insert that fails leaves
+ * the org's books untouched.
+ *
+ * Stock semantics mirror `routes/shipments.ts` so reports, low-stock
+ * alerts and Shopify pushes all see POS sales the same as any other
+ * shipment. Differences kept intentional and minimal:
+ *   - referenceType on stock_movements is "pos_sale" (vs "shipment")
+ *     so finance can split POS revenue from regular fulfillment.
+ *   - The created sales order is born `invoiced` (POS == invoice at
+ *     point of sale) and is fully allocated to the captured payment.
+ */
+export async function executePosCheckout(
+  organizationId: number,
+  input: PosCheckoutInput,
+): Promise<PosCheckoutResult> {
+  if (!Array.isArray(input.lines) || input.lines.length === 0) {
+    throw new PosValidationError("At least one line item is required");
+  }
+  if (input.lines.length > 200) {
+    throw new PosValidationError("Too many lines (max 200)");
+  }
+  const lines: Array<{
+    itemId: number;
+    quantity: number;
+    unitPrice?: number;
+    taxRate?: number;
+    discountPercent?: number;
+    discountAmount?: number;
+    description?: string | null;
+  }> = [];
+  for (const l of input.lines) {
+    const itemId = Number(l.itemId);
+    const quantity = Number(l.quantity);
+    if (!Number.isFinite(itemId) || itemId <= 0) {
+      throw new PosValidationError("Every line needs a valid itemId");
+    }
+    if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 1_000_000) {
+      throw new PosValidationError("Every line quantity must be > 0 and <= 1,000,000");
+    }
+    let unitPrice: number | undefined;
+    if (l.unitPrice !== undefined && l.unitPrice !== null) {
+      unitPrice = Number(l.unitPrice);
+      if (!Number.isFinite(unitPrice) || unitPrice < 0 || unitPrice > 1e9) {
+        throw new PosValidationError("Line unitPrice must be a finite number in [0, 1e9]");
+      }
+    }
+    let taxRate: number | undefined;
+    if (l.taxRate !== undefined && l.taxRate !== null) {
+      taxRate = Number(l.taxRate);
+      if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) {
+        throw new PosValidationError("Line taxRate must be a finite number in [0, 100]");
+      }
+    }
+    let discountPercent: number | undefined;
+    if (l.discountPercent !== undefined && l.discountPercent !== null) {
+      discountPercent = Number(l.discountPercent);
+      if (
+        !Number.isFinite(discountPercent) ||
+        discountPercent < 0 ||
+        discountPercent > 100
+      ) {
+        throw new PosValidationError(
+          "Line discountPercent must be a finite number in [0, 100]",
+        );
+      }
+    }
+    let discountAmount: number | undefined;
+    if (l.discountAmount !== undefined && l.discountAmount !== null) {
+      discountAmount = Number(l.discountAmount);
+      if (
+        !Number.isFinite(discountAmount) ||
+        discountAmount < 0 ||
+        discountAmount > 1e9
+      ) {
+        throw new PosValidationError(
+          "Line discountAmount must be a finite number in [0, 1e9]",
+        );
+      }
+    }
+    lines.push({
+      itemId,
+      quantity,
+      unitPrice,
+      taxRate,
+      discountPercent,
+      discountAmount,
+      description: l.description ?? null,
+    });
+  }
+  // Normalise: prefer payments[] array, fall back to single payment field.
+  const paymentsArr: PosPaymentEntry[] = (() => {
+    if (Array.isArray(input.payments) && input.payments.length > 0) return input.payments;
+    if (input.payment) return [input.payment];
+    return [];
+  })();
+  if (paymentsArr.length === 0) {
+    throw new PosValidationError("At least one payment entry is required");
+  }
+  for (const p of paymentsArr) {
+    if (
+      !POS_PAYMENT_MODES.includes(p.mode) ||
+      !Number.isFinite(p.amount) ||
+      p.amount <= 0 ||
+      p.amount > 1e9
+    ) {
+      throw new PosValidationError("Valid payment mode + amount in (0, 1e9] required");
+    }
+  }
+  const totalPaymentAmount = paymentsArr.reduce((s, p) => s + p.amount, 0);
+
+  // Resolve customer + warehouse OUTSIDE the transaction (shorter
+  // critical section). The walk-in helper is idempotent.
+  const isWalkIn = !(input.customerId && input.customerId > 0);
+  const customerId = isWalkIn
+    ? await getOrCreateWalkInCustomerId(db, organizationId)
+    : input.customerId!;
+
+  // Build the order notes string. For walk-in sales we prepend the
+  // captured name/phone (if any) so the operator can see who bought
+  // what when scanning the sales-orders list later.
+  const walkInLabel = (() => {
+    if (!isWalkIn) return null;
+    const name = (input.customerName ?? "").trim();
+    const phone = (input.customerPhone ?? "").trim();
+    if (!name && !phone) return null;
+    if (name && phone) return `Walk-in: ${name} (${phone})`;
+    return `Walk-in: ${name || phone}`;
+  })();
+  // Resolve and validate order-level discount.
+  const orderDiscAmt = (() => {
+    const v = input.orderDiscountAmount != null ? Number(input.orderDiscountAmount) : 0;
+    if (!Number.isFinite(v) || v < 0) return 0;
+    return v;
+  })();
+  const channelLabel =
+    input.saleChannel && POS_SALE_CHANNELS.includes(input.saleChannel)
+      ? `Channel: ${SALE_CHANNEL_LABELS[input.saleChannel]}`
+      : null;
+  const composedNotes = (() => {
+    const parts: string[] = [];
+    if (channelLabel) parts.push(channelLabel);
+    if (walkInLabel) parts.push(walkInLabel);
+    if (orderDiscAmt > 0) parts.push(`Order Discount: ₹${orderDiscAmt.toFixed(2)}`);
+    if (input.notes) parts.push(input.notes);
+    return parts.length > 0 ? parts.join("\n") : null;
+  })();
+  const warehouseId = await (async () => {
+    if (input.warehouseId && input.warehouseId > 0) return input.warehouseId;
+    // Check per-channel warehouse default first
+    if (input.saleChannel) {
+      // Pick the first configured warehouse for this channel (checkout uses one warehouse).
+      const [channelDefault] = await db
+        .select({ warehouseId: salesChannelWarehouseDefaultsTable.warehouseId })
+        .from(salesChannelWarehouseDefaultsTable)
+        .where(
+          and(
+            eq(salesChannelWarehouseDefaultsTable.organizationId, organizationId),
+            eq(salesChannelWarehouseDefaultsTable.salesChannel, input.saleChannel),
+          ),
+        )
+        .orderBy(asc(salesChannelWarehouseDefaultsTable.id))
+        .limit(1);
+      if (channelDefault?.warehouseId) return channelDefault.warehouseId;
+    }
+    return getDefaultWarehouseId(organizationId);
+  })();
+
+  // Validate ownership of customer + warehouse + items up front.
+  const itemIds = Array.from(new Set(lines.map((l) => l.itemId)));
+  const [custCheck, whCheck, itemRows] = await Promise.all([
+    db
+      .select({ id: customersTable.id })
+      .from(customersTable)
+      .where(
+        and(
+          eq(customersTable.id, customerId),
+          eq(customersTable.organizationId, organizationId),
+        ),
+      )
+      .limit(1),
+    db
+      .select({ id: warehousesTable.id })
+      .from(warehousesTable)
+      .where(
+        and(
+          eq(warehousesTable.id, warehouseId),
+          eq(warehousesTable.organizationId, organizationId),
+        ),
+      )
+      .limit(1),
+    db
+      .select({
+        id: itemsTable.id,
+        sku: itemsTable.sku,
+        name: itemsTable.name,
+        salePrice: itemsTable.salePrice,
+        taxRate: itemsTable.taxRate,
+        isBundle: itemsTable.isBundle,
+        trackBatches: itemsTable.trackBatches,
+        parentItemId: itemsTable.parentItemId,
+        archivedAt: itemsTable.archivedAt,
+      })
+      .from(itemsTable)
+      .where(
+        and(
+          eq(itemsTable.organizationId, organizationId),
+          inArray(itemsTable.id, itemIds),
+        ),
+      ),
+  ]);
+  if (!custCheck[0]) throw new PosValidationError("Invalid customer");
+  if (!whCheck[0]) throw new PosValidationError("Invalid warehouse");
+  const byId = new Map(itemRows.map((r) => [r.id, r]));
+  for (const id of itemIds) {
+    const it = byId.get(id);
+    if (!it) throw new PosValidationError(`Item ${id} not found`);
+    if (it.archivedAt) {
+      throw new PosValidationError(`Item ${it.sku} is archived`);
+    }
+    if (it.parentItemId === null) {
+      // root row — only OK if it isn't a parent-with-variants
+    }
+    if (it.trackBatches) {
+      throw new PosValidationError(
+        `Item ${it.sku} is batch-tracked. Sell batch-tracked items through Sales Orders instead — POS doesn't capture batch picks.`,
+      );
+    }
+  }
+
+  // Resolve effective line prices/tax from item defaults when caller
+  // didn't override.
+  const totals = computeOrderTotals(
+    lines.map((l) => {
+      const it = byId.get(l.itemId)!;
+      return {
+        itemId: l.itemId,
+        quantity: l.quantity,
+        unitPrice: l.unitPrice ?? toNum(it.salePrice),
+        taxRate: l.taxRate ?? toNum(it.taxRate),
+        discountPercent: l.discountPercent ?? 0,
+        discountAmount: l.discountAmount ?? 0,
+        description: l.description ?? null,
+      };
+    }),
+  );
+
+  // Bundle expansion: load components once.
+  const bundleParentIds = itemRows
+    .filter((r) => r.isBundle)
+    .map((r) => r.id);
+  const componentsByParent = new Map<
+    number,
+    Array<{ componentItemId: number; quantityPerBundle: number }>
+  >();
+  if (bundleParentIds.length > 0) {
+    const compRows = await db
+      .select({
+        parentItemId: itemBundleComponentsTable.parentItemId,
+        componentItemId: itemBundleComponentsTable.componentItemId,
+        quantityPerBundle: itemBundleComponentsTable.quantityPerBundle,
+      })
+      .from(itemBundleComponentsTable)
+      .where(
+        and(
+          eq(itemBundleComponentsTable.organizationId, organizationId),
+          inArray(itemBundleComponentsTable.parentItemId, bundleParentIds),
+        ),
+      );
+    for (const c of compRows) {
+      const arr = componentsByParent.get(c.parentItemId) ?? [];
+      arr.push({
+        componentItemId: c.componentItemId,
+        quantityPerBundle: toNum(c.quantityPerBundle),
+      });
+      componentsByParent.set(c.parentItemId, arr);
+    }
+    for (const id of bundleParentIds) {
+      const arr = componentsByParent.get(id);
+      if (!arr || arr.length === 0) {
+        const sku = byId.get(id)?.sku ?? `#${id}`;
+        throw new PosValidationError(
+          `Bundle ${sku} has no components configured`,
+        );
+      }
+    }
+    // Reject bundles with batch-tracked components (matches shipments.ts).
+    const componentIds = Array.from(
+      new Set(
+        Array.from(componentsByParent.values()).flatMap((arr) =>
+          arr.map((c) => c.componentItemId),
+        ),
+      ),
+    );
+    if (componentIds.length > 0) {
+      const trackedComps = await db
+        .select({ id: itemsTable.id, sku: itemsTable.sku })
+        .from(itemsTable)
+        .where(
+          and(
+            eq(itemsTable.organizationId, organizationId),
+            inArray(itemsTable.id, componentIds),
+            eq(itemsTable.trackBatches, true),
+          ),
+        );
+      if (trackedComps.length > 0) {
+        throw new PosValidationError(
+          `Bundle includes batch-tracked components (${trackedComps
+            .map((c) => c.sku)
+            .join(", ")}); sell those through Sales Orders.`,
+        );
+      }
+    }
+  }
+
+  // Aggregate the actual stock decrement per (componentItemId) so we
+  // can pre-check on-hand and emit one movement per item.
+  const componentDelta = new Map<number, number>();
+  for (const l of lines) {
+    const it = byId.get(l.itemId)!;
+    if (it.isBundle) {
+      for (const c of componentsByParent.get(l.itemId)!) {
+        componentDelta.set(
+          c.componentItemId,
+          (componentDelta.get(c.componentItemId) ?? 0) +
+            l.quantity * c.quantityPerBundle,
+        );
+      }
+    } else {
+      componentDelta.set(
+        l.itemId,
+        (componentDelta.get(l.itemId) ?? 0) + l.quantity,
+      );
+    }
+  }
+
+  return await db.transaction(async (tx) => {
+    // Pre-check on-hand for every component. We do this BEFORE the
+    // sales-order insert so a stock shortage returns 409 without
+    // leaving an empty order behind.
+    const componentItemIds = Array.from(componentDelta.keys());
+    if (componentItemIds.length > 0) {
+      const stockRows = await tx
+        .select({
+          itemId: itemWarehouseStockTable.itemId,
+          quantity: itemWarehouseStockTable.quantity,
+        })
+        .from(itemWarehouseStockTable)
+        .where(
+          and(
+            eq(itemWarehouseStockTable.organizationId, organizationId),
+            eq(itemWarehouseStockTable.warehouseId, warehouseId),
+            inArray(itemWarehouseStockTable.itemId, componentItemIds),
+          ),
+        )
+        .for("update");
+      const onHand = new Map<number, number>();
+      for (const s of stockRows) onHand.set(s.itemId, toNum(s.quantity));
+      // Resolve the allow_backorder flag for every component up front so
+      // we skip the rejection on items the operator has explicitly
+      // marked as back-orderable. The lookup is org-scoped via the
+      // tenant filter already in place on `itemsTable`.
+      const flagRows = await tx
+        .select({
+          id: itemsTable.id,
+          sku: itemsTable.sku,
+          allowBackorder: itemsTable.allowBackorder,
+        })
+        .from(itemsTable)
+        .where(
+          and(
+            eq(itemsTable.organizationId, organizationId),
+            inArray(itemsTable.id, componentItemIds),
+          ),
+        );
+      const itemFlags = new Map<
+        number,
+        { sku: string; allowBackorder: boolean }
+      >();
+      for (const r of flagRows)
+        itemFlags.set(r.id, {
+          sku: r.sku,
+          allowBackorder: !!r.allowBackorder,
+        });
+      for (const [itemId, need] of componentDelta) {
+        const have = onHand.get(itemId) ?? 0;
+        // Block checkout only when the item has literally zero stock.
+        // If stock >= 1, allow selling any quantity (no insufficient-stock
+        // error) — the cashier controls what they sell at the counter.
+        if (have <= 0 && need > 1e-6) {
+          const meta = itemFlags.get(itemId);
+          if (meta?.allowBackorder) continue;
+          const sku = meta?.sku ?? `#${itemId}`;
+          throw new PosValidationError(
+            `${sku} is out of stock`,
+            409,
+          );
+        }
+      }
+    }
+
+    // Insert the sales order in `invoiced` status — POS sales are
+    // born final. amountPaid + balanceDue are updated below after we
+    // know how much of the captured payment to allocate.
+    //
+    // Atomically claim the next sequential bill number for this org.
+    // The UPDATE takes a row-lock so concurrent POS sales on the same
+    // org each get a unique number without a separate sequence.
+    const [orgBillRow] = await tx
+      .update(organizationsTable)
+      .set({
+        posBillNextNumber: sql`${organizationsTable.posBillNextNumber} + 1`,
+      })
+      .where(eq(organizationsTable.id, organizationId)) // org-scope-allow: POS bill counter — non-tenant-data query on own org row
+      .returning({
+        prefix: organizationsTable.posBillPrefix,
+        nextNumber: organizationsTable.posBillNextNumber,
+      });
+    const billNum = (orgBillRow?.nextNumber ?? 2) - 1;
+    const billPrefix =
+      orgBillRow?.prefix
+        ?.trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9\-]/g, "")
+        .replace(/^-+|-+$/g, "") || "BILL";
+    const orderNumber = `${billPrefix}-${String(billNum).padStart(5, "0")}`;
+    const today = new Date().toISOString().slice(0, 10);
+    // Apply order-level discount on top of line totals.
+    const lineTotal = toNum(totals.total);
+    const effectiveOrderDisc = Math.max(0, Math.min(orderDiscAmt, lineTotal));
+    const effectiveTotal = lineTotal - effectiveOrderDisc;
+    const allocAmount = Math.min(totalPaymentAmount, effectiveTotal);
+    const inserted = await tx
+      .insert(salesOrdersTable)
+      .values({
+        organizationId,
+        orderNumber,
+        customerId,
+        warehouseId,
+        status: "invoiced",
+        orderDate: today,
+        subtotal: totals.subtotal,
+        taxTotal: totals.taxTotal,
+        total: toStr(effectiveTotal),
+        amountPaid: toStr(allocAmount),
+        balanceDue: toStr(effectiveTotal - allocAmount),
+        notes: composedNotes,
+        stockAppliedAt: new Date(),
+        posSessionId: input.sessionId ?? null,
+      })
+      .returning();
+    const order = inserted[0]!;
+
+    if (totals.lines.length > 0) {
+      const lineRows = await tx
+        .insert(salesOrderLinesTable)
+        .values(
+          totals.lines.map((l) => ({
+            salesOrderId: order.id,
+            itemId: l.itemId,
+            description: l.description,
+            quantity: l.quantity,
+            // POS == fully shipped at the point of sale.
+            quantityShipped: l.quantity,
+            unitPrice: l.unitPrice,
+            taxRate: l.taxRate,
+            discountPercent: l.discountPercent,
+            discountAmount: l.discountAmount,
+            lineSubtotal: l.lineSubtotal,
+            lineTax: l.lineTax,
+            lineTotal: l.lineTotal,
+          })),
+        )
+        .returning({ id: salesOrderLinesTable.id, itemId: salesOrderLinesTable.itemId });
+
+      // Insert a shipment so downstream systems (reporting, Shopify
+      // outbound) treat this as a fulfilled order.
+      const shipInserted = await tx
+        .insert(shipmentsTable)
+        .values({
+          organizationId,
+          salesOrderId: order.id,
+          shipmentNumber: nextOrderNumber("POS-SHIP"),
+          shipDate: today,
+          status: "shipped",
+          notes: `POS sale ${orderNumber}`,
+        })
+        .returning();
+      const shipment = shipInserted[0]!;
+      await tx.insert(shipmentLinesTable).values(
+        lineRows.map((lr, i) => ({
+          organizationId,
+          shipmentId: shipment.id,
+          salesOrderLineId: lr.id,
+          quantity: totals.lines[i]!.quantity,
+        })),
+      );
+
+      // Apply stock decrements + movement ledger rows. We've already
+      // verified on-hand under FOR UPDATE locks above, so the UPDATE
+      // here cannot drive on-hand negative.
+      for (const [itemId, qty] of componentDelta) {
+        await tx
+          .update(itemWarehouseStockTable)
+          .set({
+            quantity: sql`${itemWarehouseStockTable.quantity} - ${toStr(qty)}::numeric`,
+          })
+          .where(
+            and(
+              eq(itemWarehouseStockTable.organizationId, organizationId),
+              eq(itemWarehouseStockTable.itemId, itemId),
+              eq(itemWarehouseStockTable.warehouseId, warehouseId),
+            ),
+          );
+        await tx.insert(stockMovementsTable).values({
+          organizationId,
+          itemId,
+          warehouseId,
+          movementType: "sale",
+          quantity: toStr(-qty),
+          referenceType: "pos_sale",
+          referenceId: order.id,
+          notes: `POS sale ${orderNumber}`,
+        });
+      }
+    }
+
+    // Capture payments + allocations. For split payments we create one
+    // customer_payments row per entry and allocate in order until the
+    // order balance is covered. Any tendered overpay becomes an
+    // unallocated advance (negative outstandingBalance = change due).
+    const insertedPaymentIds: number[] = [];
+    let remainingAlloc = allocAmount;
+    for (const p of paymentsArr) {
+      const paymentRows = await tx
+        .insert(customerPaymentsTable)
+        .values({
+          organizationId,
+          customerId,
+          paymentDate: today,
+          amount: toStr(p.amount),
+          mode: p.mode,
+          referenceNumber: p.referenceNumber ?? null,
+          bankAccountLabel: p.bankAccountLabel ?? null,
+          notes:
+            p.notes ??
+            (channelLabel
+              ? `POS sale ${orderNumber} · ${channelLabel}`
+              : `POS sale ${orderNumber}`),
+        })
+        .returning({ id: customerPaymentsTable.id });
+      const paymentId = paymentRows[0]!.id;
+      insertedPaymentIds.push(paymentId);
+
+      if (remainingAlloc > 0) {
+        const thisAlloc = Math.min(remainingAlloc, p.amount);
+        await tx.insert(customerPaymentAllocationsTable).values({
+          organizationId,
+          paymentId,
+          salesOrderId: order.id,
+          amount: toStr(thisAlloc),
+        });
+        remainingAlloc -= thisAlloc;
+      }
+    }
+    const customerPaymentId = insertedPaymentIds[0]!;
+    // NOTE: ::numeric cast on the parameter is required — without it,
+    // Postgres treats the bound value as text and throws
+    // `operator does not exist: numeric - text`, rolling back the
+    // entire checkout transaction. (This was the silent saving bug.)
+    await tx
+      .update(customersTable)
+      .set({
+        outstandingBalance: sql`${customersTable.outstandingBalance} - ${toStr(totalPaymentAmount)}::numeric`,
+      })
+      .where(
+        and(
+          eq(customersTable.id, customerId),
+          eq(customersTable.organizationId, organizationId),
+        ),
+      );
+
+    return {
+      salesOrderId: order.id,
+      orderNumber,
+      customerId,
+      warehouseId,
+      customerPaymentId,
+      receiptUrl: `/api/customer-payments/${customerPaymentId}/receipt.pdf`,
+      subtotal: totals.subtotal,
+      taxTotal: totals.taxTotal,
+      total: toStr(effectiveTotal),
+      orderDiscountAmount: toStr(effectiveOrderDisc),
+    };
+  });
+}

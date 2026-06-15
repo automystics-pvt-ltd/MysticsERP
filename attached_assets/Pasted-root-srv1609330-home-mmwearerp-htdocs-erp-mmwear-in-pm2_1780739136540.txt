@@ -1,0 +1,57 @@
+root@srv1609330:/home/mmwearerp/htdocs/erp.mmwear.in# pm2 restart mmwear-erp --update-env
+pm2 logs mmwear-erp --lines 20
+[PM2] Applying action restartProcessId on app [mmwear-erp](ids: [ 38 ])
+[PM2] [mmwear-erp](38) ✓
+┌────┬───────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name                  │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+├────┼───────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
+│ 2  │ automystics-api       │ default     │ 0.0.0   │ fork    │ 3582652  │ 16h    │ 16   │ online    │ 0%       │ 96.0mb   │ root     │ disabled │
+│ 37 │ erp-automystics       │ default     │ N/A     │ fork    │ 4145129  │ 13h    │ 1    │ online    │ 0%       │ 104.9mb  │ root     │ disabled │
+│ 0  │ fitro360              │ default     │ 1.0.0   │ fork    │ 3582629  │ 16h    │ 16   │ online    │ 0%       │ 113.0mb  │ root     │ disabled │
+│ 1  │ kalvicore-api         │ default     │ 0.0.0   │ fork    │ 3582632  │ 16h    │ 16   │ online    │ 0%       │ 118.4mb  │ root     │ disabled │
+│ 38 │ mmwear-erp            │ default     │ 0.0.0   │ fork    │ 3115946  │ 0s     │ 104  │ online    │ 0%       │ 26.9mb   │ root     │ disabled │
+│ 20 │ mystics-api           │ default     │ N/A     │ fork    │ 3582747  │ 16h    │ 7    │ online    │ 0%       │ 95.8mb   │ root     │ disabled │
+│ 18 │ mysticscivil-api      │ default     │ N/A     │ fork    │ 3582726  │ 16h    │ 2    │ online    │ 0%       │ 212.8mb  │ root     │ disabled │
+│ 11 │ mysticshr-api         │ default     │ 0.0.0   │ fork    │ 3582690  │ 16h    │ 1180 │ online    │ 0%       │ 251.3mb  │ root     │ disabled │
+│ 4  │ people-connect-api    │ default     │ 0.0.0   │ fork    │ 3582655  │ 16h    │ 17   │ online    │ 0%       │ 204.8mb  │ root     │ disabled │
+│ 23 │ solarnexus-api        │ default     │ 0.0.0   │ fork    │ 3582749  │ 16h    │ 2    │ online    │ 0%       │ 138.0mb  │ root     │ disabled │
+│ 6  │ tkprabhu-api          │ default     │ 0.0.0   │ fork    │ 3582682  │ 16h    │ 39   │ online    │ 0%       │ 204.1mb  │ root     │ disabled │
+│ 32 │ ungalrajeev-api       │ default     │ N/A     │ fork    │ 3582804  │ 16h    │ 1    │ online    │ 0%       │ 111.5mb  │ root     │ disabled │
+│ 25 │ ungaludan-sarath      │ default     │ 0.0.0   │ fork    │ 3582766  │ 16h    │ 2    │ online    │ 0%       │ 206.5mb  │ root     │ disabled │
+│ 33 │ ungalvignesh-api      │ default     │ N/A     │ fork    │ 3582819  │ 16h    │ 1    │ online    │ 0%       │ 105.7mb  │ root     │ disabled │
+│ 34 │ ungalvignesh-api      │ default     │ N/A     │ fork    │ 3115897  │ 0s     │ 425… │ online    │ 123.1%   │ 131.3mb  │ root     │ disabled │
+└────┴───────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+[TAILING] Tailing last 20 lines for [mmwear-erp] process (change the value with --lines option)
+/root/.pm2/logs/mmwear-erp-error.log last 20 lines:
+38|mmwear- |     at <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/node_modules/.pnpm/pg-pool@3.13.0_pg@8.20.0/node_modules/pg-pool/index.js:45:11)
+38|mmwear- |     at process.processTicksAndRejections (node:internal/process/task_queues:104:5) {
+38|mmwear- |   length: 102,
+38|mmwear- |   severity: 'FATAL',
+38|mmwear- |   code: '28P01',
+38|mmwear- |   detail: undefined,
+38|mmwear- |   hint: undefined,
+38|mmwear- |   position: undefined,
+38|mmwear- |   internalPosition: undefined,
+38|mmwear- |   internalQuery: undefined,
+38|mmwear- |   where: undefined,
+38|mmwear- |   schema: undefined,
+38|mmwear- |   table: undefined,
+38|mmwear- |   column: undefined,
+38|mmwear- |   dataType: undefined,
+38|mmwear- |   constraint: undefined,
+38|mmwear- |   file: 'auth.c',
+38|mmwear- |   line: '331',
+38|mmwear- |   routine: 'auth_failed'
+38|mmwear- | }
+
+/root/.pm2/logs/mmwear-erp-out.log last 20 lines:
+38|mmwear- | process/task_queues:104:5)\n    at async <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:149:14)\n    at async NodePgPreparedQuery.queryWithCache (/home/mmwearerp/htdocs/erp.mmwear.in/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/pg-core/session.ts:71:12)\n    at async reconcileOrphanedImportJobs (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/lib/shopifyImportJobs.ts:249:3)","query":"update \"shopify_import_jobs\" set \"status\" = $1, \"error\" = $2, \"finished_at\" = $3 where (\"shopify_import_jobs\".\"status\" = $4 and \"shopify_import_jobs\".\"started_at\" < $5)","params":["failed","Import interrupted by a server restart","2026-06-06T09:42:09.186Z","running","2026-06-06T09:42:09.166Z"]},"msg":"shopify: import job recovery failed"}
+38|mmwear- | {"level":50,"time":1780738929273,"pid":3105464,"hostname":"srv1609330","err":{"type":"_DrizzleQueryError","message":"Failed query: select \"id\", \"organization_id\", \"status\", \"total\", \"processed\", \"succeeded\", \"failed\", \"skipped\", \"order_ids_in_order\", \"results\", \"created_at\", \"updated_at\", \"started_at\", \"completed_at\", \"concurrency\", \"recovery_claimed_at\" from \"einvoice_bulk_batches\" where \"einvoice_bulk_batches\".\"status\" = $1\nparams: running: password authentication failed for user \"mmwear\"","stack":"Error: Failed query: select \"id\", \"organization_id\", \"status\", \"total\", \"processed\", \"succeeded\", \"failed\", \"skipped\", \"order_ids_in_order\", \"results\", \"created_at\", \"updated_at\", \"started_at\", \"completed_at\", \"concurrency\", \"recovery_claimed_at\" from \"einvoice_bulk_batches\" where \"einvoice_bulk_batches\".\"status\" = $1\nparams: running\n    at NodePgPreparedQuery.queryWithCache (/home/mmwearerp/htdocs/erp.mmwear.in/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/pg-core/session.ts:73:11)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:154:19)\n    at async recoverInFlightBulkBatches (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/routes/einvoice.ts:1744:15)\ncaused by: error: password authentication failed for user \"mmwear\"\n    at <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/node_modules/.pnpm/pg-pool@3.13.0_pg@8.20.0/node_modules/pg-pool/index.js:45:11)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:161:13)\n    at async NodePgPreparedQuery.queryWithCache (/home/mmwearerp/htdocs/erp.mmwear.in/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/pg-core/session.ts:71:12)\n    at async <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:154:19)\n    at async recoverInFlightBulkBatches (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/routes/einvoice.ts:1744:15)","query":"select \"id\", \"organization_id\", \"status\", \"total\", \"processed\", \"succeeded\", \"failed\", \"skipped\", \"order_ids_in_order\", \"results\", \"created_at\", \"updated_at\", \"started_at\", \"completed_at\", \"concurrency\", \"recovery_claimed_at\" from \"einvoice_bulk_batches\" where \"einvoice_bulk_batches\".\"status\" = $1","params":["running"]},"msg":"einvoice: failed to scan running batches at startup"}
+38|mmwear- | {"level":30,"time":1780738948538,"pid":3105464,"hostname":"srv1609330","req":{"id":1,"method":"GET","url":"/"},"res":{"statusCode":404},"responseTime":5,"msg":"request completed"}
+
+38|mmwear-erp  | {"level":30,"time":1780739100927,"pid":3115946,"hostname":"srv1609330","port":7500,"msg":"Server listening"}
+38|mmwear-erp  | {"level":30,"time":1780739100928,"pid":3115946,"hostname":"srv1609330","initialDelayMs":300000,"intervalMs":86400000,"msg":"shiprocket: tracking sync scheduler armed"}
+38|mmwear-erp  | {"level":30,"time":1780739106853,"pid":3115946,"hostname":"srv1609330","req":{"id":1,"method":"GET","url":"/"},"res":{"statusCode":404},"responseTime":6,"msg":"request completed"}
+38|mmwear-erp  | {"level":30,"time":1780739109861,"pid":3115946,"hostname":"srv1609330","req":{"id":2,"method":"GET","url":"/"},"res":{"statusCode":404},"responseTime":1,"msg":"request completed"}
+38|mmwear-erp  | {"level":30,"time":1780739110162,"pid":3115946,"hostname":"srv1609330","req":{"id":3,"method":"GET","url":"/"},"res":{"statusCode":404},"responseTime":1,"msg":"request completed"}
+38|mmwear-erp  | {"level":30,"time":1780739110377,"pid":3115946,"hostname":"srv1609330","req":{"id":4,"method":"GET","url":"/"},"res":{"statusCode":404},"responseTime":1,"msg":"request completed"}

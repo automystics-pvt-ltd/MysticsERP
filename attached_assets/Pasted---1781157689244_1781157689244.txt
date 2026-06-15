@@ -1,0 +1,48 @@
+└────┴───────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+[PM2][WARN] Applications mmwearerp not running, starting...
+[PM2] App [mmwearerp] launched (1 instances)
+┌────┬───────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name                  │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+├────┼───────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
+│ 2  │ automystics-api       │ default     │ 0.0.0   │ fork    │ 485865   │ 12h    │ 28   │ online    │ 7.1%     │ 97.2mb   │ root     │ disabled │
+│ 37 │ erp-automystics       │ default     │ N/A     │ fork    │ 3366958  │ 23h    │ 10   │ online    │ 0%       │ 115.1mb  │ root     │ disabled │
+│ 0  │ fitro360              │ default     │ 1.0.0   │ fork    │ 485842   │ 12h    │ 28   │ online    │ 0%       │ 113.0mb  │ root     │ disabled │
+│ 1  │ kalvicore-api         │ default     │ 0.0.0   │ fork    │ 485855   │ 12h    │ 28   │ online    │ 0%       │ 116.9mb  │ root     │ disabled │
+│ 38 │ mmwear-erp            │ default     │ 0.0.0   │ fork    │ 3366926  │ 23h    │ 128  │ online    │ 0%       │ 336.9mb  │ root     │ disabled │
+│ 51 │ mmwearerp             │ default     │ 0.0.0   │ fork    │ 634378   │ 0s     │ 0    │ online    │ 0%       │ 20.5mb   │ root     │ disabled │
+│ 42 │ mystics-api           │ default     │ N/A     │ fork    │ 634174   │ 64s    │ 1169 │ online    │ 0%       │ 120.6mb  │ root     │ disabled │
+│ 18 │ mysticscivil-api      │ default     │ N/A     │ fork    │ 0        │ 0      │ 14   │ errored   │ 0%       │ 0b       │ root     │ disabled │
+│ 11 │ mysticshr-api         │ default     │ 0.0.0   │ fork    │ 485882   │ 12h    │ 1191 │ online    │ 0%       │ 293.1mb  │ root     │ disabled │
+│ 39 │ mysticsinventory      │ default     │ N/A     │ fork    │ 0        │ 0      │ 54   │ errored   │ 0%       │ 0b       │ root     │ disabled │
+│ 4  │ people-connect-api    │ default     │ 0.0.0   │ fork    │ 485881   │ 12h    │ 29   │ online    │ 7.1%     │ 204.0mb  │ root     │ disabled │
+│ 23 │ solarnexus-api        │ default     │ 0.0.0   │ fork    │ 485949   │ 12h    │ 13   │ online    │ 0%       │ 136.9mb  │ root     │ disabled │
+│ 6  │ tkprabhu-api          │ default     │ 0.0.0   │ fork    │ 485907   │ 12h    │ 51   │ online    │ 0%       │ 204.0mb  │ root     │ disabled │
+│ 32 │ ungalrajeev-api       │ default     │ N/A     │ fork    │ 0        │ 0      │ 11   │ errored   │ 0%       │ 0b       │ root     │ disabled │
+│ 25 │ ungaludan-sarath      │ default     │ 0.0.0   │ fork    │ 433751   │ 16h    │ 12   │ online    │ 0%       │ 203.7mb  │ root     │ disabled │
+│ 33 │ ungalvignesh-api      │ default     │ N/A     │ fork    │ 634298   │ 22s    │ 386… │ online    │ 85%      │ 113.6mb  │ root     │ disabled │
+│ 34 │ ungalvignesh-api      │ default     │ N/A     │ fork    │ 3366905  │ 23h    │ 228… │ online    │ 0%       │ 115.5mb  │ root     │ disabled │
+└────┴───────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+[PM2] Saving current process list...
+[PM2] Successfully saved in /root/.pm2/dump.pm2
+[TAILING] Tailing last 20 lines for [mmwearerp] process (change the value with --lines option)
+/root/.pm2/logs/mmwearerp-error.log last 20 lines:
+51|mmweare |     at ../../lib/db/src/index.ts (/home/mmwearerp/htdocs/erp.mmwear.in/lib/db/src/index.ts:8:9)
+51|mmweare |     at __init (file:///home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/dist/index.mjs:22:56)
+51|mmweare |     at <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/routes/auth.ts:5:1)
+51|mmweare |     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+51|mmweare |     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+51|mmweare |     at async node:internal/modules/esm/loader:633:26
+51|mmweare | Error: DATABASE_URL must be set. Did you forget to provision a database?
+51|mmweare |     at ../../lib/db/src/index.ts (/home/mmwearerp/htdocs/erp.mmwear.in/lib/db/src/index.ts:8:9)
+51|mmweare |     at __init (file:///home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/dist/index.mjs:22:56)
+51|mmweare |     at <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/routes/auth.ts:5:1)
+51|mmweare |     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+51|mmweare |     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+51|mmweare |     at async node:internal/modules/esm/loader:633:26
+51|mmweare | 2026-06-11 05:54:11 +00:00: Error: DATABASE_URL must be set. Did you forget to provision a database?
+51|mmweare | 2026-06-11 05:54:11 +00:00:     at ../../lib/db/src/index.ts (/home/mmwearerp/htdocs/erp.mmwear.in/lib/db/src/index.ts:8:9)
+51|mmweare | 2026-06-11 05:54:11 +00:00:     at __init (file:///home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/dist/index.mjs:22:56)
+51|mmweare | 2026-06-11 05:54:11 +00:00:     at <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/routes/auth.ts:5:1)
+51|mmweare | 2026-06-11 05:54:11 +00:00:     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+51|mmweare | 2026-06-11 05:54:11 +00:00:     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+51|mmweare | 2026-06-11 05:54:11 +00:00:     at async node:internal/modules/esm/loader:633:26

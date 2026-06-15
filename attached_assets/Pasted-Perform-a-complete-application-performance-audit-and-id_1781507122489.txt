@@ -1,0 +1,17 @@
+Perform a complete application performance audit and identify all frontend, backend, database, API, and UI bottlenecks.
+Optimize large data handling (3,000+ records) using server-side pagination, lazy loading, virtual scrolling, indexing, caching, and optimized queries.
+Improve API response times and reduce unnecessary database calls, page refreshes, and network requests.
+Implement loading spinners, skeleton screens, progress indicators, and background processing for long-running operations.
+Optimize all dashboards, reports, tables, cards, forms, and list views for faster rendering and smoother interactions.
+Standardize search, filters, sorting, pagination, and page-size selectors across the entire application.
+Optimize import/export functionality, bulk operations, and report generation for high-volume data processing.
+Improve application startup, login, navigation, and page transition performance.
+Add smooth animations, hover effects, click feedback, and responsive interactions without impacting performance.
+Ensure all modules load quickly and provide a seamless user experience even with large datasets.
+Optimize memory usage, frontend rendering, API payloads, and database queries to eliminate lag and delays.
+Review and fix performance issues in dashboards, inventory, warehouse, purchase, POS, reports, approvals, and user management modules.
+Ensure mobile, tablet, desktop, and web responsiveness with consistent performance across all devices.
+Minimize loading times and provide real-time user feedback for all create, update, delete, import, export, and transaction operations.
+Review all screens and workflows to remove UI lag, broken interactions, slow loading components, and unnecessary processing.
+Deliver a premium enterprise-grade experience with fast navigation, smooth workflows, modern UI interactions, and a professional "wow" user experience.
+Ensure all optimizations preserve existing business logic, workflows, calculations, security, permissions, and functionality without regression issues.

@@ -1,0 +1,21 @@
+/root/.pm2/logs/mmwearerp-error.log last 20 lines:
+48|mmweare |     at ../../lib/db/src/index.ts (/home/mmwearerp/htdocs/erp.mmwear.in/lib/db/src/index.ts:8:9)
+48|mmweare |     at __init (file:///home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/dist/index.mjs:22:56)
+48|mmweare |     at <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/routes/auth.ts:5:1)
+48|mmweare |     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+48|mmweare |     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+48|mmweare |     at async node:internal/modules/esm/loader:633:26
+48|mmweare | Error: DATABASE_URL must be set. Did you forget to provision a database?
+48|mmweare |     at ../../lib/db/src/index.ts (/home/mmwearerp/htdocs/erp.mmwear.in/lib/db/src/index.ts:8:9)
+48|mmweare |     at __init (file:///home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/dist/index.mjs:22:56)
+48|mmweare |     at <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/routes/auth.ts:5:1)
+48|mmweare |     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+48|mmweare |     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+48|mmweare |     at async node:internal/modules/esm/loader:633:26
+48|mmweare | 2026-06-11 05:54:11 +00:00: Error: DATABASE_URL must be set. Did you forget to provision a database?
+48|mmweare | 2026-06-11 05:54:11 +00:00:     at ../../lib/db/src/index.ts (/home/mmwearerp/htdocs/erp.mmwear.in/lib/db/src/index.ts:8:9)
+48|mmweare | 2026-06-11 05:54:11 +00:00:     at __init (file:///home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/dist/index.mjs:22:56)
+48|mmweare | 2026-06-11 05:54:11 +00:00:     at <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/routes/auth.ts:5:1)
+48|mmweare | 2026-06-11 05:54:11 +00:00:     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+48|mmweare | 2026-06-11 05:54:11 +00:00:     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+48|mmweare | 2026-06-11 05:54:11 +00:00:     at async node:internal/modules/esm/loader:633:26

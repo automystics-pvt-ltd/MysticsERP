@@ -1,0 +1,1542 @@
+import { useParams, Link, useLocation } from "wouter";
+import { useImageSrc } from "@/hooks/use-image-src";
+import { PageHeader } from "@/components/PageHeader";
+import {
+  useGetSalesOrder,
+  useUpdateSalesOrderStatus,
+  useReturnSalesOrder,
+  useCancelShipment,
+  useListStockMovements,
+  useListSalesOrderEmailLog,
+  downloadSalesOrderInvoice,
+  downloadSalesOrderAck,
+  getGetSalesOrderQueryKey,
+  getListStockMovementsQueryKey,
+  getListSalesOrderShipmentsQueryKey,
+  getListSalesOrderEmailLogQueryKey,
+  getListItemsQueryKey,
+  useGetCurrentOrganization,
+  useGetMe,
+  useRecordPrint,
+} from "@/lib/queryKeys";
+import { useDeleteSalesOrder, useListCustomerPayments, getListCustomerPaymentsQueryKey } from "@workspace/api-client-react";
+import { normalizeRole } from "@/lib/permissions";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatCurrency, formatDate } from "@/lib/format";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Truck,
+  Package,
+  XCircle,
+  Undo2,
+  IndianRupee,
+  FileDown,
+  Mail,
+  Pencil,
+  Printer,
+  Receipt,
+  Trash2,
+} from "lucide-react";
+import { Fragment, useState } from "react";
+import { RecordPaymentDialog } from "@/components/RecordPaymentDialog";
+import { EwbPanel } from "@/components/EwbPanel";
+import { EinvoicePanel } from "@/components/EinvoicePanel";
+import { NewShipmentDialog } from "@/components/NewShipmentDialog";
+import { BookShiprocketDialog } from "@/components/BookShiprocketDialog";
+import { Badge } from "@/components/ui/badge";
+import { SendInvoiceDialog } from "@/components/SendInvoiceDialog";
+import { PaymentLinkCard } from "@/components/PaymentLinkCard";
+import { Can } from "@/components/Can";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+import { StatusBadge } from "@/components/StatusBadge";
+import { Separator } from "@/components/ui/separator";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { useMemo } from "react";
+import { useRecordVisit } from "@/lib/recentRecords";
+
+const PAYABLE_SALES_STATUSES = ["confirmed", "shipped", "delivered", "invoiced"];
+
+const RETURNABLE_SALES_STATUSES = ["shipped", "delivered", "invoiced", "paid"];
+
+const INVOICEABLE_STATUSES = new Set([
+  "shipped",
+  "partially_shipped",
+  "delivered",
+  "invoiced",
+  "paid",
+  "returned",
+]);
+
+export default function SalesOrderDetail() {
+  const { id } = useParams();
+  const orderId = parseInt(id || "0", 10);
+  
+  const { data: orderDetail, isLoading } = useGetSalesOrder(orderId, {
+    query: { enabled: !!orderId, queryKey: getGetSalesOrderQueryKey(orderId) }
+  });
+
+  useRecordVisit(
+    useMemo(
+      () =>
+        orderDetail?.order
+          ? {
+              kind: "sales_order" as const,
+              id: orderDetail.order.id,
+              title: orderDetail.order.orderNumber,
+              subtitle: orderDetail.order.customerName,
+              href: `/sales-orders/${orderDetail.order.id}`,
+            }
+          : null,
+      [orderDetail?.order],
+    ),
+  );
+
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [, setLocation] = useLocation();
+  
+  const movementsQuery = useListStockMovements(
+    { salesOrderId: orderId },
+    {
+      query: {
+        enabled: !!orderId,
+        queryKey: getListStockMovementsQueryKey({
+          salesOrderId: orderId,
+        }),
+      },
+    },
+  );
+
+  const { data: orderPayments } = useListCustomerPayments(
+    { salesOrderId: orderId },
+    { query: { enabled: !!orderId } as any },
+  );
+
+  const invalidateAll = () => {
+    queryClient.invalidateQueries({ queryKey: getGetSalesOrderQueryKey(orderId) });
+    queryClient.invalidateQueries({
+      queryKey: getListStockMovementsQueryKey({ salesOrderId: orderId }),
+    });
+    queryClient.invalidateQueries({ queryKey: getListStockMovementsQueryKey() });
+    queryClient.invalidateQueries({
+      queryKey: getListSalesOrderShipmentsQueryKey(orderId),
+    });
+    queryClient.invalidateQueries({ queryKey: getListItemsQueryKey() });
+    queryClient.invalidateQueries({
+      queryKey: getListCustomerPaymentsQueryKey({ salesOrderId: orderId }),
+    });
+  };
+
+  const updateStatusMutation = useUpdateSalesOrderStatus({
+    mutation: {
+      onSuccess: () => {
+        invalidateAll();
+        toast({ title: "Status updated successfully" });
+      },
+    },
+  });
+
+  const returnMutation = useReturnSalesOrder({
+    mutation: {
+      onSuccess: () => {
+        invalidateAll();
+        toast({ title: "Return processed", description: "Stock has been added back to the warehouse." });
+      },
+      onError: (err: unknown) => {
+        const e = err as { response?: { data?: { error?: string } } };
+        toast({
+          title: "Could not process return",
+          description: e.response?.data?.error ?? "Please try again.",
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const cancelShipmentMutation = useCancelShipment({
+    mutation: {
+      onSuccess: () => {
+        invalidateAll();
+        toast({ title: "Shipment cancelled", description: "Stock has been added back to the warehouse." });
+      },
+      onError: (err: unknown) => {
+        const e = err as { response?: { data?: { error?: string } } };
+        toast({
+          title: "Could not cancel shipment",
+          description: e.response?.data?.error ?? "Please try again.",
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const deleteMutation = useDeleteSalesOrder({
+    mutation: {
+      onSuccess: () => {
+        toast({ title: "Bill deleted" });
+        setLocation("/sales-orders");
+      },
+      onError: (err: unknown) => {
+        const e = err as { response?: { data?: { error?: string } } };
+        toast({
+          title: "Could not delete",
+          description: e.response?.data?.error ?? "Please try again.",
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const handleUpdateStatus = (status: string) => {
+    updateStatusMutation.mutate({
+      id: orderId,
+      data: { status },
+    });
+  };
+
+  const [returnReason, setReturnReason] = useState("");
+  const [returnDialogOpen, setReturnDialogOpen] = useState(false);
+
+  const handleReturn = () => {
+    returnMutation.mutate({ id: orderId, data: { notes: returnReason.trim() || null } });
+  };
+
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [shipmentOpen, setShipmentOpen] = useState(false);
+  const [bookShipmentId, setBookShipmentId] = useState<number | null>(null);
+  const [sendInvoiceOpen, setSendInvoiceOpen] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadingOrder, setDownloadingOrder] = useState(false);
+  const [printing, setPrinting] = useState(false);
+  const [thermalPrinting, setThermalPrinting] = useState(false);
+  // Per-shipment cancel-reason form state. Keyed by shipment id so two
+  // cancel dialogs on the same page can't trample each other.
+  const [cancelReason, setCancelReason] = useState<
+    Record<number, { code: string; notes: string }>
+  >({});
+  const getReason = (id: number) =>
+    cancelReason[id] ?? { code: "", notes: "" };
+  const setReason = (
+    id: number,
+    patch: Partial<{ code: string; notes: string }>,
+  ) =>
+    setCancelReason((prev) => ({
+      ...prev,
+      [id]: { ...getReason(id), ...patch },
+    }));
+
+  // Open the order PDF inline in a new tab so the user can use the
+  // browser's built-in print dialog. We can't `window.open` the API
+  // URL directly because it requires the bearer token, so we fetch
+  // the blob first and then open the resulting object URL.
+  const handlePrintOrder = async () => {
+    if (!orderDetail) return;
+    setPrinting(true);
+    try {
+      const blob = (await downloadSalesOrderAck(orderId)) as unknown as Blob;
+      const pdfBlob = blob.type === "application/pdf"
+        ? blob
+        : new Blob([blob], { type: "application/pdf" });
+      const url = URL.createObjectURL(pdfBlob);
+      const win = window.open(url, "_blank");
+      if (!win) {
+        // Popup blocked — fall back to a download so the user still
+        // gets the file and can print from their PDF viewer.
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `order-${orderDetail.order.orderNumber}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        toast({
+          title: "Popup blocked",
+          description:
+            "We saved the PDF instead — open it and press Ctrl+P to print.",
+        });
+      }
+      // Revoke after a short delay so the new tab has time to load.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("printSalesOrderAck failed", err);
+      const e = err as {
+        data?: { error?: string };
+        response?: { data?: { error?: string } };
+        message?: string;
+      };
+      toast({
+        title: "Could not open order for printing",
+        description:
+          e.data?.error ??
+          e.response?.data?.error ??
+          e.message ??
+          "Please try again in a moment.",
+        variant: "destructive",
+      });
+    } finally {
+      setPrinting(false);
+    }
+  };
+
+  const handleDownloadOrder = async () => {
+    if (!orderDetail) return;
+    setDownloadingOrder(true);
+    try {
+      const blob = (await downloadSalesOrderAck(orderId)) as unknown as Blob;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `order-${orderDetail.order.orderNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (err) {
+      // ApiError exposes the parsed body on `.data` (not `.response.data`),
+      // so we read from both shapes to surface a useful message.
+      // eslint-disable-next-line no-console
+      console.error("downloadSalesOrderAck failed", err);
+      const e = err as {
+        data?: { error?: string };
+        response?: { data?: { error?: string } };
+        message?: string;
+      };
+      toast({
+        title: "Could not download order",
+        description:
+          e.data?.error ??
+          e.response?.data?.error ??
+          e.message ??
+          "Please try again in a moment.",
+        variant: "destructive",
+      });
+    } finally {
+      setDownloadingOrder(false);
+    }
+  };
+
+  const canInvoice = orderDetail
+    ? INVOICEABLE_STATUSES.has(orderDetail.order.status)
+    : false;
+
+  const emailLogQuery = useListSalesOrderEmailLog(orderId, {
+    query: {
+      enabled: !!orderId && canInvoice,
+      queryKey: getListSalesOrderEmailLogQueryKey(orderId),
+    },
+  });
+
+  const { data: org } = useGetCurrentOrganization();
+  const { data: me } = useGetMe();
+
+  const recordPrintMutation = useRecordPrint();
+
+  const checkAndRecordPrint = async (documentType: string, documentId: number): Promise<boolean> => {
+    try {
+      const result = await recordPrintMutation.mutateAsync({ data: { documentType, documentId } });
+      if (!result.allowed) {
+        toast({
+          title: "Print limit reached",
+          description: "You've reached the 2-print limit for this document. Contact your admin for additional copies.",
+          variant: "destructive",
+        });
+        return false;
+      }
+      return true;
+    } catch {
+      return true;
+    }
+  };
+
+  const myRole = normalizeRole(me?.role);
+  // owner / admin always have edit+delete access.
+  // For every other role (manager, salesman, accountant, viewer) the
+  // per-member "canEditBills" toggle is the sole gate — if it is off
+  // those users must not see or be able to use Edit / Delete Bill.
+  const canEditBillsForUser =
+    (me?.user?.isSuperAdmin ?? false) ||
+    (["owner", "admin"] as const).some((r) => r === myRole) ||
+    (me?.canEditBills ?? false);
+
+  const handleDownloadInvoice = async () => {
+    if (!orderDetail) return;
+    const allowed = await checkAndRecordPrint("sales_order_invoice", orderId);
+    if (!allowed) return;
+    setDownloading(true);
+    try {
+      const blob = (await downloadSalesOrderInvoice(orderId)) as unknown as Blob;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `invoice-${orderDetail.order.orderNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("downloadSalesOrderInvoice failed", err);
+      const e = err as {
+        data?: { error?: string };
+        response?: { data?: { error?: string } };
+        message?: string;
+      };
+      toast({
+        title: "Could not download invoice",
+        description:
+          e.data?.error ??
+          e.response?.data?.error ??
+          e.message ??
+          "Please try again in a moment.",
+        variant: "destructive",
+      });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const handleThermalPrint = async () => {
+    if (!orderDetail) return;
+    setThermalPrinting(true);
+    try {
+      const allowed = await checkAndRecordPrint("sales_order_thermal", orderId);
+      if (!allowed) return;
+      window.print();
+    } finally {
+      setThermalPrinting(false);
+    }
+  };
+
+  if (isLoading || !orderDetail) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-10 w-32" />
+        <Skeleton className="h-40 w-full" />
+      </div>
+    );
+  }
+
+  const { order, lines, shipments } = orderDetail;
+  const canShip = order.status === "confirmed" || order.status === "partially_shipped";
+  const canCancelShipments = order.status === "shipped" || order.status === "partially_shipped";
+  const allFullyShipped = lines.every(
+    (l) => Number(l.quantity) - Number(l.quantityShipped) <= 1e-6,
+  );
+
+  return (
+    <div className="space-y-6 max-w-5xl">
+      <PageHeader
+        title={`Order ${order.orderNumber}`}
+        backHref="/sales-orders"
+        breadcrumbs={[{ label: "Sales Orders", href: "/sales-orders" }, { label: order.orderNumber }]}
+        badge={
+          <div className="flex items-center gap-1.5">
+            <StatusBadge status={order.status} />
+            {order.shopifyOrderId && (
+              <Badge
+                variant="outline"
+                className="font-sans text-[10px] uppercase tracking-wide border-green-600 text-green-700 dark:border-green-500 dark:text-green-400"
+                data-testid="badge-shopify-order"
+              >
+                Shopify
+              </Badge>
+            )}
+          </div>
+        }
+      />
+
+      <div className="space-y-2">
+        {/* Primary order actions */}
+        <div className="flex flex-wrap gap-2">
+          <Can module="sales_orders" action="approve">
+            {order.status === "draft" && (
+              <Button 
+                size="sm"
+                onClick={() => handleUpdateStatus("confirmed")} 
+                disabled={updateStatusMutation.isPending}
+                data-testid="btn-status-confirm"
+              >
+                <CheckCircle2 className="mr-1.5 h-4 w-4" /> Confirm Order
+              </Button>
+            )}
+          </Can>
+          {["draft", "confirmed", "invoiced", "paid"].includes(order.status) && canEditBillsForUser && (
+            <Button
+              size="sm"
+              variant="outline"
+              asChild
+              data-testid="btn-edit-order"
+            >
+              <Link href={`/sales-orders/${order.id}/edit`}>
+                <Pencil className="mr-1.5 h-4 w-4" /> Edit Bill
+              </Link>
+            </Button>
+          )}
+          <Can module="sales_orders" action="approve">
+            {canShip && !allFullyShipped && (
+              <Button
+                size="sm"
+                onClick={() => setShipmentOpen(true)}
+                data-testid="btn-new-shipment"
+              >
+                <Truck className="mr-1.5 h-4 w-4" /> New Shipment
+              </Button>
+            )}
+          </Can>
+          <Can module="sales_orders" action="approve">
+            {order.status === "shipped" && (
+              <Button 
+                size="sm"
+                onClick={() => handleUpdateStatus("delivered")} 
+                disabled={updateStatusMutation.isPending}
+                data-testid="btn-status-deliver"
+              >
+                <Package className="mr-1.5 h-4 w-4" /> Mark Delivered
+              </Button>
+            )}
+          </Can>
+          <Can module="payments" action="create">
+            {Number(order.balanceDue) > 0 &&
+              PAYABLE_SALES_STATUSES.includes(order.status) && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setPaymentOpen(true)}
+                  data-testid="btn-record-payment"
+                >
+                  <IndianRupee className="mr-1.5 h-4 w-4" /> Record Payment
+                </Button>
+              )}
+          </Can>
+          {["draft", "confirmed"].includes(order.status) && canEditBillsForUser && (
+            <Button 
+              size="sm"
+              variant="destructive"
+              onClick={() => handleUpdateStatus("cancelled")} 
+              disabled={updateStatusMutation.isPending}
+              data-testid="btn-status-cancel"
+            >
+              <XCircle className="mr-1.5 h-4 w-4" /> Cancel Order
+            </Button>
+          )}
+          {canEditBillsForUser && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" variant="destructive" data-testid="btn-delete-order">
+                  <Trash2 className="mr-1.5 h-4 w-4" /> Delete Bill
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete this bill?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete <strong>{order.orderNumber}</strong>. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    onClick={() => deleteMutation.mutate({ id: order.id })}
+                    disabled={deleteMutation.isPending}
+                  >
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+        </div>
+        {/* Document & utility actions */}
+        <div className="flex flex-wrap gap-2">
+          <Can module="sales_orders" action="print">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handlePrintOrder}
+              disabled={printing}
+              data-testid="btn-print-order"
+            >
+              <Printer className="mr-1.5 h-4 w-4" />
+              {printing ? "Opening..." : "Print"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleThermalPrint}
+              disabled={thermalPrinting}
+              data-testid="btn-thermal-print"
+            >
+              <Receipt className="mr-1.5 h-4 w-4" />
+              {thermalPrinting ? "Printing..." : "Thermal Receipt"}
+            </Button>
+            {canInvoice && (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleDownloadInvoice}
+                  disabled={downloading}
+                  data-testid="btn-download-invoice"
+                >
+                  <FileDown className="mr-1.5 h-4 w-4" />
+                  {downloading ? "Preparing..." : "Download Invoice"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setSendInvoiceOpen(true)}
+                  data-testid="btn-send-invoice"
+                >
+                  <Mail className="mr-1.5 h-4 w-4" /> Send to Customer
+                </Button>
+              </>
+            )}
+          </Can>
+          {RETURNABLE_SALES_STATUSES.includes(order.status) && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={returnMutation.isPending}
+              data-testid="btn-status-return"
+              onClick={() => setReturnDialogOpen(true)}
+            >
+              <Undo2 className="mr-1.5 h-4 w-4" /> Return / Reverse
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {RETURNABLE_SALES_STATUSES.includes(order.status) && (
+        <AlertDialog
+          open={returnDialogOpen}
+          onOpenChange={(open) => {
+            setReturnDialogOpen(open);
+            if (!open) setReturnReason("");
+          }}
+        >
+          <AlertDialogTrigger asChild>
+            <span />
+          </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Return this shipment?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will add the order quantities back to {order.warehouseName} and mark the order as returned. The original shipment record will be kept for audit.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <div className="space-y-2 px-0 py-2">
+                <p className="text-sm font-medium">Reason for return <span className="text-destructive">*</span></p>
+                <Textarea
+                  value={returnReason}
+                  onChange={(e) => setReturnReason(e.target.value)}
+                  placeholder="e.g. Customer refused delivery, item defective..."
+                  className="h-24 resize-none"
+                  data-testid="input-return-reason"
+                />
+              </div>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleReturn}
+                  disabled={!returnReason.trim()}
+                  data-testid="btn-confirm-return"
+                >
+                  Confirm Return
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
+
+      <div className="grid md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Order Details</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-y-4 gap-x-8">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Order Date</p>
+                <p>{formatDate(order.orderDate)}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Expected Ship Date</p>
+                <p>{formatDate(order.expectedShipDate) || "-"}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Warehouse</p>
+                <p>{order.warehouseName}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Customer</p>
+                <Link href="/customers" className="text-primary hover:underline">{order.walkinName || order.customerName}</Link>
+              </div>
+            </div>
+            {order.notes && (
+              <div className="pt-4 border-t">
+                <p className="text-sm font-medium text-muted-foreground mb-1">Notes</p>
+                <p className="text-sm">{order.notes}</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Summary</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Subtotal</span>
+              <span>{formatCurrency(Number(order.subtotal) + Number(order.discountTotal ?? 0))}</span>
+            </div>
+            {Number(order.discountTotal ?? 0) > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Discount</span>
+                <span className="text-green-600 dark:text-green-400">
+                  -{formatCurrency(order.discountTotal)}
+                </span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Tax</span>
+              <span>{formatCurrency(order.taxTotal)}</span>
+            </div>
+            <Separator />
+            <div className="flex justify-between font-bold text-lg">
+              <span>Total</span>
+              <span>{formatCurrency(order.total)}</span>
+            </div>
+            <Separator />
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Amount paid</span>
+              <span data-testid="text-amount-paid">
+                {formatCurrency(order.amountPaid)}
+              </span>
+            </div>
+            <div className="flex justify-between text-sm font-medium">
+              <span>Balance due</span>
+              <span
+                className={
+                  Number(order.balanceDue) > 0 ? "text-orange-600" : ""
+                }
+                data-testid="text-balance-due"
+              >
+                {formatCurrency(order.balanceDue)}
+              </span>
+            </div>
+            {order.paymentStatus && (
+              <>
+                <Separator />
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-muted-foreground">Payment status</span>
+                  <Badge
+                    variant="outline"
+                    className={
+                      order.paymentStatus === "paid"
+                        ? "font-medium bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40"
+                        : order.paymentStatus === "partially_paid"
+                          ? "font-medium bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40"
+                          : order.paymentStatus === "refunded"
+                            ? "font-medium bg-red-50 text-red-700 border-red-300 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800/40"
+                            : order.paymentStatus === "void"
+                              ? "font-medium bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700"
+                              : "font-medium bg-yellow-50 text-yellow-700 border-yellow-300 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800/40"
+                    }
+                    data-testid="badge-payment-status"
+                  >
+                    {order.paymentStatus === "paid"
+                      ? "Paid"
+                      : order.paymentStatus === "partially_paid"
+                        ? "Partially Paid"
+                        : order.paymentStatus === "refunded"
+                          ? "Refunded"
+                          : order.paymentStatus === "void"
+                            ? "Void"
+                            : "Payment Pending"}
+                  </Badge>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {orderPayments && orderPayments.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+              Payment Breakdown
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {orderPayments.map((p) => (
+                <div key={p.id} className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium capitalize">
+                      {p.mode === "upi" ? "UPI" : p.mode === "cash" ? "Cash" : p.mode === "card" ? "Card" : p.mode === "bank" ? "Bank Transfer" : p.mode === "razorpay" ? "Razorpay" : (p.mode ?? "").charAt(0).toUpperCase() + (p.mode ?? "").slice(1)}
+                    </span>
+                    {p.referenceNumber && (
+                      <span className="text-muted-foreground text-xs">#{p.referenceNumber}</span>
+                    )}
+                  </div>
+                  <span className="font-medium">{formatCurrency(p.amount)}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <PaymentLinkCard
+        salesOrderId={order.id}
+        balanceDue={Number(order.balanceDue)}
+        orderStatus={order.status}
+      />
+
+      <RecordPaymentDialog
+        open={paymentOpen}
+        onOpenChange={setPaymentOpen}
+        customerId={order.customerId}
+        customerName={order.customerName}
+        presetSalesOrderId={order.id}
+        presetSalesOrderBalance={Number(order.balanceDue)}
+      />
+
+      <SendInvoiceDialog
+        open={sendInvoiceOpen}
+        onOpenChange={setSendInvoiceOpen}
+        salesOrderId={order.id}
+        orderNumber={order.orderNumber}
+        customerId={order.customerId}
+        customerName={order.customerName}
+      />
+
+      <NewShipmentDialog
+        open={shipmentOpen}
+        onOpenChange={setShipmentOpen}
+        salesOrderId={order.id}
+        warehouseId={order.warehouseId}
+        lines={lines.map((l) => ({
+          id: l.id,
+          itemId: l.itemId,
+          itemName: l.itemName,
+          sku: l.sku,
+          quantity: Number(l.quantity),
+          quantityShipped: Number(l.quantityShipped),
+          trackBatches: !!l.trackBatches,
+        }))}
+      />
+
+      {bookShipmentId !== null && (() => {
+        const target = shipments.find((s) => s.id === bookShipmentId);
+        if (!target) return null;
+        return (
+          <BookShiprocketDialog
+            open={true}
+            onOpenChange={(open) => {
+              if (!open) setBookShipmentId(null);
+            }}
+            shipmentId={target.id}
+            shipmentNumber={target.shipmentNumber}
+            salesOrderId={order.id}
+            customerName={order.customerName}
+          />
+        );
+      })()}
+
+      <EwbPanel
+        orderId={order.id}
+        orderNumber={order.orderNumber}
+        orderStatus={order.status}
+        ewb={order.ewb ?? null}
+      />
+
+      <EinvoicePanel
+        orderId={order.id}
+        orderNumber={order.orderNumber}
+        orderStatus={order.status}
+        customerId={order.customerId}
+        customerName={order.customerName}
+        customerHasGstin={!!order.customerGstNumber}
+        einvoice={order.einvoice ?? null}
+      />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Line Items</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Item</TableHead>
+                <TableHead className="text-right">Qty</TableHead>
+                <TableHead className="text-right">Shipped</TableHead>
+                <TableHead className="text-right">Unit Price</TableHead>
+                <TableHead className="text-right">Discount</TableHead>
+                <TableHead className="text-right">Tax</TableHead>
+                <TableHead className="text-right">Line Total</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {lines.map((line) => {
+                const ordered = Number(line.quantity);
+                const shipped = Number(line.quantityShipped);
+                const remaining = Math.max(0, ordered - shipped);
+                const discAmt = Number(line.discountAmount ?? 0);
+                const discPct = Number(line.discountPercent ?? 0);
+                return (
+                  <TableRow key={line.id}>
+                    <TableCell>
+                      <div className="font-medium">{line.itemName}</div>
+                      <div className="text-xs text-muted-foreground">{line.sku}</div>
+                      {line.description && <div className="text-xs text-muted-foreground mt-1">{line.description}</div>}
+                    </TableCell>
+                    <TableCell className="text-right">{ordered}</TableCell>
+                    <TableCell className="text-right">
+                      <span
+                        className={
+                          shipped > 0 && shipped < ordered
+                            ? "text-blue-600 dark:text-blue-400"
+                            : ""
+                        }
+                        data-testid={`text-shipped-${line.id}`}
+                      >
+                        {shipped}
+                      </span>
+                      {remaining > 0 && shipped > 0 && (
+                        <span className="text-xs text-muted-foreground ml-1">
+                          ({remaining} pending)
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">{formatCurrency(line.unitPrice)}</TableCell>
+                    <TableCell className="text-right">
+                      {discAmt > 0 ? (
+                        <span className="text-green-600 dark:text-green-400">
+                          -{formatCurrency(discAmt)}
+                          {discPct > 0 && <span className="text-xs text-muted-foreground ml-1">({discPct}%)</span>}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">{formatCurrency(line.lineTax)} <span className="text-xs text-muted-foreground">({line.taxRate}%)</span></TableCell>
+                    <TableCell className="text-right font-medium">{formatCurrency(line.lineTotal)}</TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card data-testid="card-shipments">
+        <CardHeader>
+          <CardTitle>Shipments</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {shipments.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No shipments yet. Use "New shipment" to record what you've sent out.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {shipments.map((s) => (
+                <div
+                  key={s.id}
+                  className="border rounded-md p-4 space-y-3"
+                  data-testid={`shipment-${s.id}`}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium">{s.shipmentNumber}</div>
+                      <div className="text-xs text-muted-foreground">
+                        Shipped {formatDate(s.shipDate)}
+                      </div>
+                      {(s.awb || s.courierName) && (
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {s.courierName ? `${s.courierName} · ` : ""}
+                          {s.awb ? `AWB ${s.awb}` : ""}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {s.status === "cancelled" && <StatusBadge status={s.status} />}
+                      {s.trackingStatus && (
+                        <Badge
+                          variant="outline"
+                          data-testid={`shipment-tracking-status-${s.id}`}
+                        >
+                          {s.trackingStatus.replace(/_/g, " ")}
+                        </Badge>
+                      )}
+                      {s.status !== "cancelled" && !s.awb && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setBookShipmentId(s.id)}
+                          data-testid={`btn-book-shiprocket-${s.id}`}
+                        >
+                          <Truck className="mr-2 h-4 w-4" /> Book on Shiprocket
+                        </Button>
+                      )}
+                      {s.labelUrl && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          asChild
+                          data-testid={`btn-print-label-${s.id}`}
+                        >
+                          <a
+                            href={s.labelUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <FileDown className="mr-2 h-4 w-4" /> Label
+                          </a>
+                        </Button>
+                      )}
+                      {s.trackingUrl && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          asChild
+                          data-testid={`btn-track-shipment-${s.id}`}
+                        >
+                          <a
+                            href={s.trackingUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <Package className="mr-2 h-4 w-4" /> Track
+                          </a>
+                        </Button>
+                      )}
+                      {s.status !== "cancelled" && canCancelShipments && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={cancelShipmentMutation.isPending}
+                              data-testid={`btn-cancel-shipment-${s.id}`}
+                            >
+                              Cancel shipment
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Cancel this shipment?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Stock will be added back to {order.warehouseName} and the line quantities will be available to ship again.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <div className="space-y-2 py-2">
+                              <label
+                                htmlFor={`cancel-reason-${s.id}`}
+                                className="text-sm font-medium"
+                              >
+                                Reason
+                              </label>
+                              <select
+                                id={`cancel-reason-${s.id}`}
+                                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                value={getReason(s.id).code}
+                                onChange={(e) =>
+                                  setReason(s.id, { code: e.target.value })
+                                }
+                                data-testid={`select-cancel-reason-${s.id}`}
+                              >
+                                <option value="">(not specified)</option>
+                                <option value="customer_changed_mind">
+                                  Customer changed mind
+                                </option>
+                                <option value="damaged">Damaged</option>
+                                <option value="wrong_item">Wrong item</option>
+                                <option value="defective">Defective</option>
+                                <option value="pricing_error">
+                                  Pricing error
+                                </option>
+                                <option value="duplicate">Duplicate</option>
+                                <option value="other">Other</option>
+                              </select>
+                              <label
+                                htmlFor={`cancel-notes-${s.id}`}
+                                className="text-sm font-medium block pt-2"
+                              >
+                                Notes (optional)
+                              </label>
+                              <textarea
+                                id={`cancel-notes-${s.id}`}
+                                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                rows={2}
+                                maxLength={1000}
+                                value={getReason(s.id).notes}
+                                onChange={(e) =>
+                                  setReason(s.id, { notes: e.target.value })
+                                }
+                                data-testid={`textarea-cancel-notes-${s.id}`}
+                              />
+                            </div>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Keep shipment</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => {
+                                  const r = getReason(s.id);
+                                  cancelShipmentMutation.mutate({
+                                    shipmentId: s.id,
+                                    data: {
+                                      ...(r.code
+                                        ? { reasonCode: r.code as never }
+                                        : {}),
+                                      ...(r.notes.trim()
+                                        ? { reasonNotes: r.notes.trim() }
+                                        : {}),
+                                    },
+                                  });
+                                }}
+                                data-testid={`btn-confirm-cancel-shipment-${s.id}`}
+                                disabled={cancelShipmentMutation.isPending}
+                              >
+                                Cancel shipment
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
+                    </div>
+                  </div>
+                  {s.notes && (
+                    <p className="text-sm text-muted-foreground">{s.notes}</p>
+                  )}
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Item</TableHead>
+                        <TableHead className="text-right">Quantity</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {s.lines.map((sl) => (
+                        <TableRow key={sl.id}>
+                          <TableCell>
+                            <div className="font-medium">{sl.itemName}</div>
+                            <div className="text-xs text-muted-foreground">{sl.sku}</div>
+                          </TableCell>
+                          <TableCell className="text-right">{sl.quantity}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {canInvoice && (
+        <Card data-testid="card-email-log">
+          <CardHeader>
+            <CardTitle>Email history</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {emailLogQuery.isLoading ? (
+              <Skeleton className="h-16 w-full" />
+            ) : emailLogQuery.data && emailLogQuery.data.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Sent</TableHead>
+                    <TableHead>Recipient</TableHead>
+                    <TableHead>Subject</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {emailLogQuery.data.map((e) => (
+                    <TableRow key={e.id} data-testid={`email-log-${e.id}`}>
+                      <TableCell>{formatDate(e.sentAt)}</TableCell>
+                      <TableCell>{e.recipient}</TableCell>
+                      <TableCell className="text-sm">{e.subject}</TableCell>
+                      <TableCell>
+                        <span
+                          className={
+                            e.status === "sent"
+                              ? "text-green-600 dark:text-green-400"
+                              : "text-red-600 dark:text-red-400"
+                          }
+                        >
+                          {e.status === "sent" ? "Sent" : "Failed"}
+                        </span>
+                        {e.errorMessage && (
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {e.errorMessage}
+                          </div>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No invoice emails sent yet. Use "Send to customer" to email this invoice.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      <Card data-testid="card-stock-history">
+        <CardHeader>
+          <CardTitle>Stock History</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {movementsQuery.isLoading ? (
+            <Skeleton className="h-20 w-full" />
+          ) : movementsQuery.data && movementsQuery.data.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Item</TableHead>
+                  <TableHead className="text-right">Quantity</TableHead>
+                  <TableHead>Notes</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {movementsQuery.data.map((m) => {
+                  const qty = Number(m.quantity);
+                  const isReturn = m.movementType === "sales_return";
+                  return (
+                    <TableRow key={m.id}>
+                      <TableCell>{formatDate(m.createdAt)}</TableCell>
+                      <TableCell>
+                        <span
+                          className={
+                            isReturn
+                              ? "text-green-600 dark:text-green-400"
+                              : "text-muted-foreground"
+                          }
+                        >
+                          {isReturn ? "Return" : "Sale"}
+                        </span>
+                      </TableCell>
+                      <TableCell>{m.itemName}</TableCell>
+                      <TableCell className="text-right font-medium">
+                        {qty > 0 ? `+${qty}` : qty}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {m.notes || "-"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No stock movements yet. They will appear here once the order ships.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+      {/* Hidden thermal receipt — only revealed by @media print */}
+      <SalesOrderThermalReceipt orderDetail={orderDetail as unknown as Parameters<typeof SalesOrderThermalReceipt>[0]["orderDetail"]} />
+    </div>
+  );
+}
+
+function formatSOReceiptDateTime(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  let h = d.getHours();
+  const ampm = h >= 12 ? "pm" : "am";
+  h = h % 12 || 12;
+  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}, ${pad(h)}.${pad(d.getMinutes())} ${ampm}`;
+}
+
+const SO_CHANNEL_LABELS: Record<string, string> = {
+  pos: "POS",
+  walkin: "Walk-in",
+  website: "Website",
+  store: "Store",
+  whatsapp: "WhatsApp",
+  phone: "Phone",
+  instagram: "Instagram",
+  other: "Other",
+};
+const SO_PAYMENT_LABELS: Record<string, string> = {
+  cash: "Cash",
+  upi: "UPI",
+  card: "Card",
+  bank: "Bank Transfer",
+  razorpay: "Razorpay",
+};
+
+function SalesOrderThermalReceipt({
+  orderDetail,
+}: {
+  orderDetail: {
+    order: Record<string, unknown>;
+    customerPhone?: string | null;
+    lines: Record<string, unknown>[];
+  } | null | undefined;
+}) {
+  const { data: org } = useGetCurrentOrganization();
+  const { data: me } = useGetMe();
+  const orgAny = org as unknown as Record<string, string | null | undefined> | undefined;
+  const { src: logoSrc } = useImageSrc(orgAny?.thermalLogoUrl ?? org?.logoUrl);
+  const orderId = orderDetail ? Number((orderDetail.order as Record<string, unknown>).id) : 0;
+  const { data: payments } = useListCustomerPayments(
+    { salesOrderId: orderId },
+    { query: { enabled: !!orderId } as any },
+  );
+
+  if (!orderDetail) return null;
+
+  const { order, lines, customerPhone } = orderDetail as {
+    order: {
+      id: number;
+      orderNumber: string;
+      customerName?: string | null;
+      walkinName?: string | null;
+      saleChannel?: string | null;
+      taxTotal: string | number;
+      total: string | number;
+      subtotal: string | number;
+      discountTotal?: string | number | null;
+    };
+    customerPhone?: string | null;
+    lines: {
+      itemName: string;
+      sku: string;
+      quantity: string | number;
+      unitPrice: string | number;
+      discountAmount?: string | number | null;
+    }[];
+  };
+
+  const cashier = me?.user?.name || me?.user?.email || "";
+  const addressParts = [
+    org?.addressLine1,
+    org?.addressLine2,
+    [org?.city, org?.state, org?.postalCode].filter(Boolean).join(" "),
+    org?.country,
+  ].filter((p): p is string => !!p && p.trim().length > 0);
+
+  const totalQty = lines.reduce((s, l) => s + Number(l.quantity), 0);
+  const lineData = lines.map((l) => {
+    const qty = Number(l.quantity);
+    const price = Number(l.unitPrice);
+    const gross = qty * price;
+    const disc = Number(l.discountAmount ?? 0);
+    return { ...l, qty, price, gross, disc };
+  });
+
+  const tax = Number(order.taxTotal);
+  const total = Number(order.total);
+  const subtotal = Number(order.subtotal);
+  const discTotal = Number(order.discountTotal ?? 0);
+  const totalPaid = (payments ?? []).reduce((s, p) => s + Number(p.amount), 0);
+  const balanceDue = Math.max(0, total - totalPaid);
+
+  return (
+    <>
+      <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          #_so_thermal_, #_so_thermal_ * { visibility: visible !important; }
+          #_so_thermal_ {
+            display: block !important;
+            position: absolute !important;
+            left: 0; top: 0;
+            width: 72mm;
+            padding: 3mm 4mm;
+            font-family: Georgia, 'Times New Roman', serif;
+            font-size: 9pt;
+            line-height: 1.35;
+            color: #000;
+            background: #fff;
+          }
+          @page { size: 72mm auto; margin: 0; }
+        }
+        #_so_thermal_ { display: none; }
+        #_so_thermal_ .center { text-align: center; }
+        #_so_thermal_ .bold { font-weight: 700; }
+        #_so_thermal_ .small { font-size: 8pt; }
+        #_so_thermal_ .xs { font-size: 7pt; }
+        #_so_thermal_ .logo {
+          max-width: 38mm; max-height: 20mm; object-fit: contain;
+          display: inline-block; margin-bottom: 1mm;
+        }
+        #_so_thermal_ .biz-name {
+          font-size: 15pt; font-weight: 700; letter-spacing: 0.3px; margin-top: 1mm;
+        }
+        #_so_thermal_ .title {
+          font-size: 11pt; font-weight: 700; margin: 1.5mm 0 0.5mm;
+        }
+        #_so_thermal_ .sep { border-top: 1px dashed #000; margin: 1.5mm 0; }
+        #_so_thermal_ .kv { display: flex; gap: 2mm; }
+        #_so_thermal_ .kv > span:first-child { width: 28mm; flex-shrink: 0; }
+        #_so_thermal_ table { width: 100%; border-collapse: collapse; }
+        #_so_thermal_ th, #_so_thermal_ td {
+          text-align: left; padding: 0.6mm 0; vertical-align: top;
+        }
+        #_so_thermal_ th.r, #_so_thermal_ td.r { text-align: right; padding-left: 3mm; }
+        #_so_thermal_ thead th { border-bottom: 1px solid #000; }
+        #_so_thermal_ tfoot td { padding-top: 1mm; }
+        #_so_thermal_ .total-row td {
+          border-top: 1px solid #000; font-size: 11.5pt; font-weight: 700; padding-top: 1mm;
+        }
+        #_so_thermal_ .disc-row td { font-size: 8pt; color: #444; }
+        #_so_thermal_ .footer-web {
+          font-weight: 700; font-size: 11pt; margin-top: 1mm;
+        }
+      `}</style>
+      <div id="_so_thermal_" style={{ display: "none" }}>
+        {logoSrc && (
+          <div className="center">
+            <img src={logoSrc} alt="" className="logo" />
+          </div>
+        )}
+        {org?.name && <div className="center biz-name">{org.name}</div>}
+        {addressParts.map((p, i) => (
+          <div className="center small" key={i}>{p}</div>
+        ))}
+        {org?.gstNumber && (
+          <div className="center small">GSTIN : {org.gstNumber}</div>
+        )}
+        <div className="center title">Retail Invoice</div>
+        <div className="sep" />
+        <div className="kv">
+          <span>Date</span>
+          <span>: {formatSOReceiptDateTime(new Date())}</span>
+        </div>
+        <div className="kv">
+          <span>Bill No</span>
+          <span>: {order.orderNumber}</span>
+        </div>
+        {cashier && (
+          <div className="kv">
+            <span>Cashier</span>
+            <span>: {cashier}</span>
+          </div>
+        )}
+        {(order.walkinName || (order.customerName && order.customerName !== "Walk-in Customer")) && (
+          <div className="kv bold">
+            <span>Customer</span>
+            <span>: {order.walkinName || order.customerName}</span>
+          </div>
+        )}
+        {customerPhone && (
+          <div className="kv bold">
+            <span>Phone</span>
+            <span>: {customerPhone}</span>
+          </div>
+        )}
+        {order.saleChannel && order.saleChannel !== "pos" && (
+          <div className="kv small">
+            <span>Channel</span>
+            <span>: {SO_CHANNEL_LABELS[order.saleChannel] ?? order.saleChannel}</span>
+          </div>
+        )}
+        <div className="sep" />
+        <table>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th className="r">Qty</th>
+              <th className="r">Price</th>
+              <th className="r">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lineData.map((l, i) => (
+              <Fragment key={i}>
+                <tr>
+                  <td>
+                    {l.itemName}
+                    <div className="xs">{l.sku}</div>
+                  </td>
+                  <td className="r">{l.qty}</td>
+                  <td className="r">{l.price.toFixed(2)}</td>
+                  <td className="r">{l.gross.toFixed(2)}</td>
+                </tr>
+                {l.disc > 0 && (
+                  <tr className="disc-row">
+                    <td colSpan={3} style={{ paddingLeft: "3mm" }}>(-) Item Discount</td>
+                    <td className="r">-{l.disc.toFixed(2)}</td>
+                  </tr>
+                )}
+              </Fragment>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td className="bold">Sub Total</td>
+              <td className="r bold">{totalQty}</td>
+              <td />
+              <td className="r bold">{subtotal.toFixed(2)}</td>
+            </tr>
+            {discTotal > 0 && (
+              <tr>
+                <td colSpan={3}>(-) Order Discount</td>
+                <td className="r">-{discTotal.toFixed(2)}</td>
+              </tr>
+            )}
+            {tax > 0 && (
+              <tr>
+                <td colSpan={3}>Tax</td>
+                <td className="r">{tax.toFixed(2)}</td>
+              </tr>
+            )}
+            <tr className="total-row">
+              <td colSpan={3}>TOTAL</td>
+              <td className="r">RS {total.toFixed(2)}</td>
+            </tr>
+            {(payments ?? []).length > 0 && (payments ?? []).map((p, i) => (
+              <tr key={i}>
+                <td colSpan={3}>{SO_PAYMENT_LABELS[p.mode ?? ""] ?? (p.mode ?? "Payment")}</td>
+                <td className="r">{Number(p.amount).toFixed(2)}</td>
+              </tr>
+            ))}
+            {balanceDue > 0 && (
+              <tr>
+                <td colSpan={3}>Balance Due</td>
+                <td className="r">{balanceDue.toFixed(2)}</td>
+              </tr>
+            )}
+          </tfoot>
+        </table>
+        <div className="sep" />
+        {org?.invoiceFooter && (
+          <div className="center footer-web">{org.invoiceFooter}</div>
+        )}
+        <div className="center small">Thank you for your purchase</div>
+        <div className="center xs">This is a Computer Generated Invoice</div>
+      </div>
+    </>
+  );
+}

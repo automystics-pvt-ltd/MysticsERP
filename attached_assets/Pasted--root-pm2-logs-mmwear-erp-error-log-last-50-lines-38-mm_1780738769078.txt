@@ -1,0 +1,58 @@
+/root/.pm2/logs/mmwear-erp-error.log last 50 lines:
+38|mmwear- |     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+38|mmwear- |     at async node:internal/modules/esm/loader:633:26
+38|mmwear- | Error: APP_ENCRYPTION_KEY is required for session signing. Set a long random secret.
+38|mmwear- |     at buildSessionMiddleware (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/lib/sessions.ts:39:11)
+38|mmwear- |     at <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/app.ts:38:9)
+38|mmwear- |     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+38|mmwear- |     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+38|mmwear- |     at async node:internal/modules/esm/loader:633:26
+38|mmwear- | Error: APP_ENCRYPTION_KEY is required for session signing. Set a long random secret.
+38|mmwear- |     at buildSessionMiddleware (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/lib/sessions.ts:39:11)
+38|mmwear- |     at <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/app.ts:38:9)
+38|mmwear- |     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+38|mmwear- |     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+38|mmwear- |     at async node:internal/modules/esm/loader:633:26
+38|mmwear- | Error: APP_ENCRYPTION_KEY is required for session signing. Set a long random secret.
+38|mmwear- |     at buildSessionMiddleware (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/lib/sessions.ts:39:11)
+38|mmwear- |     at <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/app.ts:38:9)
+38|mmwear- |     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+38|mmwear- |     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+38|mmwear- |     at async node:internal/modules/esm/loader:633:26
+38|mmwear- | Error: APP_ENCRYPTION_KEY is required for session signing. Set a long random secret.
+38|mmwear- |     at buildSessionMiddleware (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/lib/sessions.ts:39:11)
+38|mmwear- |     at <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/app.ts:38:9)
+38|mmwear- |     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+38|mmwear- |     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+38|mmwear- |     at async node:internal/modules/esm/loader:633:26
+38|mmwear- | Error: APP_ENCRYPTION_KEY is required for session signing. Set a long random secret.
+38|mmwear- |     at buildSessionMiddleware (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/lib/sessions.ts:39:11)
+38|mmwear- |     at <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/app.ts:38:9)
+38|mmwear- |     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+38|mmwear- |     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+38|mmwear- |     at async node:internal/modules/esm/loader:633:26
+38|mmwear- | Error: APP_ENCRYPTION_KEY is required for session signing. Set a long random secret.
+38|mmwear- |     at buildSessionMiddleware (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/lib/sessions.ts:39:11)
+38|mmwear- |     at <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/app.ts:38:9)
+38|mmwear- |     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+38|mmwear- |     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+38|mmwear- |     at async node:internal/modules/esm/loader:633:26
+38|mmwear- | Error: APP_ENCRYPTION_KEY is required for session signing. Set a long random secret.
+38|mmwear- |     at buildSessionMiddleware (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/lib/sessions.ts:39:11)
+38|mmwear- |     at <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/app.ts:38:9)
+38|mmwear- |     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+38|mmwear- |     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+38|mmwear- |     at async node:internal/modules/esm/loader:633:26
+38|mmwear- | Error: APP_ENCRYPTION_KEY is required for session signing. Set a long random secret.
+38|mmwear- |     at buildSessionMiddleware (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/lib/sessions.ts:39:11)
+38|mmwear- |     at <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/app.ts:38:9)
+38|mmwear- |     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+38|mmwear- |     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+38|mmwear- |     at async node:internal/modules/esm/loader:633:26
+
+38|mmwear-erp  | Error: APP_ENCRYPTION_KEY is required for session signing. Set a long random secret.
+38|mmwear-erp  |     at buildSessionMiddleware (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/lib/sessions.ts:39:11)
+38|mmwear-erp  |     at <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/app.ts:38:9)
+38|mmwear-erp  |     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+38|mmwear-erp  |     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+38|mmwear-erp  |     at async node:internal/modules/esm/loader:633:26
