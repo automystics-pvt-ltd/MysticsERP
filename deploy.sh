@@ -61,22 +61,10 @@ echo ""
 
 # ── 1. Pull latest code ───────────────────────────────────────────────────────
 info "Step 1/7 — git pull"
-# Stash any local modifications so git pull doesn't abort (e.g. ecosystem.config.cjs
-# edited on-server, or tsbuildinfo files left dirty). The stash is popped after the
-# pull so intentional server-side tweaks aren't silently thrown away.
-STASH_MSG="deploy-sh-autostash-$(date +%s)"
-STASHED=false
-if ! git diff --quiet || ! git diff --cached --quiet; then
-  warn "Local modifications detected — stashing before pull"
-  git stash push -u -m "$STASH_MSG"
-  STASHED=true
-fi
-
-git pull --ff-only || fail "git pull failed. Resolve conflicts manually."
-
-if $STASHED; then
-  git stash pop || warn "Stash pop had conflicts — your local changes are still in 'git stash list'. Resolve manually if needed."
-fi
+# Use fetch + reset instead of pull --ff-only so force-pushed branches never
+# cause "not fast-forward" failures on the server.
+git fetch origin
+git reset --hard origin/main
 ok "Code updated"
 
 # ── 2. Install dependencies ───────────────────────────────────────────────────
