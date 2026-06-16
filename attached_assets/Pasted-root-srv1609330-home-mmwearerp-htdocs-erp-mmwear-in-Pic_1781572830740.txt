@@ -1,0 +1,27 @@
+root@srv1609330:/home/mmwearerp/htdocs/erp.mmwear.in# # Pick an unused port (e.g. 7501)
+sed -i 's/^PORT=.*/PORT=7501/' /home/mmwearerp/htdocs/erp.mmwear.in/.env
+pm2 restart mmwear-erp --update-env
+sleep 4
+curl -s http://localhost:7501/api/health
+[PM2] Applying action restartProcessId on app [mmwear-erp](ids: [ 53 ])
+[PM2] [mmwear-erp](53) ✓
+┌────┬───────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name                  │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+├────┼───────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
+│ 2  │ automystics-api       │ default     │ 0.0.0   │ fork    │ 1854097  │ 10h    │ 29   │ online    │ 0.3%     │ 97.5mb   │ root     │ disabled │
+│ 37 │ erp-automystics       │ default     │ N/A     │ fork    │ 3366958  │ 5D     │ 10   │ online    │ 0%       │ 115.1mb  │ root     │ disabled │
+│ 0  │ fitro360              │ default     │ 1.0.0   │ fork    │ 1854077  │ 10h    │ 29   │ online    │ 3.4%     │ 112.2mb  │ root     │ disabled │
+│ 1  │ kalvicore-api         │ default     │ 0.0.0   │ fork    │ 1854089  │ 10h    │ 29   │ online    │ 3.8%     │ 118.6mb  │ root     │ disabled │
+│ 53 │ mmwear-erp            │ default     │ 0.0.0   │ fork    │ 1998316  │ 0s     │ 3    │ online    │ 0%       │ 26.9mb   │ root     │ disabled │
+│ 18 │ mysticscivil-api      │ default     │ N/A     │ fork    │ 0        │ 0      │ 14   │ errored   │ 0%       │ 0b       │ root     │ disabled │
+│ 11 │ mysticshr-api         │ default     │ 0.0.0   │ fork    │ 1854128  │ 10h    │ 1192 │ online    │ 3.8%     │ 282.0mb  │ root     │ disabled │
+│ 39 │ mysticsinventory      │ default     │ N/A     │ fork    │ 0        │ 0      │ 54   │ errored   │ 0%       │ 0b       │ root     │ disabled │
+│ 4  │ people-connect-api    │ default     │ 0.0.0   │ fork    │ 1854112  │ 10h    │ 30   │ online    │ 3.4%     │ 200.7mb  │ root     │ disabled │
+│ 23 │ solarnexus-api        │ default     │ 0.0.0   │ fork    │ 485949   │ 5D     │ 13   │ online    │ 3.4%     │ 139.2mb  │ root     │ disabled │
+│ 6  │ tkprabhu-api          │ default     │ 0.0.0   │ fork    │ 0        │ 0      │ 52   │ errored   │ 0%       │ 0b       │ root     │ disabled │
+│ 32 │ ungalrajeev-api       │ default     │ N/A     │ fork    │ 0        │ 0      │ 11   │ errored   │ 0%       │ 0b       │ root     │ disabled │
+│ 25 │ ungaludan-sarath      │ default     │ 0.0.0   │ fork    │ 433751   │ 5D     │ 12   │ online    │ 3.4%     │ 211.1mb  │ root     │ disabled │
+│ 33 │ ungalvignesh-api      │ default     │ N/A     │ fork    │ 1998303  │ 1s     │ 491… │ online    │ 0%       │ 61.0mb   │ root     │ disabled │
+│ 34 │ ungalvignesh-api      │ default     │ N/A     │ fork    │ 3366905  │ 5D     │ 228… │ online    │ 0%       │ 115.5mb  │ root     │ disabled │
+└────┴───────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+root@srv1609330:/home/mmwearerp/htdocs/erp.mmwear.in# 
