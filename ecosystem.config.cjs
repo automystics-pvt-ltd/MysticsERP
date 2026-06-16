@@ -2,10 +2,9 @@ module.exports = {
   apps: [
     {
       name: "mmwear-erp",
-      script: "artifacts/api-server/dist/index.mjs",
+      script: "/home/mmwearerp/htdocs/erp.mmwear.in/start-prod.sh",
+      interpreter: "bash",
       cwd: "/home/mmwearerp/htdocs/erp.mmwear.in",
-      node_args: "--enable-source-maps",
-      env_file: "/home/mmwearerp/htdocs/erp.mmwear.in/.env",
       watch: false,
       autorestart: true,
       max_restarts: 10,
