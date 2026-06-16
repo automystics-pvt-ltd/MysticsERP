@@ -412,11 +412,11 @@ export function Sidebar({
               </div>
             )}
             {!collapsed && (
-              <div className="flex flex-col leading-tight min-w-0 overflow-hidden">
+              <div className="flex flex-col leading-tight min-w-0">
                 <span className="text-[14px] font-semibold tracking-tight text-sidebar-foreground truncate">
                   {org?.name ?? "MM Wear"}
                 </span>
-                <span className="text-[9px] font-semibold tracking-[0.08em] uppercase whitespace-nowrap bg-gradient-to-r from-violet-400 via-fuchsia-400 to-pink-400 bg-clip-text text-transparent">
+                <span className="text-[8px] font-semibold tracking-[0.04em] uppercase whitespace-nowrap bg-gradient-to-r from-violet-400 via-fuchsia-400 to-pink-400 bg-clip-text text-transparent">
                   ✦ Powered by Automystics
                 </span>
               </div>
