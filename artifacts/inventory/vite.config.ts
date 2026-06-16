@@ -51,6 +51,9 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    // Raise the warning threshold slightly — this app has many large page
+    // bundles and the vendor splitting below keeps them well under 1 MB.
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       onwarn(warning, defaultHandler) {
         // shadcn/ui components are copied files with no resolvable source maps —
@@ -64,6 +67,46 @@ export default defineConfig({
           return;
         }
         defaultHandler(warning);
+      },
+      output: {
+        // Split large vendor libraries into stable, cacheable chunks so that a
+        // deploy that only changes application code doesn't bust the browser
+        // cache for react/tanstack-query/recharts/etc.
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+
+          // Clerk — auth SDK is large and changes rarely
+          if (id.includes("@clerk/")) return "vendor-clerk";
+
+          // Charting — recharts + d3 helpers are heavy
+          if (
+            id.includes("recharts") ||
+            id.includes("/d3-") ||
+            id.includes("d3-shape") ||
+            id.includes("victory-vendor")
+          )
+            return "vendor-charts";
+
+          // TanStack — query, table, virtual
+          if (id.includes("@tanstack/")) return "vendor-query";
+
+          // Radix UI primitives (used by shadcn/ui)
+          if (id.includes("@radix-ui/")) return "vendor-radix";
+
+          // React + react-dom — smallest possible core chunk
+          if (
+            id.includes("/react-dom/") ||
+            id.includes("/react/") ||
+            id.match(/node_modules\/react[^-]/)
+          )
+            return "vendor-react";
+
+          // Lucide icons — large icon set
+          if (id.includes("lucide-react")) return "vendor-icons";
+
+          // Everything else in node_modules
+          return "vendor";
+        },
       },
     },
   },

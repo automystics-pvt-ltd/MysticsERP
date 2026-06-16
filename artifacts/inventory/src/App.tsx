@@ -166,15 +166,23 @@ function UnauthenticatedNavigator() {
 function RoleGate({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { data: me } = useGetMe();
-  const { data: perms } = useMyPermissions();
-  // While we don't yet know the user/permissions, render children — most users
-  // are owners/admins and waiting would flash a fallback. The server enforces.
-  if (!me) return <>{children}</>;
-  if (me.user.isSuperAdmin) return <>{children}</>;
+  const { data: perms, isLoading: permsLoading } = useMyPermissions();
+
+  // Super-admin bypass — no permission check needed.
+  if (me?.user.isSuperAdmin) return <>{children}</>;
+
+  // Resolve the module early: if the path isn't guarded, render immediately
+  // without waiting for permissions (avoids unnecessary loading flash).
+  const mod = pathToModule(location);
+  if (!mod) return <>{children}</>;
+
+  // Path is guarded. Wait for both user identity and permissions before
+  // deciding. This prevents briefly showing restricted content to users who
+  // will be denied, and prevents briefly showing AccessDenied to users who
+  // will be allowed — both cause confusing flashes on cold-cache page loads.
+  if (!me || permsLoading) return <RouteFallback />;
   if (!perms) return <>{children}</>;
 
-  const mod = pathToModule(location);
-  if (!mod) return <>{children}</>; // unrecognised path — allow through
   const hasAccess = (perms.permissions[mod]?.length ?? 0) > 0;
   if (!hasAccess) return <AccessDenied />;
   return <>{children}</>;

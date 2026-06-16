@@ -3,7 +3,7 @@ modules = ["nodejs-20", "web", "bash", "python-3.11", "postgresql-16"]
 [deployment]
 router = "application"
 deploymentTarget = "autoscale"
-run = ["bash", "-c", "NODE_ENV=production exec node --enable-source-maps --env-file-if-exists=.env artifacts/api-server/dist/index.mjs"]
+run = ["bash", "-c", "PORT=${PORT:-8080} NODE_ENV=production exec node --enable-source-maps --env-file-if-exists=.env artifacts/api-server/dist/index.mjs"]
 build = ["bash", "-c", "pnpm --filter @workspace/inventory run build && pnpm --filter @workspace/api-server run build"]
 
 [deployment.postBuild]
