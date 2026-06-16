@@ -15,6 +15,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT }}
+          debug: true
           script: |
             cd ${{ secrets.APP_DIR }}
             PM2_APP=${{ secrets.PM2_APP }} bash deploy.sh
