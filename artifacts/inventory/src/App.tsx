@@ -269,7 +269,7 @@ function ProtectedRoutes() {
           <Route path="/accept-invitation" component={AcceptInvitation} />
           <Route path="/settings/barcode" component={BarcodeSettings} />
           <Route path="/settings/appearance" component={AppearanceSettings} />
-          <Route path="/settings/roles"><Redirect to="/team" /></Route>
+          <Route path="/settings/roles" component={lazy(() => import("@/pages/RolePermissionsPage"))} />
           <Route path="/approvals" component={PendingApprovals} />
           <Route path="/settings/approval-workflows" component={ApprovalWorkflows} />
           <Route path="/settings/audit-log" component={AuditLog} />

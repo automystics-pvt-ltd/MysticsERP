@@ -118,6 +118,7 @@ const navSections: NavSection[] = [
     label: "Workspace",
     items: [
       { name: "Users & Roles", href: "/team", icon: UserCog, module: "team" },
+      { name: "Roles & Permissions", href: "/settings/roles", icon: ShieldCheck, module: "roles" },
       { name: "Integrations", href: "/integrations", icon: Blocks, module: "integrations" },
       { name: "POS Counters", href: "/pos/counters", icon: Boxes, module: "pos" },
       { name: "Approval Workflows", href: "/settings/approval-workflows", icon: GitMerge, module: "settings" },

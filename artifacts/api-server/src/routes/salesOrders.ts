@@ -74,6 +74,10 @@ router.get("/sales-orders", async (req, res, next) => {
       const rawStatus = String(req.query.status);
       if (rawStatus === "outstanding") {
         conds.push(inArray(salesOrdersTable.status, ["confirmed", "partially_shipped", "shipped", "delivered", "invoiced"]));
+      } else if (rawStatus.includes(",")) {
+        // Comma-separated list e.g. "confirmed,partially_shipped"
+        const statuses = rawStatus.split(",").map((s) => s.trim()).filter(Boolean);
+        conds.push(inArray(salesOrdersTable.status, statuses));
       } else {
         conds.push(eq(salesOrdersTable.status, rawStatus));
       }
