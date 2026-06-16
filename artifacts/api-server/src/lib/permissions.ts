@@ -409,6 +409,10 @@ export const ROUTE_POLICIES: readonly RoutePolicy[] = [
   // Sales order PDF/print — must appear before the general sales-orders catch-all
   { methods: ANY_METHOD, pattern: /^\/sales-orders\/[^/]+\/(pdf|invoice\.pdf)(\/|$)/, module: "sales_orders", action: "print" },
 
+  // Fulfillments (Pick → Pack → Dispatch) — writes need edit, reads need view
+  { methods: WRITE_METHODS, pattern: /^\/fulfillments(\/|$)/, module: "sales_orders", action: "edit" },
+  { methods: ANY_METHOD,    pattern: /^\/fulfillments(\/|$)/, module: "sales_orders", action: "view" },
+
   // Shipments — writes need approve, reads need view
   { methods: WRITE_METHODS, pattern: /^\/shipments(\/|$)/, module: "sales_orders", action: "approve" },
   { methods: ANY_METHOD,    pattern: /^\/shipments(\/|$)/, module: "sales_orders", action: "view" },
