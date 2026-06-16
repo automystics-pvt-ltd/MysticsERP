@@ -37,3 +37,4 @@ export * from "./approvalRequests";
 export * from "./approvalNotifications";
 export * from "./stagedWriteOffs";
 export * from "./permissionChangeLog";
+export * from "./fulfillments";

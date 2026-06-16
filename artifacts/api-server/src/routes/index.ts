@@ -45,6 +45,7 @@ import approvalWorkflowsRouter from "./approvalWorkflows";
 import approvalRequestsRouter from "./approvalRequests";
 import approvalNotificationsRouter from "./approvalNotifications";
 import adminPurgeRouter from "./adminPurge";
+import fulfillmentsRouter from "./fulfillments";
 
 const router: IRouter = Router();
 
@@ -112,5 +113,6 @@ router.use(approvalWorkflowsRouter);
 router.use(approvalRequestsRouter);
 router.use(approvalNotificationsRouter);
 router.use(adminPurgeRouter);
+router.use(fulfillmentsRouter);
 
 export default router;

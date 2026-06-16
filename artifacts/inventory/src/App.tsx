@@ -99,6 +99,8 @@ const EmailSettingsPage = lazy(() => import("@/pages/EmailSettings"));
 const Team = lazy(() => import("@/pages/Team"));
 const AcceptInvitation = lazy(() => import("@/pages/AcceptInvitation"));
 const NotFound = lazy(() => import("@/pages/not-found"));
+const Fulfillments = lazy(() => import("@/pages/Fulfillments"));
+const FulfillmentDetail = lazy(() => import("@/pages/FulfillmentDetail"));
 const AuditLog = lazy(() => import("@/pages/AuditLog"));
 const ApprovalWorkflows = lazy(() => import("@/pages/ApprovalWorkflows"));
 const PendingApprovals = lazy(() => import("@/pages/PendingApprovals"));
@@ -215,6 +217,8 @@ function ProtectedRoutes() {
           <Route path="/pos/sessions/:id" component={PosSessionDetail} />
           <Route path="/pos/sessions" component={PosSessionList} />
           <Route path="/pos/counters" component={PosCounters} />
+          <Route path="/fulfillments" component={Fulfillments} />
+          <Route path="/fulfillments/:id" component={FulfillmentDetail} />
           <Route path="/sales-orders" component={SalesOrders} />
           <Route path="/sales-orders/new" component={SalesOrderNew} />
           <Route path="/sales-orders/:id/edit" component={SalesOrderEdit} />

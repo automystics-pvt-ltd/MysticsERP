@@ -29,6 +29,7 @@ import {
   ListChecks,
   PanelLeftClose,
   PanelLeftOpen,
+  PackageCheck,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -95,6 +96,7 @@ const navSections: NavSection[] = [
       { name: "POS", href: "/pos", icon: ScanLine, module: "pos" },
       { name: "Day Closing", href: "/pos/sessions", icon: CalendarCheck, module: "pos" },
       { name: "Sales Orders", href: "/sales-orders", icon: ShoppingCart, module: "sales_orders" },
+      { name: "Fulfillments", href: "/fulfillments", icon: PackageCheck, module: "sales_orders" },
       { name: "Payments", href: "/payments", icon: IndianRupee, module: "payments" },
       { name: "Customers", href: "/customers", icon: Users, module: "customers" },
     ],
