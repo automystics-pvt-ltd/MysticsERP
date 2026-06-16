@@ -416,7 +416,7 @@ export function Sidebar({
                 <span className="text-[14px] font-semibold tracking-tight text-sidebar-foreground truncate">
                   {org?.name ?? "MM Wear"}
                 </span>
-                <span className="text-[9px] font-semibold tracking-[0.08em] uppercase bg-gradient-to-r from-violet-400 via-fuchsia-400 to-pink-400 bg-clip-text text-transparent">
+                <span className="text-[9px] font-semibold tracking-[0.08em] uppercase whitespace-nowrap bg-gradient-to-r from-violet-400 via-fuchsia-400 to-pink-400 bg-clip-text text-transparent">
                   ✦ Powered by Automystics
                 </span>
               </div>
