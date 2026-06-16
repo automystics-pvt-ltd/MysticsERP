@@ -134,6 +134,52 @@ export const ACTION_LABELS: Record<Action, string> = {
   settings: "Settings",
 };
 
+// ─── Module groups (drives Roles & Permissions UI layout) ──────────────────
+// Any module added to MODULES that isn't listed here will auto-appear in
+// an "Other" group in the UI — no frontend code change required.
+
+export const MODULE_GROUPS: ReadonlyArray<{
+  label: string;
+  modules: readonly Module[];
+}> = [
+  { label: "Overview",   modules: ["dashboard"] },
+  { label: "Inventory",  modules: ["items", "warehouses", "barcodes", "write_offs"] },
+  { label: "Sales",      modules: ["sales_orders", "customers", "pos", "payments"] },
+  { label: "Purchasing", modules: ["purchase_orders", "suppliers", "supplier_payments"] },
+  { label: "Operations", modules: ["stock_transfers", "job_work"] },
+  { label: "Approvals",  modules: ["approvals"] },
+  { label: "Insights",   modules: ["reports"] },
+  { label: "Workspace",  modules: ["team", "integrations", "settings", "roles"] },
+];
+
+// ─── Applicable actions per module (drives which toggles show in UI) ───────
+// Only actions that make semantic sense for the module are listed here.
+// Non-applicable actions are still enforced by the backend if somehow set;
+// the UI simply doesn't show toggles for them, keeping the matrix clean.
+
+export const MODULE_APPLICABLE_ACTIONS: Record<Module, readonly Action[]> = {
+  dashboard:         ["view"],
+  items:             ["view", "create", "edit", "delete", "import", "export", "print"],
+  warehouses:        ["view", "create", "edit", "delete", "settings"],
+  barcodes:          ["view", "create", "export", "print"],
+  write_offs:        ["view", "create"],
+  sales_orders:      ["view", "create", "edit", "delete", "approve", "export", "print"],
+  customers:         ["view", "create", "edit", "delete", "import", "export"],
+  pos:               ["view", "create", "edit", "settings"],
+  payments:          ["view", "create", "edit", "delete", "export", "print"],
+  purchase_orders:   ["view", "create", "edit", "delete", "approve", "export", "print"],
+  suppliers:         ["view", "create", "edit", "delete", "import", "export"],
+  supplier_payments: ["view", "create", "edit", "delete", "export", "print"],
+  stock_transfers:   ["view", "create", "edit", "delete", "transfer", "print"],
+  job_work:          ["view", "create", "edit", "delete", "approve", "transfer"],
+  approvals:         ["view", "create", "edit", "approve", "settings"],
+  reports:           ["view", "export", "print"],
+  team:              ["view", "create", "edit", "delete", "settings"],
+  integrations:      ["view", "settings"],
+  settings:          ["view", "settings"],
+  roles:             ["view", "settings"],
+};
+
 // ─── Default permission matrix ─────────────────────────────────────────────
 
 const ALL_ACTIONS: Action[] = [...ACTIONS];

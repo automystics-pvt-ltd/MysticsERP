@@ -1,12 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
 import { useGetCurrentOrganization } from "@/lib/queryKeys";
 
+export interface ModuleGroup {
+  label: string;
+  modules: string[];
+}
+
 export interface PermissionsResponse {
   role: string;
   isSuperAdmin: boolean;
   permissions: Record<string, string[]>;
   modules: Record<string, string>;
   actions: Record<string, string>;
+  moduleGroups: ModuleGroup[];
+  moduleActions: Record<string, string[]>;
 }
 
 export function useMyPermissions() {
@@ -46,6 +53,6 @@ export function useCanI(module: string, action: string): boolean {
 export function useModuleActions(module: string): string[] {
   const { data } = useMyPermissions();
   if (!data) return [];
-  if (data.isSuperAdmin) return ["view", "create", "edit", "delete", "approve", "transfer", "import", "export", "print", "settings"];
+  if (data.isSuperAdmin) return Object.keys(data.actions);
   return data.permissions[module] ?? [];
 }

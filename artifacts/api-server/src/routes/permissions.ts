@@ -6,6 +6,8 @@ import {
   ACTIONS,
   MODULE_LABELS,
   ACTION_LABELS,
+  MODULE_GROUPS,
+  MODULE_APPLICABLE_ACTIONS,
   DEFAULT_PERMISSIONS,
   resolvePermissions,
   invalidatePermissionsCache,
@@ -59,6 +61,16 @@ router.get("/permissions/me", async (req, res) => {
         return acc;
       },
       {} as Record<string, string>,
+    ),
+    // Drives Roles & Permissions UI layout — auto-includes future modules in "Other"
+    moduleGroups: MODULE_GROUPS.map((g) => ({ label: g.label, modules: [...g.modules] })),
+    // Drives per-module action toggles — only shows relevant actions per module
+    moduleActions: MODULES.reduce(
+      (acc, m) => {
+        acc[m] = [...MODULE_APPLICABLE_ACTIONS[m]];
+        return acc;
+      },
+      {} as Record<string, string[]>,
     ),
   });
 });
@@ -116,6 +128,17 @@ router.get("/role-permissions", async (req, res) => {
     actions: ACTIONS,
     moduleLabels: MODULE_LABELS,
     actionLabels: ACTION_LABELS,
+    // Server-driven group layout — frontend renders these directly; new modules
+    // added to MODULE_GROUPS here will auto-appear in the UI with no frontend changes.
+    moduleGroups: MODULE_GROUPS.map((g) => ({ label: g.label, modules: [...g.modules] })),
+    // Per-module applicable actions — only semantically relevant toggles are shown.
+    moduleActions: MODULES.reduce(
+      (acc, m) => {
+        acc[m] = [...MODULE_APPLICABLE_ACTIONS[m]];
+        return acc;
+      },
+      {} as Record<string, string[]>,
+    ),
     roles: ROLE_VALUES,
     matrix,
   });

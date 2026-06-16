@@ -30,11 +30,18 @@ interface PermCell {
   isOverride: boolean;
 }
 
+interface ModuleGroup {
+  label: string;
+  modules: string[];
+}
+
 interface MatrixResponse {
   modules: string[];
   actions: string[];
   moduleLabels: Record<string, string>;
   actionLabels: Record<string, string>;
+  moduleGroups: ModuleGroup[];
+  moduleActions: Record<string, string[]>;
   roles: string[];
   matrix: Record<string, Record<string, Record<string, PermCell>>>;
 }
@@ -89,17 +96,6 @@ const ROLE_COLORS: Record<string, string> = {
   viewer: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
 };
 
-const MODULE_GROUPS: Array<{ label: string; modules: string[] }> = [
-  { label: "Overview", modules: ["dashboard"] },
-  { label: "Inventory", modules: ["items", "warehouses", "barcodes", "write_offs"] },
-  { label: "Sales", modules: ["sales_orders", "customers", "pos", "payments"] },
-  { label: "Purchasing", modules: ["purchase_orders", "suppliers", "supplier_payments"] },
-  { label: "Operations", modules: ["stock_transfers", "job_work"] },
-  { label: "Approvals", modules: ["approvals"] },
-  { label: "Insights", modules: ["reports"] },
-  { label: "Workspace", modules: ["team", "integrations", "settings", "roles"] },
-];
-
 function formatDateTime(iso: string) {
   return new Date(iso).toLocaleString(undefined, {
     dateStyle: "medium",
@@ -111,11 +107,32 @@ function capitalize(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-function moduleLabel(mod: string) {
-  return mod
-    .split("_")
-    .map((w) => capitalize(w))
-    .join(" ");
+function moduleLabel(mod: string, labels: Record<string, string>) {
+  return (
+    labels[mod] ??
+    mod
+      .split("_")
+      .map((w) => capitalize(w))
+      .join(" ")
+  );
+}
+
+/**
+ * Build the effective group list from the server-provided groups + all modules.
+ * Any module not placed in a known group is auto-collected into "Other" so new
+ * modules appear in the UI without any frontend code change.
+ */
+function buildEffectiveGroups(
+  serverGroups: ModuleGroup[],
+  allModules: string[],
+): ModuleGroup[] {
+  const placed = new Set(serverGroups.flatMap((g) => g.modules));
+  const unplaced = allModules.filter((m) => !placed.has(m));
+  const effective: ModuleGroup[] = serverGroups.filter((g) =>
+    g.modules.some((m) => allModules.includes(m)),
+  );
+  if (unplaced.length > 0) effective.push({ label: "Other", modules: unplaced });
+  return effective;
 }
 
 function ChangeHistoryTab({ orgId }: { orgId: number }) {
@@ -227,7 +244,7 @@ function ChangeHistoryTab({ orgId }: { orgId: number }) {
                           {ROLE_LABELS[entry.role] ?? capitalize(entry.role)}
                         </span>
                         <span className="text-muted-foreground">·</span>
-                        <span>{moduleLabel(entry.module)}</span>
+                        <span>{moduleLabel(entry.module, {})}</span>
                         <span className="text-muted-foreground">·</span>
                         <span>{capitalize(entry.action)}</span>
                         <Badge
@@ -385,26 +402,26 @@ export function RolePermissionsPanel() {
     },
   });
 
-  function getCell(role: string, module: string, action: string): PermCell {
-    const pendingKey = `${role}:${module}.${action}`;
+  function getCell(role: string, mod: string, action: string): PermCell {
+    const pendingKey = `${role}:${mod}.${action}`;
     if (pendingChanges.has(pendingKey)) {
       return pendingChanges.get(pendingKey)! as unknown as PermCell;
     }
-    return matrix?.matrix[role]?.[module]?.[action] ?? { granted: false, isOverride: false };
+    return matrix?.matrix[role]?.[mod]?.[action] ?? { granted: false, isOverride: false };
   }
 
-  function toggleCell(role: string, module: string, action: string) {
+  function toggleCell(role: string, mod: string, action: string) {
     if (!canEdit || role === "owner") return;
-    const current = getCell(role, module, action);
-    const original = matrix?.matrix[role]?.[module]?.[action];
+    const current = getCell(role, mod, action);
+    const original = matrix?.matrix[role]?.[mod]?.[action];
     const newGranted = !current.granted;
-    const key = `${role}:${module}.${action}`;
+    const key = `${role}:${mod}.${action}`;
     const newMap = new Map(pendingChanges);
 
     if (original && original.granted === newGranted && !original.isOverride) {
-      newMap.set(key, { role, module, action, granted: newGranted, isDefault: true });
+      newMap.set(key, { role, module: mod, action, granted: newGranted, isDefault: true });
     } else {
-      newMap.set(key, { role, module, action, granted: newGranted, isDefault: false });
+      newMap.set(key, { role, module: mod, action, granted: newGranted, isDefault: false });
     }
     setPendingChanges(newMap);
     setHasChanges(true);
@@ -432,9 +449,13 @@ export function RolePermissionsPanel() {
     return <AccessDenied description="You need the Roles & Permissions privilege to access this section." />;
   }
 
-  const actions = matrix?.actions ?? [];
   const moduleLabels = matrix?.moduleLabels ?? {};
   const actionLabels = matrix?.actionLabels ?? {};
+  const moduleActions = matrix?.moduleActions ?? {};
+  const allModules = matrix?.modules ?? [];
+
+  // Compute effective group layout: server groups + auto "Other" bucket for any future modules.
+  const effectiveGroups = buildEffectiveGroups(matrix?.moduleGroups ?? [], allModules);
 
   return (
     <Tabs defaultValue="permissions" className="flex flex-col gap-6">
@@ -485,7 +506,7 @@ export function RolePermissionsPanel() {
         {hasChanges && canEdit && (
           <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800 dark:bg-amber-950/30">
             <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
-              You have unsaved permission changes for {ROLE_LABELS[selectedRole]}
+              You have unsaved permission changes for {ROLE_LABELS[selectedRole] ?? selectedRole}
             </p>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={handleDiscard}>
@@ -512,10 +533,8 @@ export function RolePermissionsPanel() {
           </div>
         ) : (
           <div className="space-y-6">
-            {MODULE_GROUPS.map((group) => {
-              const groupModules = group.modules.filter((m) =>
-                (matrix?.modules ?? []).includes(m),
-              );
+            {effectiveGroups.map((group) => {
+              const groupModules = group.modules.filter((m) => allModules.includes(m));
               if (groupModules.length === 0) return null;
 
               return (
@@ -527,14 +546,17 @@ export function RolePermissionsPanel() {
                   </div>
                   <div className="divide-y">
                     {groupModules.map((mod) => {
-                      const modLabel = moduleLabels[mod] ?? mod;
+                      const modLabel = moduleLabel(mod, moduleLabels);
+                      // Only show the actions that are applicable for this module
+                      const applicableActions = moduleActions[mod] ?? Object.keys(actionLabels);
+
                       return (
-                        <div key={mod} className="grid grid-cols-[180px_1fr] items-center">
+                        <div key={mod} className="grid grid-cols-[200px_1fr] items-start">
                           <div className="flex items-center gap-2 px-4 py-3 border-r">
                             <span className="text-sm font-medium">{modLabel}</span>
                           </div>
-                          <div className="flex flex-wrap gap-x-6 gap-y-2 px-4 py-3">
-                            {actions.map((action) => {
+                          <div className="flex flex-wrap gap-x-5 gap-y-2.5 px-4 py-3">
+                            {applicableActions.map((action) => {
                               const cell = getCell(selectedRole, mod, action);
                               const isOwner = selectedRole === "owner";
                               const isPending = pendingChanges.has(`${selectedRole}:${mod}.${action}`);
@@ -542,7 +564,7 @@ export function RolePermissionsPanel() {
                               return (
                                 <div
                                   key={action}
-                                  className="flex items-center gap-2 min-w-[110px]"
+                                  className="flex items-center gap-2 min-w-[104px]"
                                 >
                                   <Switch
                                     checked={cell.granted}
@@ -562,7 +584,7 @@ export function RolePermissionsPanel() {
                                       isPending && "font-medium text-amber-600 dark:text-amber-400",
                                     )}
                                   >
-                                    {actionLabels[action] ?? action}
+                                    {actionLabels[action] ?? capitalize(action)}
                                     {cell.isOverride && !isPending && (
                                       <Tooltip>
                                         <TooltipTrigger asChild>
