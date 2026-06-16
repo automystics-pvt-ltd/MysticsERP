@@ -82,7 +82,9 @@ export function buildSessionMiddleware(): RequestHandler {
     store = new PgStore({
       pool,
       tableName: "session",
-      createTableIfMissing: false,
+      // Let connect-pg-simple recreate the table if it ever gets dropped
+      // (e.g. by a drizzle-kit push that ran before tablesFilter was set).
+      createTableIfMissing: true,
       // Sweep expired rows once an hour (default is 15 minutes — fine,
       // but explicit here so it's obvious in code review).
       pruneSessionInterval: 60 * 60,

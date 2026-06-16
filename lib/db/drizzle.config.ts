@@ -40,4 +40,8 @@ export default defineConfig({
   dbCredentials: {
     url: process.env.DATABASE_URL,
   },
+  // The "session" table is owned by connect-pg-simple (express-session),
+  // not by Drizzle. Without this filter drizzle-kit push will offer to
+  // DROP it every time, which breaks logins until the server restarts.
+  tablesFilter: ["!session"],
 });
