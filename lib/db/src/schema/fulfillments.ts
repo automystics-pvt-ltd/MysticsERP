@@ -124,3 +124,55 @@ export const fulfillmentLinesTable = pgTable(
 
 export type Fulfillment = typeof fulfillmentsTable.$inferSelect;
 export type FulfillmentLine = typeof fulfillmentLinesTable.$inferSelect;
+
+/**
+ * Audit log of every barcode/SKU scan attempt during the picking stage.
+ * Records both successful and failed scans for full traceability.
+ */
+export const fulfillmentScansTable = pgTable(
+  "fulfillment_scans",
+  {
+    id: serial("id").primaryKey(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .references(() => organizationsTable.id, { onDelete: "cascade" }),
+    fulfillmentId: integer("fulfillment_id")
+      .notNull()
+      .references(() => fulfillmentsTable.id, { onDelete: "cascade" }),
+    /** Null when the scanned code does not match any fulfillment line. */
+    fulfillmentLineId: integer("fulfillment_line_id").references(
+      () => fulfillmentLinesTable.id,
+      { onDelete: "set null" },
+    ),
+    /** Null when the code did not resolve to any item in the org. */
+    itemId: integer("item_id").references(() => itemsTable.id, {
+      onDelete: "set null",
+    }),
+    /** Raw code as scanned or typed (barcode, QR value, SKU). */
+    scannedCode: text("scanned_code").notNull(),
+    /**
+     * ok           – scan incremented quantityPicked by 1
+     * already_full – item was already at required qty; ignored
+     * not_found    – no item with this barcode/SKU in this org
+     * not_in_order – item found but not in this fulfillment
+     * wrong_stage  – fulfillment not in picking status
+     */
+    result: text("result").notNull(),
+    /** quantityPicked before this scan (null for failed scans). */
+    quantityBefore: numeric("quantity_before", { precision: 14, scale: 2 }),
+    /** quantityPicked after this scan (null for failed scans). */
+    quantityAfter: numeric("quantity_after", { precision: 14, scale: 2 }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    fulfillmentIdx: index("fulfillment_scans_fulfillment_idx").on(t.fulfillmentId),
+    orgFulfillmentIdx: index("fulfillment_scans_org_fulfillment_idx").on(
+      t.organizationId,
+      t.fulfillmentId,
+    ),
+  }),
+);
+
+export type FulfillmentScan = typeof fulfillmentScansTable.$inferSelect;

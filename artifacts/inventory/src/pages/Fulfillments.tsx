@@ -209,7 +209,7 @@ export default function Fulfillments() {
     <>
       <PageHeader
         title="Fulfillments"
-        subtitle="Pick, pack, and dispatch orders"
+        description="Pick, pack, and dispatch orders"
         actions={
           <Can module="sales_orders" action="create">
             <Button onClick={() => setDialogOpen(true)}>

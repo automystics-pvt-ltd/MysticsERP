@@ -12,6 +12,7 @@ import {
   stockMovementsTable,
   fulfillmentsTable,
   fulfillmentLinesTable,
+  fulfillmentScansTable,
   warehousesTable,
 } from "@workspace/db";
 import { tenantMiddleware } from "../lib/tenant";
@@ -39,6 +40,7 @@ function serializeFulfillmentLine(
   itemName: string,
   sku: string,
   barcode: string | null,
+  stockAvailable: number | null,
 ) {
   return {
     id: fl.id,
@@ -50,6 +52,7 @@ function serializeFulfillmentLine(
     barcode,
     quantityRequired: toNum(fl.quantityRequired),
     quantityPicked: toNum(fl.quantityPicked),
+    stockAvailable,
   };
 }
 
@@ -102,15 +105,26 @@ async function loadFulfillmentWithLines(orgId: number, fulfillmentId: number) {
   const row = rows[0];
   if (!row) return null;
 
+  const warehouseId = row.fulfillment.warehouseId;
+
   const lineRows = await db
     .select({
       fl: fulfillmentLinesTable,
       itemName: itemsTable.name,
       sku: itemsTable.sku,
       barcode: itemsTable.barcode,
+      stockQty: itemWarehouseStockTable.quantity,
     })
     .from(fulfillmentLinesTable)
     .innerJoin(itemsTable, eq(itemsTable.id, fulfillmentLinesTable.itemId))
+    .leftJoin(
+      itemWarehouseStockTable,
+      and(
+        eq(itemWarehouseStockTable.itemId, fulfillmentLinesTable.itemId),
+        eq(itemWarehouseStockTable.warehouseId, warehouseId),
+        eq(itemWarehouseStockTable.organizationId, orgId),
+      ),
+    )
     .where(
       and(
         eq(fulfillmentLinesTable.fulfillmentId, fulfillmentId),
@@ -126,7 +140,13 @@ async function loadFulfillmentWithLines(orgId: number, fulfillmentId: number) {
       row.shopifyOrderId,
     ),
     lines: lineRows.map((r) =>
-      serializeFulfillmentLine(r.fl, r.itemName, r.sku, r.barcode),
+      serializeFulfillmentLine(
+        r.fl,
+        r.itemName,
+        r.sku,
+        r.barcode,
+        r.stockQty !== null && r.stockQty !== undefined ? toNum(r.stockQty) : null,
+      ),
     ),
   };
 }
@@ -402,6 +422,7 @@ router.patch("/fulfillments/:id/lines", async (req, res, next) => {
 
 // ─── POST /fulfillments/:id/scan ──────────────────────────────────────────────
 // Scan a barcode/SKU and increment its matched line's quantityPicked by 1.
+// Every attempt (success or failure) is recorded in fulfillment_scans.
 // Body: { code: string }
 
 router.post("/fulfillments/:id/scan", async (req, res, next) => {
@@ -428,7 +449,15 @@ router.post("/fulfillments/:id/scan", async (req, res, next) => {
         .limit(1);
       const f = fRows[0];
       if (!f) return { kind: "notfound" as const };
+
       if (f.status !== "picking") {
+        // Record wrong_stage scan
+        await tx.insert(fulfillmentScansTable).values({ // org-scope-allow: organizationId explicitly set
+          organizationId: t.organizationId,
+          fulfillmentId,
+          scannedCode: code,
+          result: "wrong_stage",
+        });
         return { kind: "bad" as const, message: "Can only scan during picking stage." };
       }
 
@@ -445,6 +474,12 @@ router.post("/fulfillments/:id/scan", async (req, res, next) => {
         .limit(1);
       const item = itemRows[0];
       if (!item) {
+        await tx.insert(fulfillmentScansTable).values({ // org-scope-allow: organizationId explicitly set
+          organizationId: t.organizationId,
+          fulfillmentId,
+          scannedCode: code,
+          result: "not_found",
+        });
         return { kind: "notfound_item" as const, code };
       }
 
@@ -462,13 +497,40 @@ router.post("/fulfillments/:id/scan", async (req, res, next) => {
         .limit(1);
       const line = lineRows[0];
       if (!line) {
+        await tx.insert(fulfillmentScansTable).values({ // org-scope-allow: organizationId explicitly set
+          organizationId: t.organizationId,
+          fulfillmentId,
+          itemId: item.id,
+          scannedCode: code,
+          result: "not_in_order",
+        });
         return { kind: "not_in_order" as const, itemName: item.name, sku: item.sku };
       }
 
-      const newQty = Math.min(
-        toNum(line.quantityPicked) + 1,
-        toNum(line.quantityRequired),
-      );
+      const pickedBefore = toNum(line.quantityPicked);
+      const required = toNum(line.quantityRequired);
+
+      // Already at full quantity — record and return informative error
+      if (pickedBefore >= required) {
+        await tx.insert(fulfillmentScansTable).values({ // org-scope-allow: organizationId explicitly set
+          organizationId: t.organizationId,
+          fulfillmentId,
+          fulfillmentLineId: line.id,
+          itemId: item.id,
+          scannedCode: code,
+          result: "already_full",
+          quantityBefore: toStr(pickedBefore),
+          quantityAfter: toStr(pickedBefore),
+        });
+        return {
+          kind: "already_full" as const,
+          itemName: item.name,
+          sku: item.sku,
+          quantityRequired: required,
+        };
+      }
+
+      const newQty = pickedBefore + 1;
       await tx
         .update(fulfillmentLinesTable)
         .set({ quantityPicked: toStr(newQty) })
@@ -479,13 +541,25 @@ router.post("/fulfillments/:id/scan", async (req, res, next) => {
           ),
         );
 
+      // Record successful scan
+      await tx.insert(fulfillmentScansTable).values({ // org-scope-allow: organizationId explicitly set
+        organizationId: t.organizationId,
+        fulfillmentId,
+        fulfillmentLineId: line.id,
+        itemId: item.id,
+        scannedCode: code,
+        result: "ok",
+        quantityBefore: toStr(pickedBefore),
+        quantityAfter: toStr(newQty),
+      });
+
       return {
         kind: "ok" as const,
         lineId: line.id,
         itemName: item.name,
         sku: item.sku,
         quantityPicked: newQty,
-        quantityRequired: toNum(line.quantityRequired),
+        quantityRequired: required,
       };
     });
 
@@ -503,9 +577,79 @@ router.post("/fulfillments/:id/scan", async (req, res, next) => {
       });
       return;
     }
+    if (result.kind === "already_full") {
+      res.status(400).json({
+        error: `'${result.itemName}' is already fully picked (${result.quantityRequired}/${result.quantityRequired}).`,
+      });
+      return;
+    }
 
     const data = await loadFulfillmentWithLines(t.organizationId, fulfillmentId);
     res.json({ ...data, scanned: result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── GET /fulfillments/:id/scans ──────────────────────────────────────────────
+// Return the full audit trail of scan attempts for this fulfillment.
+
+router.get("/fulfillments/:id/scans", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const fulfillmentId = Number(req.params.id);
+
+    // Verify fulfillment belongs to org
+    const fRows = await db
+      .select({ id: fulfillmentsTable.id })
+      .from(fulfillmentsTable)
+      .where(
+        and(
+          eq(fulfillmentsTable.id, fulfillmentId),
+          eq(fulfillmentsTable.organizationId, t.organizationId),
+        ),
+      )
+      .limit(1);
+    if (!fRows[0]) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const scans = await db
+      .select({
+        id: fulfillmentScansTable.id,
+        scannedCode: fulfillmentScansTable.scannedCode,
+        result: fulfillmentScansTable.result,
+        fulfillmentLineId: fulfillmentScansTable.fulfillmentLineId,
+        quantityBefore: fulfillmentScansTable.quantityBefore,
+        quantityAfter: fulfillmentScansTable.quantityAfter,
+        createdAt: fulfillmentScansTable.createdAt,
+        itemName: itemsTable.name,
+        sku: itemsTable.sku,
+      })
+      .from(fulfillmentScansTable)
+      .leftJoin(itemsTable, eq(itemsTable.id, fulfillmentScansTable.itemId))
+      .where(
+        and(
+          eq(fulfillmentScansTable.organizationId, t.organizationId), // org-scope-allow: explicit org filter
+          eq(fulfillmentScansTable.fulfillmentId, fulfillmentId),
+        ),
+      )
+      .orderBy(desc(fulfillmentScansTable.createdAt));
+
+    res.json(
+      scans.map((s) => ({
+        id: s.id,
+        scannedCode: s.scannedCode,
+        result: s.result,
+        fulfillmentLineId: s.fulfillmentLineId,
+        itemName: s.itemName ?? null,
+        sku: s.sku ?? null,
+        quantityBefore: s.quantityBefore !== null ? toNum(s.quantityBefore) : null,
+        quantityAfter: s.quantityAfter !== null ? toNum(s.quantityAfter) : null,
+        createdAt: s.createdAt.toISOString(),
+      })),
+    );
   } catch (err) {
     next(err);
   }
