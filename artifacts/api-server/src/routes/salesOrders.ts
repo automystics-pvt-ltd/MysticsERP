@@ -812,49 +812,51 @@ router.delete("/sales-orders/:id", async (req, res, next) => {
       return;
     }
 
-    // Delete in dependency order to satisfy FK RESTRICT constraints.
+    // All three deletes run in one transaction so a mid-flight failure
+    // never leaves orphaned allocations or shipment_lines behind.
+    await db.transaction(async (tx) => {
+      // 1. customer_payment_allocations.sales_order_id → RESTRICT
+      //    Remove allocations against this order (the payment row itself stays).
+      await tx
+        .delete(customerPaymentAllocationsTable)
+        .where(
+          and(
+            eq(customerPaymentAllocationsTable.salesOrderId, id),
+            eq(customerPaymentAllocationsTable.organizationId, t.organizationId),
+          ),
+        );
 
-    // 1. customer_payment_allocations.sales_order_id → RESTRICT
-    //    Remove allocations against this order (the payment row itself stays).
-    await db
-      .delete(customerPaymentAllocationsTable)
-      .where(
-        and(
-          eq(customerPaymentAllocationsTable.salesOrderId, id),
-          eq(customerPaymentAllocationsTable.organizationId, t.organizationId),
-        ),
-      );
+      // 2. shipment_lines.sales_order_line_id → RESTRICT
+      //    sales_order_lines would cascade-delete from sales_orders, but Postgres
+      //    checks the RESTRICT before the cascade fires. Delete shipment_lines
+      //    first via the shipments that belong to this order.
+      const shipmentRows = await tx
+        .select({ id: shipmentsTable.id })
+        .from(shipmentsTable)
+        .where(
+          and(
+            eq(shipmentsTable.salesOrderId, id),
+            eq(shipmentsTable.organizationId, t.organizationId),
+          ),
+        );
+      if (shipmentRows.length > 0) {
+        const shipmentIds = shipmentRows.map((s) => s.id);
+        await tx
+          .delete(shipmentLinesTable) // org-scope-allow: filtered by shipmentId which are already scoped to this org's order above
+          .where(inArray(shipmentLinesTable.shipmentId, shipmentIds));
+      }
 
-    // 2. shipment_lines.sales_order_line_id → RESTRICT
-    //    sales_order_lines would cascade-delete from sales_orders, but Postgres
-    //    checks the RESTRICT before the cascade fires. Delete shipment_lines
-    //    first via the shipments that belong to this order.
-    const shipmentRows = await db
-      .select({ id: shipmentsTable.id })
-      .from(shipmentsTable)
-      .where(
-        and(
-          eq(shipmentsTable.salesOrderId, id),
-          eq(shipmentsTable.organizationId, t.organizationId),
-        ),
-      );
-    if (shipmentRows.length > 0) {
-      const shipmentIds = shipmentRows.map((s) => s.id);
-      await db
-        .delete(shipmentLinesTable) // org-scope-allow: filtered by shipmentId which are already scoped to this org's order above
-        .where(inArray(shipmentLinesTable.shipmentId, shipmentIds));
-    }
-
-    // 3. Now the cascade from sales_orders → sales_order_lines and
-    //    sales_orders → shipments (→ shipment_lines already gone) is unblocked.
-    await db
-      .delete(salesOrdersTable)
-      .where(
-        and(
-          eq(salesOrdersTable.id, id),
-          eq(salesOrdersTable.organizationId, t.organizationId),
-        ),
-      );
+      // 3. Now the cascade from sales_orders → sales_order_lines and
+      //    sales_orders → shipments (→ shipment_lines already gone) is unblocked.
+      await tx
+        .delete(salesOrdersTable)
+        .where(
+          and(
+            eq(salesOrdersTable.id, id),
+            eq(salesOrdersTable.organizationId, t.organizationId),
+          ),
+        );
+    });
 
     res.status(204).send();
   } catch (err) {

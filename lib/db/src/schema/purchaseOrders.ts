@@ -90,7 +90,12 @@ export const purchaseOrderLinesTable = pgTable("purchase_order_lines", {
   quantityReceived: numeric("quantity_received", { precision: 14, scale: 2 })
     .notNull()
     .default("0"),
-});
+}, (t) => ({
+  // Most-critical access patterns: fetch all lines for one order (every
+  // order detail page load), and scan all lines for one item (reports).
+  orderIdx: index("purchase_order_lines_order_idx").on(t.purchaseOrderId),
+  itemIdx:  index("purchase_order_lines_item_idx").on(t.itemId),
+}));
 
 export type PurchaseOrder = typeof purchaseOrdersTable.$inferSelect;
 export type PurchaseOrderLine = typeof purchaseOrderLinesTable.$inferSelect;

@@ -146,7 +146,12 @@ export const salesOrderLinesTable = pgTable("sales_order_lines", {
   lineSubtotal: numeric("line_subtotal", { precision: 14, scale: 2 }).notNull(),
   lineTax: numeric("line_tax", { precision: 14, scale: 2 }).notNull(),
   lineTotal: numeric("line_total", { precision: 14, scale: 2 }).notNull(),
-});
+}, (t) => ({
+  // Most-critical access patterns: fetch all lines for one order (every
+  // order detail page load), and scan all lines for one item (reports).
+  orderIdx: index("sales_order_lines_order_idx").on(t.salesOrderId),
+  itemIdx:  index("sales_order_lines_item_idx").on(t.itemId),
+}));
 
 export type SalesOrder = typeof salesOrdersTable.$inferSelect;
 export type SalesOrderLine = typeof salesOrderLinesTable.$inferSelect;

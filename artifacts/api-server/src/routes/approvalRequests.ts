@@ -207,10 +207,7 @@ router.post("/approval-requests/submit", async (req, res, next) => {
 router.post("/approval-requests/:id/approve", async (req, res, next) => {
   try {
     const t = req.tenant!;
-    if (!t.can("purchase_orders", "approve") &&
-        !t.can("stock_transfers", "approve") &&
-        !t.can("supplier_payments", "approve") &&
-        !t.can("write_offs", "approve")) {
+    if (!t.can("approvals", "approve")) {
       res.status(403).json({ error: "You do not have permission to approve transactions" });
       return;
     }
@@ -290,10 +287,7 @@ router.post("/approval-requests/:id/approve", async (req, res, next) => {
 router.post("/approval-requests/:id/reject", async (req, res, next) => {
   try {
     const t = req.tenant!;
-    if (!t.can("purchase_orders", "approve") &&
-        !t.can("stock_transfers", "approve") &&
-        !t.can("supplier_payments", "approve") &&
-        !t.can("write_offs", "approve")) {
+    if (!t.can("approvals", "approve")) {
       res.status(403).json({ error: "You do not have permission to reject transactions" });
       return;
     }
@@ -365,10 +359,7 @@ router.post("/approval-requests/:id/reject", async (req, res, next) => {
 router.post("/approval-requests/:id/send-back", async (req, res, next) => {
   try {
     const t = req.tenant!;
-    if (!t.can("purchase_orders", "approve") &&
-        !t.can("stock_transfers", "approve") &&
-        !t.can("supplier_payments", "approve") &&
-        !t.can("write_offs", "approve")) {
+    if (!t.can("approvals", "approve")) {
       res.status(403).json({ error: "You do not have permission to send back transactions" });
       return;
     }
@@ -440,10 +431,7 @@ router.post("/approval-requests/:id/send-back", async (req, res, next) => {
 router.patch("/approval-requests/bulk-approve", async (req, res, next) => {
   try {
     const t = req.tenant!;
-    if (!t.can("purchase_orders", "approve") &&
-        !t.can("stock_transfers", "approve") &&
-        !t.can("supplier_payments", "approve") &&
-        !t.can("write_offs", "approve")) {
+    if (!t.can("approvals", "approve")) {
       res.status(403).json({ error: "You do not have permission to approve transactions" });
       return;
     }

@@ -84,7 +84,7 @@ const navSections: NavSection[] = [
     label: "Inventory",
     items: [
       { name: "Items", href: "/items", icon: Package, module: "items" },
-      { name: "Barcodes", href: "/barcodes", icon: ScanLine, module: "items" },
+      { name: "Barcodes", href: "/barcodes", icon: ScanLine, module: "barcodes" },
       { name: "Warehouses", href: "/warehouses", icon: Warehouse, module: "warehouses" },
       { name: "Transfers", href: "/transfers", icon: ArrowLeftRight, module: "stock_transfers" },
       { name: "Write-offs", href: "/write-offs", icon: AlertTriangle, module: "write_offs" },

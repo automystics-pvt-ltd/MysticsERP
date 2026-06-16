@@ -53,6 +53,7 @@ export function normalizeRole(raw: string | null | undefined): Role {
  */
 const PATH_MODULE_MAP: Array<{ pattern: RegExp; module: string }> = [
   { pattern: /^\/dashboard(\/|$)/, module: "dashboard" },
+  { pattern: /^\/stock(\/|$)/, module: "items" },
   { pattern: /^\/items(\/|$)/, module: "items" },
   { pattern: /^\/barcodes(\/|$)/, module: "barcodes" },
   { pattern: /^\/warehouses(\/|$)/, module: "warehouses" },

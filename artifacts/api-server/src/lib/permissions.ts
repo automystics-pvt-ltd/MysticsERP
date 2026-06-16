@@ -437,7 +437,7 @@ export const ROUTE_POLICIES: readonly RoutePolicy[] = [
 
   // Stock movements — writes need create (write-offs), reads need view
   { methods: WRITE_METHODS, pattern: /^\/stock-movements(\/|$)/, module: "write_offs", action: "create" },
-  { methods: ANY_METHOD,    pattern: /^\/stock-movements(\/|$)/, module: "items", action: "view" },
+  { methods: ANY_METHOD,    pattern: /^\/stock-movements(\/|$)/, module: "write_offs", action: "view" },
 
   // Stock transfers — writes need transfer, reads need view
   { methods: WRITE_METHODS, pattern: /^\/stock-transfers(\/|$)/, module: "stock_transfers", action: "transfer" },
