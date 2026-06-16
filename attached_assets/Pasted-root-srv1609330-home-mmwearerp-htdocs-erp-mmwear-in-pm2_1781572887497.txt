@@ -1,0 +1,25 @@
+root@srv1609330:/home/mmwearerp/htdocs/erp.mmwear.in# pm2 logs mmwear-erp --lines 20 --nostream 2>&1 | tail -25
+53|mmwear- | {"level":50,"time":1781547321302,"pid":1897691,"hostname":"srv1609330","err":{"type":"Error","message":"listen EADDRINUSE: address already in use :::7500","stack":"Error: listen EADDRINUSE: address already in use :::7500\n    at Server.setupListenHandle [as _listen2] (node:net:2008:16)\n    at listenInCluster (node:net:2065:12)\n    at Server.listen (node:net:2170:7)\n    at app2.listen (/home/mmwearerp/htdocs/erp.mmwear.in/node_modules/.pnpm/express@5.2.1/node_modules/express/lib/application.js:605:24)\n    at <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/index.ts:33:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)","code":"EADDRINUSE","errno":-98,"syscall":"listen","address":"::","port":7500},"msg":"Error listening on port"}
+53|mmwear- | {"level":50,"time":1781547352997,"pid":1897805,"hostname":"srv1609330","err":{"type":"Error","message":"listen EADDRINUSE: address already in use :::7500","stack":"Error: listen EADDRINUSE: address already in use :::7500\n    at Server.setupListenHandle [as _listen2] (node:net:2008:16)\n    at listenInCluster (node:net:2065:12)\n    at Server.listen (node:net:2170:7)\n    at app2.listen (/home/mmwearerp/htdocs/erp.mmwear.in/node_modules/.pnpm/express@5.2.1/node_modules/express/lib/application.js:605:24)\n    at <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/index.ts:33:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)","code":"EADDRINUSE","errno":-98,"syscall":"listen","address":"::","port":7500},"msg":"Error listening on port"}
+
+/root/.pm2/logs/mmwear-erp-error.log last 20 lines:
+53|mmwear- | 2026-06-16 01:15:30 +00:00:     at ../../lib/db/src/index.ts (/home/mmwearerp/htdocs/erp.mmwear.in/lib/db/src/index.ts:8:9)
+53|mmwear- | 2026-06-16 01:15:30 +00:00:     at __init (file:///home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/dist/index.mjs:22:56)
+53|mmwear- | 2026-06-16 01:15:30 +00:00:     at <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/routes/auth.ts:5:1)
+53|mmwear- | 2026-06-16 01:15:30 +00:00:     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+53|mmwear- | 2026-06-16 01:15:30 +00:00:     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+53|mmwear- | 2026-06-16 01:15:30 +00:00:     at async node:internal/modules/esm/loader:633:26
+53|mmwear- | 2026-06-16 01:17:29 +00:00: Error: DATABASE_URL must be set. Did you forget to provision a database?
+53|mmwear- | 2026-06-16 01:17:29 +00:00:     at ../../lib/db/src/index.ts (/home/mmwearerp/htdocs/erp.mmwear.in/lib/db/src/index.ts:8:9)
+53|mmwear- | 2026-06-16 01:17:29 +00:00:     at __init (file:///home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/dist/index.mjs:22:56)
+53|mmwear- | 2026-06-16 01:17:29 +00:00:     at <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/routes/auth.ts:5:1)
+53|mmwear- | 2026-06-16 01:17:29 +00:00:     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+53|mmwear- | 2026-06-16 01:17:29 +00:00:     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+53|mmwear- | 2026-06-16 01:17:29 +00:00:     at async node:internal/modules/esm/loader:633:26
+53|mmwear- | 2026-06-16 01:20:13 +00:00: Error: DATABASE_URL must be set. Did you forget to provision a database?
+53|mmwear- | 2026-06-16 01:20:13 +00:00:     at ../../lib/db/src/index.ts (/home/mmwearerp/htdocs/erp.mmwear.in/lib/db/src/index.ts:8:9)
+53|mmwear- | 2026-06-16 01:20:13 +00:00:     at __init (file:///home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/dist/index.mjs:22:56)
+53|mmwear- | 2026-06-16 01:20:13 +00:00:     at <anonymous> (/home/mmwearerp/htdocs/erp.mmwear.in/artifacts/api-server/src/routes/auth.ts:5:1)
+53|mmwear- | 2026-06-16 01:20:13 +00:00:     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+53|mmwear- | 2026-06-16 01:20:13 +00:00:     at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+53|mmwear- | 2026-06-16 01:20:13 +00:00:     at async node:internal/modules/esm/loader:633:26
