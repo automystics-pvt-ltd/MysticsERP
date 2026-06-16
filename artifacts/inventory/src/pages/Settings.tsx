@@ -21,6 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useEffect, useRef, useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Building2, FileCheck2, ChevronRight, ScanLine, ShoppingCart, Store, Plus, X, ImageIcon, Tag, Hash, Palette } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Link } from "wouter";
 import { ImageUploader } from "@/components/ImageUploader";
@@ -133,12 +134,25 @@ export default function Settings() {
         description="Manage your organization profile and preferences."
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Building2 className="h-5 w-5 text-primary" />
-            Organization Profile
-          </CardTitle>
+      <Tabs defaultValue="general">
+        <div className="overflow-x-auto pb-px">
+          <TabsList className="flex-nowrap justify-start">
+            <TabsTrigger value="general">General</TabsTrigger>
+            <TabsTrigger value="branding">Branding</TabsTrigger>
+            <TabsTrigger value="pos">POS</TabsTrigger>
+            <TabsTrigger value="inventory">Inventory</TabsTrigger>
+            <TabsTrigger value="channels">Channels</TabsTrigger>
+            <TabsTrigger value="appearance">Appearance</TabsTrigger>
+          </TabsList>
+        </div>
+
+        <TabsContent value="general" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building2 className="h-5 w-5 text-primary" />
+                Organization Profile
+              </CardTitle>
           <CardDescription>
             These details appear on your invoices and purchase orders.
           </CardDescription>
@@ -385,94 +399,101 @@ export default function Settings() {
             </form>
           </Form>
         </CardContent>
-      </Card>
+          </Card>
+        </TabsContent>
 
-      <LogoSettingsCard />
+        <TabsContent value="branding" className="mt-4">
+          <LogoSettingsCard />
+        </TabsContent>
 
-      <BarcodeSettingsCard />
+        <TabsContent value="pos" className="space-y-6 mt-4">
+          <PosBillNumberCard />
+          <PosOrderDiscountCard />
+        </TabsContent>
 
-      <SkuSettingsCard />
+        <TabsContent value="inventory" className="space-y-6 mt-4">
+          <BarcodeSettingsCard />
+          <SkuSettingsCard />
+          <DiscountSettingsCard />
+        </TabsContent>
 
-      <PosBillNumberCard />
+        <TabsContent value="channels" className="mt-4">
+          <SalesChannelWarehouseCard />
+        </TabsContent>
 
-      <PosOrderDiscountCard />
+        <TabsContent value="appearance" className="space-y-6 mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Palette className="h-5 w-5 text-primary" />
+                Appearance
+              </CardTitle>
+              <CardDescription>
+                Theme mode, brand colors, typography, sidebar style, and layout density.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Link href="/settings/appearance">
+                <a
+                  className="flex items-center justify-between rounded-md border p-3 hover-elevate active-elevate-2"
+                  data-testid="link-settings-appearance"
+                >
+                  <div>
+                    <div className="text-sm font-medium">Open Appearance Settings</div>
+                    <div className="text-xs text-muted-foreground">
+                      Customize colors, fonts, sidebar style, and more.
+                    </div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                </a>
+              </Link>
+            </CardContent>
+          </Card>
 
-      <DiscountSettingsCard />
-
-      <SalesChannelWarehouseCard />
-
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Palette className="h-5 w-5 text-primary" />
-            Appearance
-          </CardTitle>
-          <CardDescription>
-            Theme mode, brand colors, typography, sidebar style, and layout density.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Link href="/settings/appearance">
-            <a
-              className="flex items-center justify-between rounded-md border p-3 hover-elevate active-elevate-2"
-              data-testid="link-settings-appearance"
-            >
-              <div>
-                <div className="text-sm font-medium">Open Appearance Settings</div>
-                <div className="text-xs text-muted-foreground">
-                  Customize colors, fonts, sidebar style, and more.
-                </div>
-              </div>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            </a>
-          </Link>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileCheck2 className="h-5 w-5 text-primary" />
-            GST Compliance
-          </CardTitle>
-          <CardDescription>
-            Connect the GST e-invoice (IRP) and e-way bill portals so
-            invoices over the mandatory threshold are reported
-            automatically.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <Link href="/integrations/einvoice">
-            <a
-              className="flex items-center justify-between rounded-md border p-3 hover-elevate active-elevate-2"
-              data-testid="link-settings-einvoice"
-            >
-              <div>
-                <div className="text-sm font-medium">E-invoice (IRP)</div>
-                <div className="text-xs text-muted-foreground">
-                  Auto-register IRN + signed QR when an order is invoiced.
-                </div>
-              </div>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            </a>
-          </Link>
-          <Link href="/integrations/ewb">
-            <a
-              className="flex items-center justify-between rounded-md border p-3 hover-elevate active-elevate-2"
-              data-testid="link-settings-ewb"
-            >
-              <div>
-                <div className="text-sm font-medium">E-way bill (NIC)</div>
-                <div className="text-xs text-muted-foreground">
-                  Generate EWB for shipments above the state threshold.
-                </div>
-              </div>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            </a>
-          </Link>
-        </CardContent>
-      </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileCheck2 className="h-5 w-5 text-primary" />
+                GST Compliance
+              </CardTitle>
+              <CardDescription>
+                Connect the GST e-invoice (IRP) and e-way bill portals so invoices over
+                the mandatory threshold are reported automatically.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <Link href="/integrations/einvoice">
+                <a
+                  className="flex items-center justify-between rounded-md border p-3 hover-elevate active-elevate-2"
+                  data-testid="link-settings-einvoice"
+                >
+                  <div>
+                    <div className="text-sm font-medium">E-invoice (IRP)</div>
+                    <div className="text-xs text-muted-foreground">
+                      Auto-register IRN + signed QR when an order is invoiced.
+                    </div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                </a>
+              </Link>
+              <Link href="/integrations/ewb">
+                <a
+                  className="flex items-center justify-between rounded-md border p-3 hover-elevate active-elevate-2"
+                  data-testid="link-settings-ewb"
+                >
+                  <div>
+                    <div className="text-sm font-medium">E-way bill (NIC)</div>
+                    <div className="text-xs text-muted-foreground">
+                      Generate EWB for shipments above the state threshold.
+                    </div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                </a>
+              </Link>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

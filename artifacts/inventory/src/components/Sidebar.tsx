@@ -130,9 +130,24 @@ const navSections: NavSection[] = [
   },
 ];
 
+// Flat set of every href in the sidebar — used by isActivePath to detect when
+// a more-specific child item also matches so we don't highlight the parent too
+// (e.g. /pos should NOT be active while the user is on /pos/sessions).
+const ALL_NAV_HREFS: ReadonlySet<string> = new Set([
+  ...navSections.flatMap((s) => s.items.map((i) => i.href)),
+  ...platformSection.items.map((i) => i.href),
+]);
+
 function isActivePath(location: string, href: string): boolean {
   if (href === "/dashboard") return location === "/dashboard";
-  return location === href || location.startsWith(href + "/");
+  if (location === href) return true;
+  if (!location.startsWith(href + "/")) return false;
+  // Don't highlight a parent item when a more-specific sibling nav item also
+  // matches the current location (e.g. /pos active while on /pos/sessions).
+  const moreSpecificExists = [...ALL_NAV_HREFS].some(
+    (h) => h !== href && h.startsWith(href + "/") && location.startsWith(h),
+  );
+  return !moreSpecificExists;
 }
 
 const COLLAPSED_SECTIONS_KEY = "mystics.sidebar.collapsedSections";
