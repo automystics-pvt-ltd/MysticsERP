@@ -1,0 +1,36 @@
+artifacts/api-server/src/index.ts:33:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)","code":"EADDRINUSE","errno":-98,"syscall":"listen","address":"::","port":7500},"msg":"Error listening on port"}
+root@srv1609330:/home/mmwearerp/htdocs/erp.mmwear.in# # Find what's using port 7500
+lsof -i :7500 | grep LISTEN
+
+# Kill it (replace PID with the number from the output above)
+# Then restart your app
+pm2 restart mmwear-erp
+sleep 3
+pm2 show mmwear-erp | grep -E "status|uptime|restarts"
+MainThrea 634714 root   22u  IPv6 318587680      0t0  TCP *:7500 (LISTEN)
+Use --update-env to update environment variables
+[PM2] Applying action restartProcessId on app [mmwear-erp](ids: [ 53 ])
+[PM2] [mmwear-erp](53) ✓
+┌────┬───────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name                  │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+├────┼───────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
+│ 2  │ automystics-api       │ default     │ 0.0.0   │ fork    │ 1854097  │ 10h    │ 29   │ online    │ 0%       │ 97.5mb   │ root     │ disabled │
+│ 37 │ erp-automystics       │ default     │ N/A     │ fork    │ 3366958  │ 5D     │ 10   │ online    │ 0%       │ 115.1mb  │ root     │ disabled │
+│ 0  │ fitro360              │ default     │ 1.0.0   │ fork    │ 1854077  │ 10h    │ 29   │ online    │ 0%       │ 112.2mb  │ root     │ disabled │
+│ 1  │ kalvicore-api         │ default     │ 0.0.0   │ fork    │ 1854089  │ 10h    │ 29   │ online    │ 0%       │ 118.6mb  │ root     │ disabled │
+│ 53 │ mmwear-erp            │ default     │ 0.0.0   │ fork    │ 1997692  │ 0s     │ 1    │ online    │ 0%       │ 19.3mb   │ root     │ disabled │
+│ 42 │ mystics-api           │ default     │ N/A     │ fork    │ 634644   │ 4D     │ 1171 │ online    │ 0%       │ 109.1mb  │ root     │ disabled │
+│ 18 │ mysticscivil-api      │ default     │ N/A     │ fork    │ 0        │ 0      │ 14   │ errored   │ 0%       │ 0b       │ root     │ disabled │
+│ 11 │ mysticshr-api         │ default     │ 0.0.0   │ fork    │ 1854128  │ 10h    │ 1192 │ online    │ 0.6%     │ 282.0mb  │ root     │ disabled │
+│ 39 │ mysticsinventory      │ default     │ N/A     │ fork    │ 0        │ 0      │ 54   │ errored   │ 0%       │ 0b       │ root     │ disabled │
+│ 4  │ people-connect-api    │ default     │ 0.0.0   │ fork    │ 1854112  │ 10h    │ 30   │ online    │ 0%       │ 200.6mb  │ root     │ disabled │
+│ 23 │ solarnexus-api        │ default     │ 0.0.0   │ fork    │ 485949   │ 5D     │ 13   │ online    │ 0.6%     │ 139.2mb  │ root     │ disabled │
+│ 6  │ tkprabhu-api          │ default     │ 0.0.0   │ fork    │ 0        │ 0      │ 52   │ errored   │ 0%       │ 0b       │ root     │ disabled │
+│ 32 │ ungalrajeev-api       │ default     │ N/A     │ fork    │ 0        │ 0      │ 11   │ errored   │ 0%       │ 0b       │ root     │ disabled │
+│ 25 │ ungaludan-sarath      │ default     │ 0.0.0   │ fork    │ 433751   │ 5D     │ 12   │ online    │ 0%       │ 211.1mb  │ root     │ disabled │
+│ 33 │ ungalvignesh-api      │ default     │ N/A     │ fork    │ 1997655  │ 7s     │ 491… │ online    │ 87.1%    │ 111.4mb  │ root     │ disabled │
+│ 34 │ ungalvignesh-api      │ default     │ N/A     │ fork    │ 3366905  │ 5D     │ 228… │ online    │ 0%       │ 115.5mb  │ root     │ disabled │
+└────┴───────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+│ status            │ online                                                                   │
+│ restarts          │ 1                                                                        │
+│ uptime            │ 9s                    
