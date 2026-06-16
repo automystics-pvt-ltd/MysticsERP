@@ -102,6 +102,7 @@ PORT = "8080"
 NODE_ENV = "development"
 LOG_LEVEL = "info"
 APP_ENCRYPTION_KEY = "2c38c33adb5f7482aa2e483b4a459d3a8ce84e5c6a63dc33868cbcc13050965d"
+ADMIN_PURGE_SECRET = "35768fc625f4f563f224c97f6f733307ac7c2e3a5f2fd27d"
 
 [nix]
 channel = "stable-25_05"
