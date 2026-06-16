@@ -30,7 +30,7 @@ await ensureSessionTable().catch((err) => {
   process.exit(1);
 });
 
-app.listen(port, (err) => {
+const server = app.listen(port, (err) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
     process.exit(1);
@@ -62,3 +62,12 @@ app.listen(port, (err) => {
   // unref'd so it never holds the event loop open by itself.
   startBulkBatchPruneScheduler();
 });
+
+// Most managed load balancers / reverse proxies use a 60 s idle timeout.
+// Node's default is 5 s — connections the LB considers live get silently
+// terminated, causing sporadic 502s under traffic. Setting ours slightly
+// above the LB's timeout ensures the LB always closes first.
+server.keepAliveTimeout = 65_000;
+// headersTimeout must exceed keepAliveTimeout; otherwise Node closes the
+// TCP connection before the client finishes sending a pipelined request.
+server.headersTimeout = 70_000;

@@ -104,7 +104,20 @@ export default defineConfig({
           // Lucide icons — large icon set
           if (id.includes("lucide-react")) return "vendor-icons";
 
-          // Everything else in node_modules
+          // Heavy on-demand libs — split so they're only downloaded when
+          // the user first visits a page / opens a dialog that needs them.
+          // @zxing: barcode scanner (WebAssembly, ~600 KB)
+          if (id.includes("@zxing/")) return "vendor-scanner";
+          // xlsx: spreadsheet import/export (~800 KB)
+          if (id.includes("/xlsx/") || id.includes("node_modules/xlsx")) return "vendor-xlsx";
+          // jspdf + jspdf-autotable: PDF export (~300 KB)
+          if (id.includes("jspdf")) return "vendor-pdf";
+          // Uppy: file-upload suite (dashboard + S3 + core, ~400 KB)
+          if (id.includes("@uppy/") || id.includes("/uppy/")) return "vendor-uppy";
+          // papaparse: CSV parsing (~50 KB — small, but keeps vendor clean)
+          if (id.includes("papaparse")) return "vendor-csv";
+
+          // Everything else in node_modules (wouter, clsx, cmdk, vaul, …)
           return "vendor";
         },
       },
