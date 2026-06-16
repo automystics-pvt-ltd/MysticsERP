@@ -412,7 +412,7 @@ export function Sidebar({
               </div>
             )}
             {!collapsed && (
-              <div className="flex flex-col leading-tight min-w-0">
+              <div className="flex flex-col leading-tight min-w-0 overflow-hidden">
                 <span className="text-[14px] font-semibold tracking-tight text-sidebar-foreground truncate">
                   {org?.name ?? "MM Wear"}
                 </span>
