@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Can } from "@/components/Can";
 import { useLocation, Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { customFetch } from "@workspace/api-client-react";
@@ -210,10 +211,12 @@ export default function Fulfillments() {
         title="Fulfillments"
         subtitle="Pick, pack, and dispatch orders"
         actions={
-          <Button onClick={() => setDialogOpen(true)}>
-            <Plus className="h-4 w-4 mr-1" />
-            New Fulfillment
-          </Button>
+          <Can module="sales_orders" action="create">
+            <Button onClick={() => setDialogOpen(true)}>
+              <Plus className="h-4 w-4 mr-1" />
+              New Fulfillment
+            </Button>
+          </Can>
         }
       />
 

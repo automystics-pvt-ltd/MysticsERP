@@ -309,6 +309,7 @@ export function can(
 // ─── Backwards-compat: route-level policy (used in tenantMiddleware) ────────
 
 const WRITE_METHODS = /^(POST|PATCH|PUT|DELETE)$/;
+const DELETE_METHOD = /^DELETE$/;
 const ANY_METHOD = /.*/;
 
 interface RoutePolicy {
@@ -347,11 +348,13 @@ export const ROUTE_POLICIES: readonly RoutePolicy[] = [
   { methods: WRITE_METHODS, pattern: /^\/pos(\/|$)/, module: "pos", action: "create" },
   { methods: ANY_METHOD,    pattern: /^\/pos(\/|$)/, module: "pos", action: "view" },
 
-  // Customers — writes need edit, reads need view
+  // Customers — deletes need delete, other writes need edit, reads need view
+  { methods: DELETE_METHOD, pattern: /^\/customers(\/|$)/, module: "customers", action: "delete" },
   { methods: WRITE_METHODS, pattern: /^\/customers(\/|$)/, module: "customers", action: "edit" },
   { methods: ANY_METHOD,    pattern: /^\/customers(\/|$)/, module: "customers", action: "view" },
 
-  // Sales orders — writes need edit, reads need view
+  // Sales orders — deletes need delete, other writes need edit, reads need view
+  { methods: DELETE_METHOD, pattern: /^\/sales-orders(\/|$)/, module: "sales_orders", action: "delete" },
   { methods: WRITE_METHODS, pattern: /^\/sales-orders(\/|$)/, module: "sales_orders", action: "edit" },
   { methods: ANY_METHOD,    pattern: /^\/sales-orders(\/|$)/, module: "sales_orders", action: "view" },
 
@@ -368,18 +371,21 @@ export const ROUTE_POLICIES: readonly RoutePolicy[] = [
   { methods: ANY_METHOD,    pattern: /^\/items\/[^/]+\/barcode\.png(\/|$)/, module: "barcodes", action: "view" },
   { methods: WRITE_METHODS, pattern: /^\/items\/barcode-import(\/|$)/, module: "barcodes", action: "create" },
 
-  // Items — writes need edit, reads need view
+  // Items — deletes need delete, other writes need edit, reads need view
+  { methods: DELETE_METHOD, pattern: /^\/items(\/|$)/, module: "items", action: "delete" },
   { methods: WRITE_METHODS, pattern: /^\/items(\/|$)/, module: "items", action: "edit" },
   { methods: ANY_METHOD,    pattern: /^\/items(\/|$)/, module: "items", action: "view" },
 
   // Import (write-only paths)
   { methods: WRITE_METHODS, pattern: /^\/(unified-import|variant-import)(\/|$)/, module: "items", action: "import" },
 
-  // Suppliers — writes need edit, reads need view
+  // Suppliers — deletes need delete, other writes need edit, reads need view
+  { methods: DELETE_METHOD, pattern: /^\/suppliers(\/|$)/, module: "suppliers", action: "delete" },
   { methods: WRITE_METHODS, pattern: /^\/suppliers(\/|$)/, module: "suppliers", action: "edit" },
   { methods: ANY_METHOD,    pattern: /^\/suppliers(\/|$)/, module: "suppliers", action: "view" },
 
-  // Warehouses — writes need edit, reads need view
+  // Warehouses — deletes need delete, other writes need edit, reads need view
+  { methods: DELETE_METHOD, pattern: /^\/warehouses(\/|$)/, module: "warehouses", action: "delete" },
   { methods: WRITE_METHODS, pattern: /^\/warehouses(\/|$)/, module: "warehouses", action: "edit" },
   { methods: ANY_METHOD,    pattern: /^\/warehouses(\/|$)/, module: "warehouses", action: "view" },
 
@@ -394,7 +400,8 @@ export const ROUTE_POLICIES: readonly RoutePolicy[] = [
   // Purchase order PDF/print — must appear before the general purchase-orders catch-all
   { methods: ANY_METHOD, pattern: /^\/purchase-orders\/[^/]+\/pdf(\/|$)/, module: "purchase_orders", action: "print" },
 
-  // Purchase orders — writes need edit, reads need view
+  // Purchase orders — deletes need delete, other writes need edit, reads need view
+  { methods: DELETE_METHOD, pattern: /^\/purchase-orders(\/|$)/, module: "purchase_orders", action: "delete" },
   { methods: WRITE_METHODS, pattern: /^\/purchase-orders(\/|$)/, module: "purchase_orders", action: "edit" },
   { methods: ANY_METHOD,    pattern: /^\/purchase-orders(\/|$)/, module: "purchase_orders", action: "view" },
 

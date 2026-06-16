@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Can } from "@/components/Can";
+import { useCanI } from "@/hooks/usePermissions";
 import { Link, useLocation } from "wouter";
 import { PageHeader } from "@/components/PageHeader";
 import { useFocusParam, useNewParam } from "@/hooks/use-focus-param";
@@ -406,8 +407,7 @@ export default function Items() {
     (["owner", "admin", "manager"] as const).some((r) => r === normalizeRole(me?.role)) ||
     (me?.canEditStocks ?? false);
 
-  const canBulkDelete =
-    (["owner", "admin"] as const).some((r) => r === normalizeRole(me?.role));
+  const canBulkDelete = useCanI("items", "delete");
 
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 500);
@@ -1252,15 +1252,17 @@ export default function Items() {
         </Button>
         <div className="flex items-center gap-2 ml-auto">
           {selectedIds.size > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setBulkEditOpen(true)}
-              data-testid="btn-bulk-edit-items"
-            >
-              <Edit className="mr-2 h-4 w-4" />
-              Edit ({selectedIds.size})
-            </Button>
+            <Can module="items" action="edit">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setBulkEditOpen(true)}
+                data-testid="btn-bulk-edit-items"
+              >
+                <Edit className="mr-2 h-4 w-4" />
+                Edit ({selectedIds.size})
+              </Button>
+            </Can>
           )}
           {selectedIds.size > 0 && canBulkDelete && (
             <Button

@@ -77,7 +77,7 @@ const navSections: NavSection[] = [
     label: "Overview",
     items: [
       { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, module: "dashboard" },
-      { name: "Approvals", href: "/approvals", icon: ListChecks, module: "settings" },
+      { name: "Approvals", href: "/approvals", icon: ListChecks, module: "approvals" },
     ],
   },
   {
