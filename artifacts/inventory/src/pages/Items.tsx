@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Can } from "@/components/Can";
 import { useCanI } from "@/hooks/usePermissions";
 import { Link, useLocation } from "wouter";
@@ -536,7 +536,7 @@ export default function Items() {
   }, [facets]);
 
   // Expand/collapse parent row — loads variants lazily on first expand.
-  const handleToggleExpand = (parentId: number) => {
+  const handleToggleExpand = useCallback((parentId: number) => {
     const willExpand = !expanded[parentId];
     setExpanded((m) => ({ ...m, [parentId]: !m[parentId] }));
     if (willExpand && !variantsByParent[parentId]) {
@@ -544,7 +544,7 @@ export default function Items() {
         .then((variants) => setVariantsByParent((prev) => ({ ...prev, [parentId]: variants })))
         .catch(() => {});
     }
-  };
+  }, [expanded, variantsByParent, fetchItemVariants]);
 
   // All IDs currently visible in the table (top-level + expanded variants).
   // Used by the select-all checkbox so it can include variant rows.

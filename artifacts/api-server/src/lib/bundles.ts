@@ -136,6 +136,94 @@ export async function computeBundleTotalStock(
 }
 
 /**
+ * Batched: per-warehouse derived stock for many bundle items at once.
+ * Executes exactly 3 DB queries regardless of how many bundles are in
+ * the list (components, warehouses, stock) — replaces the per-bundle
+ * loop that called computeBundleStockByWarehouse() N times.
+ */
+export async function computeBundleStockByWarehouseForMany(
+  organizationId: number,
+  parentItemIds: number[],
+): Promise<Map<number, Array<{ warehouseId: number; warehouseName: string; quantity: number }>>> {
+  const result = new Map<number, Array<{ warehouseId: number; warehouseName: string; quantity: number }>>();
+  if (parentItemIds.length === 0) return result;
+
+  // 1. All components for all bundles in one query.
+  const compRows = await db
+    .select({
+      parentItemId: itemBundleComponentsTable.parentItemId,
+      componentItemId: itemBundleComponentsTable.componentItemId,
+      quantityPerBundle: itemBundleComponentsTable.quantityPerBundle,
+    })
+    .from(itemBundleComponentsTable)
+    .where(
+      and(
+        eq(itemBundleComponentsTable.organizationId, organizationId),
+        inArray(itemBundleComponentsTable.parentItemId, parentItemIds),
+      ),
+    );
+
+  const byParent = new Map<number, ComponentTuple[]>();
+  for (const r of compRows) {
+    if (!byParent.has(r.parentItemId)) byParent.set(r.parentItemId, []);
+    byParent.get(r.parentItemId)!.push(r);
+  }
+
+  // 2. All non-virtual warehouses for the org in one query.
+  const warehouses = await db
+    .select({ id: warehousesTable.id, name: warehousesTable.name })
+    .from(warehousesTable)
+    .where(
+      and(
+        eq(warehousesTable.organizationId, organizationId),
+        eq(warehousesTable.isVirtual, false),
+      ),
+    );
+
+  // 3. Stock for all component items across all bundles in one query.
+  const componentIds = Array.from(new Set(compRows.map((r) => r.componentItemId)));
+  const perWhStock = new Map<string, number>(); // `${itemId}:${warehouseId}` -> qty
+  if (componentIds.length > 0) {
+    const stockRows = await db
+      .select({
+        itemId: itemWarehouseStockTable.itemId,
+        warehouseId: itemWarehouseStockTable.warehouseId,
+        quantity: itemWarehouseStockTable.quantity,
+      })
+      .from(itemWarehouseStockTable)
+      .where(
+        and(
+          eq(itemWarehouseStockTable.organizationId, organizationId),
+          inArray(itemWarehouseStockTable.itemId, componentIds),
+        ),
+      );
+    for (const r of stockRows) {
+      perWhStock.set(`${r.itemId}:${r.warehouseId}`, toNum(r.quantity));
+    }
+  }
+
+  // 4. Compute per-warehouse derived qty for each bundle (in-memory).
+  for (const parentId of parentItemIds) {
+    const comps = byParent.get(parentId) ?? [];
+    const breakdown: Array<{ warehouseId: number; warehouseName: string; quantity: number }> = [];
+    for (const wh of warehouses) {
+      let derived = comps.length === 0 ? 0 : Number.POSITIVE_INFINITY;
+      for (const c of comps) {
+        const per = toNum(c.quantityPerBundle);
+        if (per <= 0) { derived = 0; break; }
+        const q = perWhStock.get(`${c.componentItemId}:${wh.id}`) ?? 0;
+        const ratio = Math.floor(q / per);
+        if (ratio < derived) derived = ratio;
+      }
+      if (!Number.isFinite(derived)) derived = 0;
+      breakdown.push({ warehouseId: wh.id, warehouseName: wh.name, quantity: Math.max(0, derived) });
+    }
+    result.set(parentId, breakdown);
+  }
+  return result;
+}
+
+/**
  * Batched: total derived stock for many bundle items at once.
  * Used by GET /items so the list view doesn't N+1 when many bundles
  * are present.

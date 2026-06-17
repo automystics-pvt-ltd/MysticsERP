@@ -32,6 +32,7 @@ import {
 import {
   loadBundleComponents,
   computeBundleStockByWarehouse,
+  computeBundleStockByWarehouseForMany,
   computeBundleTotalsForMany,
 } from "../lib/bundles";
 import { getBatchAvailability } from "../lib/batches";
@@ -247,13 +248,17 @@ router.get("/items", async (req, res, next) => {
         warehouseStockMap.set(r.itemId, toNum(r.quantity));
       }
       // Override warehouse stock for bundles with the derived figure.
-      for (const id of bundleIds) {
-        const perWh = await computeBundleStockByWarehouse(
+      // Batched: one set of 3 queries for all bundles, not N×3.
+      if (bundleIds.length > 0) {
+        const bundlePerWh = await computeBundleStockByWarehouseForMany(
           t.organizationId,
-          id,
+          bundleIds,
         );
-        const found = perWh.find((w) => w.warehouseId === warehouseId);
-        warehouseStockMap.set(id, found?.quantity ?? 0);
+        for (const id of bundleIds) {
+          const perWh = bundlePerWh.get(id) ?? [];
+          const found = perWh.find((w) => w.warehouseId === warehouseId);
+          warehouseStockMap.set(id, found?.quantity ?? 0);
+        }
       }
       // In non-paginated mode, post-filter to warehouse-assigned items.
       // In paginated mode, the SQL EXISTS subquery already handled this.
@@ -306,35 +311,16 @@ router.get("/items", async (req, res, next) => {
           });
         }
       }
-      // Bundles: derive per-warehouse from components and resolve names.
+      // Bundles: batched per-warehouse derived stock (3 queries total,
+      // not N×3). computeBundleStockByWarehouseForMany already filters
+      // to non-virtual warehouses and includes names.
       if (bundleIds.length > 0) {
-        const allWarehouses = await db
-          .select({ id: warehousesTable.id, name: warehousesTable.name })
-          .from(warehousesTable)
-          .where(
-            and(
-              eq(warehousesTable.organizationId, t.organizationId),
-              eq(warehousesTable.isVirtual, false),
-            ),
-          );
-        const whName = new Map<number, string>(
-          allWarehouses.map((w) => [w.id, w.name]),
+        const bundlePerWh = await computeBundleStockByWarehouseForMany(
+          t.organizationId,
+          bundleIds,
         );
         for (const id of bundleIds) {
-          const perWh = await computeBundleStockByWarehouse(
-            t.organizationId,
-            id,
-          );
-          breakdownMap.set(
-            id,
-            perWh
-              .filter((w) => whName.has(w.warehouseId))
-              .map((w) => ({
-                warehouseId: w.warehouseId,
-                warehouseName: whName.get(w.warehouseId)!,
-                quantity: w.quantity,
-              })),
-          );
+          breakdownMap.set(id, bundlePerWh.get(id) ?? []);
         }
       }
     }

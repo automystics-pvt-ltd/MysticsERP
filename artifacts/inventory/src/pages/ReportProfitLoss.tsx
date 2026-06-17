@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -43,12 +43,17 @@ export default function ReportProfitLoss() {
   const hasFilters = !!(from || to || warehouseId || search);
   const clearFilters = () => { setFrom(""); setTo(""); setWarehouseId(""); setSearch(""); };
 
-  const filteredItems = (report?.byItem ?? []).filter((r) => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return r.itemName.toLowerCase().includes(q) || (r.sku ?? "").toLowerCase().includes(q);
-  });
-  const paged = filteredItems.slice((page - 1) * pageSize, page * pageSize);
+  const filteredItems = useMemo(() =>
+    (report?.byItem ?? []).filter((r) => {
+      if (!search) return true;
+      const q = search.toLowerCase();
+      return r.itemName.toLowerCase().includes(q) || (r.sku ?? "").toLowerCase().includes(q);
+    }),
+  [report?.byItem, search]);
+  const paged = useMemo(
+    () => filteredItems.slice((page - 1) * pageSize, page * pageSize),
+    [filteredItems, page, pageSize],
+  );
 
   type Row = ProfitLossReportItemRow;
   const exportCols: ExportColumn<Row>[] = [

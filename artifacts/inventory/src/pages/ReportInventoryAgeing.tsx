@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -52,17 +52,22 @@ export default function ReportInventoryAgeing() {
   const hasFilters = !!(warehouseId || bucketFilter !== "all" || search);
   const clearFilters = () => { setWarehouseId(""); setBucketFilter("all"); setSearch(""); };
 
-  const filtered = (report?.items ?? []).filter((r) => {
-    if (bucketFilter !== "all" && r.ageBucket !== bucketFilter) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      if (!r.itemName.toLowerCase().includes(q) &&
-          !(r.sku ?? "").toLowerCase().includes(q) &&
-          !r.warehouseName.toLowerCase().includes(q)) return false;
-    }
-    return true;
-  });
-  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const filtered = useMemo(() =>
+    (report?.items ?? []).filter((r) => {
+      if (bucketFilter !== "all" && r.ageBucket !== bucketFilter) return false;
+      if (search) {
+        const q = search.toLowerCase();
+        if (!r.itemName.toLowerCase().includes(q) &&
+            !(r.sku ?? "").toLowerCase().includes(q) &&
+            !r.warehouseName.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    }),
+  [report?.items, bucketFilter, search]);
+  const paged = useMemo(
+    () => filtered.slice((page - 1) * pageSize, page * pageSize),
+    [filtered, page, pageSize],
+  );
 
   type Row = InventoryAgeingItem;
   const exportCols: ExportColumn<Row>[] = [

@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { STALE_LIST, STALE_DETAIL } from "@/lib/queryClient";
 import { useParams, useLocation, useSearch, Link } from "wouter";
 import { format } from "date-fns";
 import {
@@ -972,7 +973,7 @@ export default function WarehouseDetail() {
   const { data: stockSummaries, isLoading: summaryLoading } = useQuery<WarehouseStockSummary[]>({
     queryKey: ["warehouses", "stock-summaries"],
     queryFn: fetchWarehouseStockSummaries,
-    staleTime: 60_000,
+    staleTime: STALE_DETAIL,
     enabled: !!warehouse,
   });
   const summary = useMemo(
@@ -1007,7 +1008,7 @@ export default function WarehouseDetail() {
         pageSize: stockPageSize,
       }),
     enabled: !!id && !Number.isNaN(id),
-    staleTime: 30_000,
+    staleTime: STALE_LIST,
   });
 
   // ── Movements tab ────────────────────────────────────────────────────────────
