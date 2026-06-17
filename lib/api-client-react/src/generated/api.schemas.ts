@@ -320,6 +320,8 @@ export interface ItemWarehouseStock {
   warehouseId: number;
   warehouseName: string;
   quantity: number;
+  /** True when this is a virtual job-worker warehouse, not a physical inventory location. */
+  isVirtual: boolean;
 }
 
 export interface Item {
@@ -414,6 +416,8 @@ export interface ItemDetail {
   item: Item;
   /** For a bundle, the per-warehouse derived (assemblable) quantity rather than a stored stock row. */
   stockByWarehouse: ItemWarehouseStock[];
+  /** Quantity currently on in-transit stock transfers (dispatched from source but not yet received at destination). */
+  inTransitQty: number;
   /** Children of this item when it is a parent. Empty for leaf items. */
   variants: VariantStock[];
   /** Components of this item when it is a bundle. Empty otherwise. */

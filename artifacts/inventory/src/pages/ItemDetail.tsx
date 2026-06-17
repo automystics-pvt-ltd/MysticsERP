@@ -334,7 +334,7 @@ export default function ItemDetail() {
     );
   }
 
-  const { item, stockByWarehouse, variants, components } = itemDetail;
+  const { item, stockByWarehouse, inTransitQty, variants, components } = itemDetail;
   const isParent = !!item.hasVariants;
   const isBundle = !!item.isBundle;
   const axes: string[] = (() => {
@@ -928,17 +928,40 @@ export default function ItemDetail() {
                     data-testid={`row-stock-wh-${stock.warehouseId}`}
                   >
                     <TableCell className="font-medium">
-                      {stock.warehouseName}
+                      <span className="flex items-center gap-1.5">
+                        {stock.warehouseName}
+                        {stock.isVirtual && (
+                          <Badge variant="secondary" className="text-xs font-normal">
+                            Job Work
+                          </Badge>
+                        )}
+                      </span>
                     </TableCell>
                     <TableCell className="text-right text-muted-foreground">
-                      {formatCurrency(item.salePrice)}
+                      {stock.isVirtual ? "—" : formatCurrency(item.salePrice)}
                     </TableCell>
                     <TableCell className="text-right">
                       {stock.quantity}
                     </TableCell>
                   </TableRow>
                 ))}
-                {stockByWarehouse.length === 0 && (
+                {(inTransitQty ?? 0) > 0 && (
+                  <TableRow className="text-muted-foreground">
+                    <TableCell className="font-medium">
+                      <span className="flex items-center gap-1.5">
+                        <span className="italic">In transit</span>
+                        <Badge variant="outline" className="text-xs font-normal">
+                          Dispatched
+                        </Badge>
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-right">—</TableCell>
+                    <TableCell className="text-right italic">
+                      {inTransitQty}
+                    </TableCell>
+                  </TableRow>
+                )}
+                {stockByWarehouse.length === 0 && !(inTransitQty ?? 0) && (
                   <TableRow>
                     <TableCell
                       colSpan={3}
@@ -1100,6 +1123,7 @@ type VariantStockEntry = {
     warehouseId: number;
     warehouseName: string;
     quantity: number;
+    isVirtual?: boolean;
   }>;
 };
 

@@ -9,6 +9,8 @@ import {
   warehousesTable,
   stockMovementsTable,
   organizationsTable,
+  stockTransfersTable,
+  stockTransferLinesTable,
 } from "@workspace/db";
 import {
   tenantMiddleware,
@@ -43,12 +45,23 @@ async function totalStockFor(
 ): Promise<Map<number, number>> {
   const map = new Map<number, number>();
   if (itemIds.length === 0) return map;
+  // Exclude virtual (job-worker) warehouses: stock held at a supplier is
+  // still "owned" stock but it is not physically available for orders.
+  // The item detail page shows virtual warehouse rows separately (flagged
+  // isVirtual:true) and the "Stock with Job Workers" report covers the rest.
   const rows = await db
     .select({
       itemId: itemWarehouseStockTable.itemId,
       qty: sql<string>`COALESCE(SUM(${itemWarehouseStockTable.quantity}), 0)`,
     })
     .from(itemWarehouseStockTable)
+    .innerJoin(
+      warehousesTable,
+      and(
+        eq(warehousesTable.id, itemWarehouseStockTable.warehouseId),
+        eq(warehousesTable.isVirtual, false),
+      ),
+    )
     .where(
       and(
         eq(itemWarehouseStockTable.organizationId, orgId),
@@ -1716,6 +1729,9 @@ router.get("/items/:id", async (req, res, next) => {
       .select({
         warehouseId: itemWarehouseStockTable.warehouseId,
         warehouseName: warehousesTable.name,
+        // Surface the isVirtual flag so the UI can label job-worker rows
+        // and so the total excludes stock that isn't physically available.
+        isVirtual: warehousesTable.isVirtual,
         quantity: itemWarehouseStockTable.quantity,
       })
       .from(itemWarehouseStockTable)
@@ -1730,7 +1746,35 @@ router.get("/items/:id", async (req, res, next) => {
         ),
       );
 
-    let total = stockRows.reduce((s, r) => s + toNum(r.quantity), 0);
+    // Only physical (non-virtual) warehouse stock counts toward on-hand total.
+    // Virtual warehouse rows still appear in stockByWarehouse so users can see
+    // where job-worker material is, but the header "Total Stock" must not
+    // include it.
+    let total = stockRows.filter((r) => !r.isVirtual).reduce((s, r) => s + toNum(r.quantity), 0);
+
+    // Quantity currently on in-transit stock transfers (dispatched but not yet
+    // received at destination).  This stock has already left the source
+    // warehouse so it's absent from totalStock; surfacing it separately
+    // explains where "missing" units went.
+    const [transitRow] = await db
+      .select({
+        qty: sql<string>`COALESCE(SUM(${stockTransferLinesTable.quantity}), 0)`,
+      })
+      .from(stockTransferLinesTable)
+      .innerJoin(
+        stockTransfersTable,
+        and(
+          eq(stockTransfersTable.id, stockTransferLinesTable.stockTransferId),
+          eq(stockTransfersTable.status, "in_transit"),
+        ),
+      )
+      .where(
+        and(
+          eq(stockTransferLinesTable.organizationId, t.organizationId),
+          eq(stockTransferLinesTable.itemId, id),
+        ),
+      );
+    const inTransitQty = toNum(transitRow?.qty ?? "0");
 
     // For a bundle, the per-warehouse and total stock returned are the
     // derived "how many bundles can I assemble" figures, not the raw
@@ -1788,7 +1832,7 @@ router.get("/items/:id", async (req, res, next) => {
       // Per-variant per-warehouse stock map (single batched query).
       const perWh = new Map<
         number,
-        Array<{ warehouseId: number; warehouseName: string; quantity: number }>
+        Array<{ warehouseId: number; warehouseName: string; isVirtual: boolean; quantity: number }>
       >();
       if (childIds.length > 0) {
         const wRows = await db
@@ -1796,6 +1840,7 @@ router.get("/items/:id", async (req, res, next) => {
             itemId: itemWarehouseStockTable.itemId,
             warehouseId: itemWarehouseStockTable.warehouseId,
             warehouseName: warehousesTable.name,
+            isVirtual: warehousesTable.isVirtual,
             quantity: itemWarehouseStockTable.quantity,
           })
           .from(itemWarehouseStockTable)
@@ -1814,6 +1859,7 @@ router.get("/items/:id", async (req, res, next) => {
           perWh.get(r.itemId)!.push({
             warehouseId: r.warehouseId,
             warehouseName: r.warehouseName,
+            isVirtual: r.isVirtual,
             quantity: toNum(r.quantity),
           });
         }
@@ -1826,16 +1872,20 @@ router.get("/items/:id", async (req, res, next) => {
     }
 
     const stockByWarehouse = item.isBundle
-      ? bundleStockByWarehouse
+      ? // Bundles have no physical stock rows in virtual warehouses; tag
+        // all bundle warehouse rows as non-virtual for consistency.
+        bundleStockByWarehouse.map((r) => ({ ...r, isVirtual: false as const }))
       : stockRows.map((r) => ({
           warehouseId: r.warehouseId,
           warehouseName: r.warehouseName,
+          isVirtual: r.isVirtual,
           quantity: toNum(r.quantity),
         }));
 
     res.json({
       item: serializeItem(item, total, undefined, variantCount),
       stockByWarehouse,
+      inTransitQty,
       variants,
       components,
     });

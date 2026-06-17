@@ -166,38 +166,54 @@ router.get("/dashboard/summary", async (req, res, next) => {
         ? eq(itemWarehouseStockTable.warehouseId, warehouseId)
         : undefined,
     );
+    // Exclude virtual (job-worker) warehouses from the inventory valuation:
+    // stock at a supplier inflates the book value shown on the dashboard.
     const stockAgg = await db
       .select({
         totalValue: sql<string>`COALESCE(SUM(${itemWarehouseStockTable.quantity} * ${itemsTable.purchasePrice}), 0)`,
       })
       .from(itemWarehouseStockTable)
       .innerJoin(itemsTable, eq(itemsTable.id, itemWarehouseStockTable.itemId))
+      .innerJoin(
+        warehousesTable,
+        and(
+          eq(warehousesTable.id, itemWarehouseStockTable.warehouseId),
+          eq(warehousesTable.isVirtual, false),
+        ),
+      )
       .where(stockWhere);
     const totalStockValue = toNum(stockAgg[0]?.totalValue);
 
+    // Use a correlated subquery so virtual (job-worker) warehouses are excluded
+    // from the on-hand total.  Stock held at a supplier must not suppress
+    // genuine low-stock alerts for items that are physically empty.
+    const warehouseFilter = warehouseId !== undefined
+      ? sql`AND iws.warehouse_id = ${warehouseId}`
+      : sql``;
     const lowStockRows = await db
       .select({
         itemId: itemsTable.id,
         reorder: itemsTable.reorderLevel,
-        onHand: sql<string>`COALESCE(SUM(${itemWarehouseStockTable.quantity}), 0)`,
+        // Use "items"."id" (table-qualified) inside the correlated subquery
+        // because Drizzle's sql`` helper strips the table prefix when
+        // interpolating a column reference, making plain ${itemsTable.id}
+        // resolve to the ambiguous bare column name "id".
+        onHand: sql<string>`COALESCE((
+          SELECT SUM(iws.quantity)
+          FROM item_warehouse_stock iws
+          INNER JOIN warehouses w ON w.id = iws.warehouse_id AND w.is_virtual = false
+          WHERE iws.item_id = "items"."id"
+            AND iws.organization_id = ${orgId}
+            ${warehouseFilter}
+        ), 0)`,
       })
       .from(itemsTable)
-      .leftJoin(
-        itemWarehouseStockTable,
-        and(
-          eq(itemWarehouseStockTable.itemId, itemsTable.id),
-          warehouseId !== undefined
-            ? eq(itemWarehouseStockTable.warehouseId, warehouseId)
-            : undefined,
-        ),
-      )
       .where(
         and(
           eq(itemsTable.organizationId, orgId),
           sql`${itemsTable.archivedAt} IS NULL`,
         ),
-      )
-      .groupBy(itemsTable.id, itemsTable.reorderLevel);
+      );
     const lowStockCount = lowStockRows.filter(
       (r) => toNum(r.onHand) <= 0 || (toNum(r.reorder) > 0 && toNum(r.onHand) <= toNum(r.reorder)),
     ).length;
