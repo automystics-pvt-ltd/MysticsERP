@@ -6184,9 +6184,10 @@ components:
         componentItemId: { type: integer }
         componentItemName: { type: string }
         componentItemSku: { type: string }
+        componentItemUnit: { type: string }
         quantityPerOutput: { type: number }
         totalQuantity: { type: number }
-      required: [id, componentItemId, componentItemName, componentItemSku, quantityPerOutput, totalQuantity]
+      required: [id, componentItemId, componentItemName, componentItemSku, componentItemUnit, quantityPerOutput, totalQuantity]
 
     JobWorkIssueLine:
       type: object

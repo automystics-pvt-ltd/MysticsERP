@@ -11,6 +11,7 @@ export interface JobWorkOrderComponent {
   componentItemId: number;
   componentItemName: string;
   componentItemSku: string;
+  componentItemUnit: string;
   quantityPerOutput: number;
   totalQuantity: number;
 }

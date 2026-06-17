@@ -617,10 +617,12 @@ export default function JobWorkOrderDetail() {
                           {c.componentItemSku}
                         </TableCell>
                         <TableCell className="text-right">
-                          {Number(c.quantityPerOutput)}
+                          {Number(c.quantityPerOutput)}{" "}
+                          <span className="text-xs text-muted-foreground">{c.componentItemUnit}</span>
                         </TableCell>
                         <TableCell className="text-right font-medium">
-                          {Number(c.totalQuantity)}
+                          {Number(c.totalQuantity)}{" "}
+                          <span className="text-xs text-muted-foreground">{c.componentItemUnit}</span>
                         </TableCell>
                         <TableCell className="text-right text-muted-foreground">
                           {issued}
@@ -1158,10 +1160,12 @@ function IssueMaterialDialog({
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
-                        {Number(c.quantityPerOutput)}
+                        {Number(c.quantityPerOutput)}{" "}
+                        <span className="text-xs text-muted-foreground">{c.componentItemUnit}</span>
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground">
-                        {Number(c.totalQuantity)}
+                        {Number(c.totalQuantity)}{" "}
+                        <span className="text-xs text-muted-foreground">{c.componentItemUnit}</span>
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground">
                         {issued}

@@ -244,6 +244,7 @@ async function loadDetail(orgId: number, id: number) {
       c: jobWorkOrderComponentsTable,
       itemName: itemsTable.name,
       itemSku: itemsTable.sku,
+      itemUnit: itemsTable.unit,
     })
     .from(jobWorkOrderComponentsTable)
     .innerJoin(
@@ -404,6 +405,7 @@ async function loadDetail(orgId: number, id: number) {
       componentItemId: r.c.componentItemId,
       componentItemName: r.itemName,
       componentItemSku: r.itemSku,
+      componentItemUnit: r.itemUnit,
       quantityPerOutput: toNum(r.c.quantityPerOutput),
       totalQuantity: toNum(r.c.totalQuantity),
     })),

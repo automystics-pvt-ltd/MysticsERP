@@ -4307,6 +4307,7 @@ export const GetJobWorkOrderResponse = zod.object({
   "componentItemId": zod.number(),
   "componentItemName": zod.string(),
   "componentItemSku": zod.string(),
+  "componentItemUnit": zod.string(),
   "quantityPerOutput": zod.number(),
   "totalQuantity": zod.number()
 })),
@@ -4400,6 +4401,7 @@ export const UpdateJobWorkOrderResponse = zod.object({
   "componentItemId": zod.number(),
   "componentItemName": zod.string(),
   "componentItemSku": zod.string(),
+  "componentItemUnit": zod.string(),
   "quantityPerOutput": zod.number(),
   "totalQuantity": zod.number()
 })),
@@ -4482,6 +4484,7 @@ export const CancelJobWorkOrderResponse = zod.object({
   "componentItemId": zod.number(),
   "componentItemName": zod.string(),
   "componentItemSku": zod.string(),
+  "componentItemUnit": zod.string(),
   "quantityPerOutput": zod.number(),
   "totalQuantity": zod.number()
 })),
@@ -4603,6 +4606,7 @@ export const CancelJobWorkReceiptResponse = zod.object({
   "componentItemId": zod.number(),
   "componentItemName": zod.string(),
   "componentItemSku": zod.string(),
+  "componentItemUnit": zod.string(),
   "quantityPerOutput": zod.number(),
   "totalQuantity": zod.number()
 })),
