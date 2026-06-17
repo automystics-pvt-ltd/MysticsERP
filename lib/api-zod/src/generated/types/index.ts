@@ -199,6 +199,7 @@ export * from './organizationTaxMode';
 export * from './payablesAgingReport';
 export * from './payablesAgingRow';
 export * from './payablesAgingTotals';
+export * from './paymentBreakdownEntry';
 export * from './paymentLink';
 export * from './pendingJobWorkReport';
 export * from './pendingJobWorkReportRow';

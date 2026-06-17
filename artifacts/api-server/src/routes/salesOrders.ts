@@ -7,6 +7,7 @@ import {
   shipmentLinesTable,
   shipmentsTable,
   customerPaymentAllocationsTable,
+  customerPaymentsTable,
   customersTable,
   warehousesTable,
   itemsTable,
@@ -299,6 +300,30 @@ async function loadDetail(orgId: number, orderId: number) {
     .innerJoin(itemsTable, eq(itemsTable.id, salesOrderLinesTable.itemId))
     .where(eq(salesOrderLinesTable.salesOrderId, orderId));
   const shipments = await loadShipmentsForOrder(orgId, orderId);
+  const paymentBreakdownRows = await db
+    .select({
+      mode: customerPaymentsTable.mode,
+      referenceNumber: customerPaymentsTable.referenceNumber,
+      amount: sql<string>`SUM(${customerPaymentAllocationsTable.amount})`,
+    })
+    .from(customerPaymentAllocationsTable)
+    .innerJoin(
+      customerPaymentsTable,
+      eq(customerPaymentsTable.id, customerPaymentAllocationsTable.paymentId),
+    )
+    .where(
+      and(
+        eq(customerPaymentAllocationsTable.salesOrderId, orderId),
+        eq(customerPaymentAllocationsTable.organizationId, orgId),
+      ),
+    )
+    .groupBy(
+      customerPaymentsTable.id,
+      customerPaymentsTable.mode,
+      customerPaymentsTable.referenceNumber,
+      customerPaymentsTable.paymentDate,
+    )
+    .orderBy(asc(customerPaymentsTable.paymentDate), asc(customerPaymentsTable.id)); // org-scope-allow: salesOrderId orderId is already validated against orgId above; organizationId also explicit in WHERE
   const discountTotal = lineRows.reduce(
     (sum, r) => sum + toNum(r.line.discountAmount ?? "0"),
     0,
@@ -331,6 +356,11 @@ async function loadDetail(orgId: number, orderId: number) {
         !!r.trackBatches,
       ),
     ),
+    paymentBreakdown: paymentBreakdownRows.map((r) => ({
+      mode: r.mode,
+      referenceNumber: r.referenceNumber,
+      amount: toNum(r.amount),
+    })),
     shipments,
   };
 }

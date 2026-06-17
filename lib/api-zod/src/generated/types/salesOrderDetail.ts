@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { OrderLine } from './orderLine';
+import type { PaymentBreakdownEntry } from './paymentBreakdownEntry';
 import type { SalesOrder } from './salesOrder';
 import type { Shipment } from './shipment';
 
@@ -13,4 +14,5 @@ export interface SalesOrderDetail {
   order: SalesOrder;
   lines: OrderLine[];
   shipments: Shipment[];
+  paymentBreakdown: PaymentBreakdownEntry[];
 }

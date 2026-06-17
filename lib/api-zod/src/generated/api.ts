@@ -1382,6 +1382,11 @@ export const GetSalesOrderResponse = zod.object({
   "sku": zod.string(),
   "quantity": zod.number()
 }))
+})),
+  "paymentBreakdown": zod.array(zod.object({
+  "mode": zod.string(),
+  "referenceNumber": zod.string().nullable(),
+  "amount": zod.number()
 }))
 })
 
@@ -1519,6 +1524,11 @@ export const UpdateSalesOrderResponse = zod.object({
   "sku": zod.string(),
   "quantity": zod.number()
 }))
+})),
+  "paymentBreakdown": zod.array(zod.object({
+  "mode": zod.string(),
+  "referenceNumber": zod.string().nullable(),
+  "amount": zod.number()
 }))
 })
 
@@ -1642,6 +1652,11 @@ export const UpdateSalesOrderStatusResponse = zod.object({
   "sku": zod.string(),
   "quantity": zod.number()
 }))
+})),
+  "paymentBreakdown": zod.array(zod.object({
+  "mode": zod.string(),
+  "referenceNumber": zod.string().nullable(),
+  "amount": zod.number()
 }))
 })
 
@@ -1758,6 +1773,11 @@ export const ReturnSalesOrderResponse = zod.object({
   "sku": zod.string(),
   "quantity": zod.number()
 }))
+})),
+  "paymentBreakdown": zod.array(zod.object({
+  "mode": zod.string(),
+  "referenceNumber": zod.string().nullable(),
+  "amount": zod.number()
 }))
 })
 

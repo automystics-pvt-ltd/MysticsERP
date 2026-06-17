@@ -1168,10 +1168,18 @@ export interface Shipment {
   lines: ShipmentLine[];
 }
 
+export interface PaymentBreakdownEntry {
+  mode: string;
+  /** @nullable */
+  referenceNumber: string | null;
+  amount: number;
+}
+
 export interface SalesOrderDetail {
   order: SalesOrder;
   lines: OrderLine[];
   shipments: Shipment[];
+  paymentBreakdown: PaymentBreakdownEntry[];
 }
 
 /**

@@ -19,7 +19,7 @@ import {
   useGetMe,
   useRecordPrint,
 } from "@/lib/queryKeys";
-import { useDeleteSalesOrder, useListCustomerPayments, getListCustomerPaymentsQueryKey } from "@workspace/api-client-react";
+import { useDeleteSalesOrder, getListCustomerPaymentsQueryKey } from "@workspace/api-client-react";
 import { normalizeRole } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -121,11 +121,6 @@ export default function SalesOrderDetail() {
         }),
       },
     },
-  );
-
-  const { data: orderPayments } = useListCustomerPayments(
-    { salesOrderId: orderId },
-    { query: { enabled: !!orderId } as any },
   );
 
   const invalidateAll = () => {
@@ -779,7 +774,7 @@ export default function SalesOrderDetail() {
         </Card>
       </div>
 
-      {orderPayments && orderPayments.length > 0 && (
+      {orderDetail.paymentBreakdown.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
@@ -788,8 +783,8 @@ export default function SalesOrderDetail() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {orderPayments.map((p) => (
-                <div key={p.id} className="flex items-center justify-between text-sm">
+              {orderDetail.paymentBreakdown.map((p, i) => (
+                <div key={i} className="flex items-center justify-between text-sm">
                   <div className="flex items-center gap-2">
                     <span className="font-medium capitalize">
                       {p.mode === "upi" ? "UPI" : p.mode === "cash" ? "Cash" : p.mode === "card" ? "Card" : p.mode === "bank" ? "Bank Transfer" : p.mode === "razorpay" ? "Razorpay" : (p.mode ?? "").charAt(0).toUpperCase() + (p.mode ?? "").slice(1)}
@@ -1302,19 +1297,16 @@ function SalesOrderThermalReceipt({
     order: Record<string, unknown>;
     customerPhone?: string | null;
     lines: Record<string, unknown>[];
+    paymentBreakdown?: Array<{ mode: string; referenceNumber?: string | null; amount: number }>;
   } | null | undefined;
 }) {
   const { data: org } = useGetCurrentOrganization();
   const { data: me } = useGetMe();
   const orgAny = org as unknown as Record<string, string | null | undefined> | undefined;
   const { src: logoSrc } = useImageSrc(orgAny?.thermalLogoUrl ?? org?.logoUrl);
-  const orderId = orderDetail ? Number((orderDetail.order as Record<string, unknown>).id) : 0;
-  const { data: payments } = useListCustomerPayments(
-    { salesOrderId: orderId },
-    { query: { enabled: !!orderId } as any },
-  );
-
   if (!orderDetail) return null;
+
+  const paymentBreakdown = orderDetail.paymentBreakdown ?? [];
 
   const { order, lines, customerPhone } = orderDetail as {
     order: {
@@ -1359,7 +1351,7 @@ function SalesOrderThermalReceipt({
   const total = Number(order.total);
   const subtotal = Number(order.subtotal);
   const discTotal = Number(order.discountTotal ?? 0);
-  const totalPaid = (payments ?? []).reduce((s, p) => s + Number(p.amount), 0);
+  const totalPaid = paymentBreakdown.reduce((s, p) => s + Number(p.amount), 0);
   const balanceDue = Math.max(0, total - totalPaid);
 
   return (
@@ -1516,7 +1508,7 @@ function SalesOrderThermalReceipt({
               <td colSpan={3}>TOTAL</td>
               <td className="r">RS {total.toFixed(2)}</td>
             </tr>
-            {(payments ?? []).length > 0 && (payments ?? []).map((p, i) => (
+            {paymentBreakdown.length > 0 && paymentBreakdown.map((p, i) => (
               <tr key={i}>
                 <td colSpan={3}>{SO_PAYMENT_LABELS[p.mode ?? ""] ?? (p.mode ?? "Payment")}</td>
                 <td className="r">{Number(p.amount).toFixed(2)}</td>

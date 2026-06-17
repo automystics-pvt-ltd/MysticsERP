@@ -4038,7 +4038,18 @@ components:
         shipments:
           type: array
           items: { $ref: "#/components/schemas/Shipment" }
-      required: [order, lines, shipments]
+        paymentBreakdown:
+          type: array
+          items: { $ref: "#/components/schemas/PaymentBreakdownEntry" }
+      required: [order, lines, shipments, paymentBreakdown]
+
+    PaymentBreakdownEntry:
+      type: object
+      properties:
+        mode: { type: string }
+        referenceNumber: { type: ["string", "null"] }
+        amount: { type: number }
+      required: [mode, referenceNumber, amount]
 
     ShipmentLine:
       type: object
