@@ -3465,7 +3465,8 @@ components:
         warehouseId: { type: integer }
         warehouseName: { type: string }
         quantity: { type: number }
-      required: [warehouseId, warehouseName, quantity]
+        isVirtual: { type: boolean }
+      required: [warehouseId, warehouseName, quantity, isVirtual]
 
     VariantStock:
       type: object
@@ -3495,6 +3496,7 @@ components:
           type: array
           items: { $ref: "#/components/schemas/ItemWarehouseStock" }
           description: For a bundle, the per-warehouse derived (assemblable) quantity rather than a stored stock row.
+        inTransitQty: { type: number }
         variants:
           type: array
           items: { $ref: "#/components/schemas/VariantStock" }
@@ -3503,7 +3505,7 @@ components:
           type: array
           items: { $ref: "#/components/schemas/BundleComponent" }
           description: Components of this item when it is a bundle. Empty otherwise.
-      required: [item, stockByWarehouse, variants, components]
+      required: [item, stockByWarehouse, inTransitQty, variants, components]
 
     CreateItemPayload:
       type: object
@@ -4379,6 +4381,8 @@ components:
         receivedDate: { type: string }
         status: { type: string }
         notes: { type: ["string", "null"] }
+        supplierInvoiceNumber: { type: ["string", "null"] }
+        supplierInvoiceDate: { type: ["string", "null"] }
         createdAt: { type: string }
         stockConsumed:
           type: boolean
@@ -4389,7 +4393,7 @@ components:
         lines:
           type: array
           items: { $ref: "#/components/schemas/GoodsReceiptLine" }
-      required: [id, purchaseOrderId, receiptNumber, receivedDate, status, notes, createdAt, stockConsumed, lines]
+      required: [id, purchaseOrderId, receiptNumber, receivedDate, status, notes, supplierInvoiceNumber, supplierInvoiceDate, createdAt, stockConsumed, lines]
 
     CreateGoodsReceiptLineInput:
       type: object
@@ -4407,6 +4411,8 @@ components:
       properties:
         receivedDate: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
+        supplierInvoiceNumber: { type: ["string", "null"] }
+        supplierInvoiceDate: { type: ["string", "null"] }
         lines:
           type: array
           items: { $ref: "#/components/schemas/CreateGoodsReceiptLineInput" }

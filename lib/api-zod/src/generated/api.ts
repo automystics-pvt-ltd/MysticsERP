@@ -476,7 +476,8 @@ export const ListItemsResponseItem = zod.object({
   "warehouseStock": zod.array(zod.object({
   "warehouseId": zod.number(),
   "warehouseName": zod.string(),
-  "quantity": zod.number()
+  "quantity": zod.number(),
+  "isVirtual": zod.boolean()
 })).nullable().describe('Per-warehouse on-hand breakdown for this item, populated only when the list endpoint is called with `includeWarehouseBreakdown=true`. Excludes virtual job-worker warehouses. Null otherwise.'),
   "imageUrl": zod.string().nullable(),
   "parentItemId": zod.number().nullable().describe('When set, this item is a variant of the referenced parent item.'),
@@ -612,7 +613,8 @@ export const LookupItemByCodeResponse = zod.object({
   "warehouseStock": zod.array(zod.object({
   "warehouseId": zod.number(),
   "warehouseName": zod.string(),
-  "quantity": zod.number()
+  "quantity": zod.number(),
+  "isVirtual": zod.boolean()
 })).nullable().describe('Per-warehouse on-hand breakdown for this item, populated only when the list endpoint is called with `includeWarehouseBreakdown=true`. Excludes virtual job-worker warehouses. Null otherwise.'),
   "imageUrl": zod.string().nullable(),
   "parentItemId": zod.number().nullable().describe('When set, this item is a variant of the referenced parent item.'),
@@ -682,7 +684,8 @@ export const GetItemResponse = zod.object({
   "warehouseStock": zod.array(zod.object({
   "warehouseId": zod.number(),
   "warehouseName": zod.string(),
-  "quantity": zod.number()
+  "quantity": zod.number(),
+  "isVirtual": zod.boolean()
 })).nullable().describe('Per-warehouse on-hand breakdown for this item, populated only when the list endpoint is called with `includeWarehouseBreakdown=true`. Excludes virtual job-worker warehouses. Null otherwise.'),
   "imageUrl": zod.string().nullable(),
   "parentItemId": zod.number().nullable().describe('When set, this item is a variant of the referenced parent item.'),
@@ -707,8 +710,10 @@ export const GetItemResponse = zod.object({
   "stockByWarehouse": zod.array(zod.object({
   "warehouseId": zod.number(),
   "warehouseName": zod.string(),
-  "quantity": zod.number()
+  "quantity": zod.number(),
+  "isVirtual": zod.boolean()
 })).describe('For a bundle, the per-warehouse derived (assemblable) quantity rather than a stored stock row.'),
+  "inTransitQty": zod.number(),
   "variants": zod.array(zod.object({
   "item": zod.object({
   "id": zod.number(),
@@ -729,7 +734,8 @@ export const GetItemResponse = zod.object({
   "warehouseStock": zod.array(zod.object({
   "warehouseId": zod.number(),
   "warehouseName": zod.string(),
-  "quantity": zod.number()
+  "quantity": zod.number(),
+  "isVirtual": zod.boolean()
 })).nullable().describe('Per-warehouse on-hand breakdown for this item, populated only when the list endpoint is called with `includeWarehouseBreakdown=true`. Excludes virtual job-worker warehouses. Null otherwise.'),
   "imageUrl": zod.string().nullable(),
   "parentItemId": zod.number().nullable().describe('When set, this item is a variant of the referenced parent item.'),
@@ -754,7 +760,8 @@ export const GetItemResponse = zod.object({
   "stockByWarehouse": zod.array(zod.object({
   "warehouseId": zod.number(),
   "warehouseName": zod.string(),
-  "quantity": zod.number()
+  "quantity": zod.number(),
+  "isVirtual": zod.boolean()
 }))
 })).describe('Children of this item when it is a parent. Empty for leaf items.'),
   "components": zod.array(zod.object({
@@ -824,7 +831,8 @@ export const UpdateItemResponse = zod.object({
   "warehouseStock": zod.array(zod.object({
   "warehouseId": zod.number(),
   "warehouseName": zod.string(),
-  "quantity": zod.number()
+  "quantity": zod.number(),
+  "isVirtual": zod.boolean()
 })).nullable().describe('Per-warehouse on-hand breakdown for this item, populated only when the list endpoint is called with `includeWarehouseBreakdown=true`. Excludes virtual job-worker warehouses. Null otherwise.'),
   "imageUrl": zod.string().nullable(),
   "parentItemId": zod.number().nullable().describe('When set, this item is a variant of the referenced parent item.'),
@@ -2059,6 +2067,8 @@ export const GetPurchaseOrderResponse = zod.object({
   "receivedDate": zod.string(),
   "status": zod.string(),
   "notes": zod.string().nullable(),
+  "supplierInvoiceNumber": zod.string().nullable(),
+  "supplierInvoiceDate": zod.string().nullable(),
   "createdAt": zod.string(),
   "stockConsumed": zod.boolean().describe('True when the stock added by this receipt has been (at least partially) consumed downstream (sold, transferred, or adjusted out) and therefore cannot be cancelled without first reversing those transactions. Always false for cancelled receipts.\n'),
   "lines": zod.array(zod.object({
@@ -2149,6 +2159,8 @@ export const UpdatePurchaseOrderResponse = zod.object({
   "receivedDate": zod.string(),
   "status": zod.string(),
   "notes": zod.string().nullable(),
+  "supplierInvoiceNumber": zod.string().nullable(),
+  "supplierInvoiceDate": zod.string().nullable(),
   "createdAt": zod.string(),
   "stockConsumed": zod.boolean().describe('True when the stock added by this receipt has been (at least partially) consumed downstream (sold, transferred, or adjusted out) and therefore cannot be cancelled without first reversing those transactions. Always false for cancelled receipts.\n'),
   "lines": zod.array(zod.object({
@@ -2233,6 +2245,8 @@ export const UpdatePurchaseOrderStatusResponse = zod.object({
   "receivedDate": zod.string(),
   "status": zod.string(),
   "notes": zod.string().nullable(),
+  "supplierInvoiceNumber": zod.string().nullable(),
+  "supplierInvoiceDate": zod.string().nullable(),
   "createdAt": zod.string(),
   "stockConsumed": zod.boolean().describe('True when the stock added by this receipt has been (at least partially) consumed downstream (sold, transferred, or adjusted out) and therefore cannot be cancelled without first reversing those transactions. Always false for cancelled receipts.\n'),
   "lines": zod.array(zod.object({
@@ -2303,6 +2317,8 @@ export const ReturnPurchaseOrderResponse = zod.object({
   "receivedDate": zod.string(),
   "status": zod.string(),
   "notes": zod.string().nullable(),
+  "supplierInvoiceNumber": zod.string().nullable(),
+  "supplierInvoiceDate": zod.string().nullable(),
   "createdAt": zod.string(),
   "stockConsumed": zod.boolean().describe('True when the stock added by this receipt has been (at least partially) consumed downstream (sold, transferred, or adjusted out) and therefore cannot be cancelled without first reversing those transactions. Always false for cancelled receipts.\n'),
   "lines": zod.array(zod.object({
@@ -2328,6 +2344,8 @@ export const ListPurchaseOrderGoodsReceiptsResponseItem = zod.object({
   "receivedDate": zod.string(),
   "status": zod.string(),
   "notes": zod.string().nullable(),
+  "supplierInvoiceNumber": zod.string().nullable(),
+  "supplierInvoiceDate": zod.string().nullable(),
   "createdAt": zod.string(),
   "stockConsumed": zod.boolean().describe('True when the stock added by this receipt has been (at least partially) consumed downstream (sold, transferred, or adjusted out) and therefore cannot be cancelled without first reversing those transactions. Always false for cancelled receipts.\n'),
   "lines": zod.array(zod.object({
@@ -2349,6 +2367,8 @@ export const CreatePurchaseOrderGoodsReceiptParams = zod.object({
 export const CreatePurchaseOrderGoodsReceiptBody = zod.object({
   "receivedDate": zod.string().nullish(),
   "notes": zod.string().nullish(),
+  "supplierInvoiceNumber": zod.string().nullish(),
+  "supplierInvoiceDate": zod.string().nullish(),
   "lines": zod.array(zod.object({
   "purchaseOrderLineId": zod.number(),
   "quantity": zod.number(),
@@ -2376,6 +2396,8 @@ export const CancelGoodsReceiptResponse = zod.object({
   "receivedDate": zod.string(),
   "status": zod.string(),
   "notes": zod.string().nullable(),
+  "supplierInvoiceNumber": zod.string().nullable(),
+  "supplierInvoiceDate": zod.string().nullable(),
   "createdAt": zod.string(),
   "stockConsumed": zod.boolean().describe('True when the stock added by this receipt has been (at least partially) consumed downstream (sold, transferred, or adjusted out) and therefore cannot be cancelled without first reversing those transactions. Always false for cancelled receipts.\n'),
   "lines": zod.array(zod.object({
@@ -4717,7 +4739,8 @@ export const RegenerateItemBarcodeResponse = zod.object({
   "warehouseStock": zod.array(zod.object({
   "warehouseId": zod.number(),
   "warehouseName": zod.string(),
-  "quantity": zod.number()
+  "quantity": zod.number(),
+  "isVirtual": zod.boolean()
 })).nullable().describe('Per-warehouse on-hand breakdown for this item, populated only when the list endpoint is called with `includeWarehouseBreakdown=true`. Excludes virtual job-worker warehouses. Null otherwise.'),
   "imageUrl": zod.string().nullable(),
   "parentItemId": zod.number().nullable().describe('When set, this item is a variant of the referenced parent item.'),

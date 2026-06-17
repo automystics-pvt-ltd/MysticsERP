@@ -27,6 +27,8 @@ export const goodsReceiptsTable = pgTable(
     receivedDate: date("received_date").notNull(),
     status: text("status").notNull().default("received"),
     notes: text("notes"),
+    supplierInvoiceNumber: text("supplier_invoice_number"),
+    supplierInvoiceDate: date("supplier_invoice_date"),
     pendingBatchPicksJson: jsonb("pending_batch_picks_json"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

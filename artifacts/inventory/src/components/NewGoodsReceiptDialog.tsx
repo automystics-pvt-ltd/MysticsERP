@@ -33,6 +33,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Trash2, ScanLine } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { formatCurrency } from "@/lib/format";
 
 interface OrderLine {
   id: number;
@@ -42,6 +43,7 @@ interface OrderLine {
   quantity: number;
   quantityReceived: number;
   trackBatches: boolean;
+  unitPrice: number;
 }
 
 interface Props {
@@ -72,6 +74,7 @@ type Row = {
   quantity: string;
   trackBatches: boolean;
   batches: BatchCapture[];
+  unitPrice: number;
 };
 
 let uidCounter = 0;
@@ -103,6 +106,8 @@ export function NewGoodsReceiptDialog({
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [receivedDate, setReceivedDate] = useState(today);
   const [notes, setNotes] = useState("");
+  const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState("");
+  const [supplierInvoiceDate, setSupplierInvoiceDate] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
   const [scannerOpen, setScannerOpen] = useState(false);
 
@@ -110,6 +115,8 @@ export function NewGoodsReceiptDialog({
     if (!open) return;
     setReceivedDate(today);
     setNotes("");
+    setSupplierInvoiceNumber("");
+    setSupplierInvoiceDate("");
     setRows(
       lines.map((l) => {
         const remaining = Math.max(0, l.quantity - l.quantityReceived);
@@ -125,6 +132,7 @@ export function NewGoodsReceiptDialog({
           quantity: remaining > 0 ? String(remaining) : "0",
           trackBatches: l.trackBatches,
           batches: l.trackBatches && remaining > 0 ? [emptyBatch(remaining)] : [],
+          unitPrice: l.unitPrice,
         };
       }),
     );
@@ -270,6 +278,12 @@ export function NewGoodsReceiptDialog({
         : Number(r.quantity || 0)),
     0,
   );
+  const totalAmount = selectedRows.reduce((s, r) => {
+    const qty = r.trackBatches
+      ? r.batches.reduce((bs, b) => bs + (Number(b.quantity) || 0), 0)
+      : Number(r.quantity || 0);
+    return s + qty * r.unitPrice;
+  }, 0);
 
   const handleSubmit = () => {
     const activeRows = selectedRows.filter((r) =>
@@ -355,6 +369,8 @@ export function NewGoodsReceiptDialog({
       data: {
         receivedDate,
         notes: notes.trim() || null,
+        supplierInvoiceNumber: supplierInvoiceNumber.trim() || null,
+        supplierInvoiceDate: supplierInvoiceDate || null,
         lines: activeRows.map((r) => {
           if (r.trackBatches) {
             const usable = r.batches.filter((b) => Number(b.quantity) > 0);
@@ -388,7 +404,7 @@ export function NewGoodsReceiptDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>New receipt</DialogTitle>
           <DialogDescription>
@@ -407,6 +423,27 @@ export function NewGoodsReceiptDialog({
               value={receivedDate}
               onChange={(e) => setReceivedDate(e.target.value)}
               data-testid="input-received-date"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="supplier-invoice-date">Supplier invoice date</Label>
+            <Input
+              id="supplier-invoice-date"
+              type="date"
+              value={supplierInvoiceDate}
+              onChange={(e) => setSupplierInvoiceDate(e.target.value)}
+              data-testid="input-supplier-invoice-date"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="supplier-invoice-number">Supplier invoice number</Label>
+            <Input
+              id="supplier-invoice-number"
+              type="text"
+              value={supplierInvoiceNumber}
+              onChange={(e) => setSupplierInvoiceNumber(e.target.value)}
+              placeholder="e.g. INV-2026-0042"
+              data-testid="input-supplier-invoice-number"
             />
           </div>
           <div className="space-y-2">
@@ -458,7 +495,9 @@ export function NewGoodsReceiptDialog({
                   <TableHead className="text-right">Ordered</TableHead>
                   <TableHead className="text-right">Received</TableHead>
                   <TableHead className="text-right">Remaining</TableHead>
+                  <TableHead className="text-right">Unit price</TableHead>
                   <TableHead className="text-right w-32">Receive now</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -468,6 +507,10 @@ export function NewGoodsReceiptDialog({
                     (s, b) => s + (Number(b.quantity) || 0),
                     0,
                   );
+                  const receiveQty = r.trackBatches
+                    ? batchSum
+                    : Number(r.quantity || 0);
+                  const lineAmount = receiveQty * r.unitPrice;
                   return (
                     <>
                       <TableRow
@@ -501,6 +544,9 @@ export function NewGoodsReceiptDialog({
                         </TableCell>
                         <TableCell className="text-right">{r.remaining}</TableCell>
                         <TableCell className="text-right">
+                          {formatCurrency(r.unitPrice)}
+                        </TableCell>
+                        <TableCell className="text-right">
                           {r.trackBatches ? (
                             <span
                               className={
@@ -526,10 +572,15 @@ export function NewGoodsReceiptDialog({
                             />
                           )}
                         </TableCell>
+                        <TableCell className="text-right">
+                          {r.selected && receiveQty > 0
+                            ? formatCurrency(lineAmount)
+                            : <span className="text-muted-foreground">—</span>}
+                        </TableCell>
                       </TableRow>
                       {r.trackBatches && r.selected && !disabled && (
                         <TableRow className="bg-muted/30">
-                          <TableCell colSpan={6} className="p-3">
+                          <TableCell colSpan={8} className="p-3">
                             <div className="space-y-2">
                               <div className="text-xs font-medium text-muted-foreground">
                                 Batches (sum must equal receive quantity)
@@ -653,9 +704,16 @@ export function NewGoodsReceiptDialog({
             {selectedRows.length} line{selectedRows.length === 1 ? "" : "s"}{" "}
             selected
           </span>
-          <span className="font-medium" data-testid="text-total-units">
-            Total units: {totalUnits}
-          </span>
+          <div className="flex items-center gap-4">
+            <span className="font-medium" data-testid="text-total-units">
+              Total units: {totalUnits}
+            </span>
+            {totalAmount > 0 && (
+              <span className="font-medium" data-testid="text-total-amount">
+                Total: {formatCurrency(totalAmount)}
+              </span>
+            )}
+          </div>
         </div>
 
         <DialogFooter>

@@ -320,7 +320,6 @@ export interface ItemWarehouseStock {
   warehouseId: number;
   warehouseName: string;
   quantity: number;
-  /** True when this is a virtual job-worker warehouse, not a physical inventory location. */
   isVirtual: boolean;
 }
 
@@ -416,7 +415,6 @@ export interface ItemDetail {
   item: Item;
   /** For a bundle, the per-warehouse derived (assemblable) quantity rather than a stored stock row. */
   stockByWarehouse: ItemWarehouseStock[];
-  /** Quantity currently on in-transit stock transfers (dispatched from source but not yet received at destination). */
   inTransitQty: number;
   /** Children of this item when it is a parent. Empty for leaf items. */
   variants: VariantStock[];
@@ -1403,6 +1401,10 @@ export interface GoodsReceipt {
   status: string;
   /** @nullable */
   notes: string | null;
+  /** @nullable */
+  supplierInvoiceNumber: string | null;
+  /** @nullable */
+  supplierInvoiceDate: string | null;
   createdAt: string;
   /** True when the stock added by this receipt has been (at least partially) consumed downstream (sold, transferred, or adjusted out) and therefore cannot be cancelled without first reversing those transactions. Always false for cancelled receipts. */
   stockConsumed: boolean;
@@ -1438,6 +1440,10 @@ export interface CreateGoodsReceiptPayload {
   receivedDate?: string | null;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  supplierInvoiceNumber?: string | null;
+  /** @nullable */
+  supplierInvoiceDate?: string | null;
   lines: CreateGoodsReceiptLineInput[];
 }
 

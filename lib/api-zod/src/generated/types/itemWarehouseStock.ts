@@ -10,4 +10,5 @@ export interface ItemWarehouseStock {
   warehouseId: number;
   warehouseName: string;
   quantity: number;
+  isVirtual: boolean;
 }

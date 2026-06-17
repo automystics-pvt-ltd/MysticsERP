@@ -12,5 +12,9 @@ export interface CreateGoodsReceiptPayload {
   receivedDate?: string | null;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  supplierInvoiceNumber?: string | null;
+  /** @nullable */
+  supplierInvoiceDate?: string | null;
   lines: CreateGoodsReceiptLineInput[];
 }

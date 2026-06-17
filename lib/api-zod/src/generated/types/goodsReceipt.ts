@@ -15,6 +15,10 @@ export interface GoodsReceipt {
   status: string;
   /** @nullable */
   notes: string | null;
+  /** @nullable */
+  supplierInvoiceNumber: string | null;
+  /** @nullable */
+  supplierInvoiceDate: string | null;
   createdAt: string;
   /** True when the stock added by this receipt has been (at least partially) consumed downstream (sold, transferred, or adjusted out) and therefore cannot be cancelled without first reversing those transactions. Always false for cancelled receipts. */
   stockConsumed: boolean;

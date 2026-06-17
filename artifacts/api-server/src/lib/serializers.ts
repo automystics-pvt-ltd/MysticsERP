@@ -588,6 +588,8 @@ export function serializeGoodsReceipt(r: GoodsReceipt) {
     receivedDate: r.receivedDate,
     status: r.status,
     notes: r.notes,
+    supplierInvoiceNumber: r.supplierInvoiceNumber ?? null,
+    supplierInvoiceDate: r.supplierInvoiceDate ?? null,
     createdAt: r.createdAt.toISOString(),
   };
 }

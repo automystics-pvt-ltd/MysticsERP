@@ -313,6 +313,17 @@ router.post("/purchase-orders/:id/goods-receipts", async (req, res, next) => {
       typeof b.notes === "string" && b.notes.trim()
         ? String(b.notes).trim()
         : null;
+    const supplierInvoiceNumber =
+      typeof b.supplierInvoiceNumber === "string" && b.supplierInvoiceNumber.trim()
+        ? b.supplierInvoiceNumber.trim()
+        : null;
+    let supplierInvoiceDate: string | null = null;
+    if (typeof b.supplierInvoiceDate === "string" && b.supplierInvoiceDate.trim()) {
+      const raw = b.supplierInvoiceDate.trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+        supplierInvoiceDate = raw;
+      }
+    }
 
     const result = await db.transaction(async (tx) => {
       const orderRows = await tx
@@ -459,6 +470,8 @@ router.post("/purchase-orders/:id/goods-receipts", async (req, res, next) => {
           receivedDate,
           status: "received",
           notes,
+          supplierInvoiceNumber,
+          supplierInvoiceDate,
         })
         .returning();
       const receipt = inserted[0]!;
