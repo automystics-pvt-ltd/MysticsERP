@@ -199,6 +199,14 @@ export default function SalesOrderNew() {
   const hasStockViolations = stockViolations.some(Boolean);
 
   const onSubmit = (data: SalesOrderFormValues) => {
+    if (hasStockViolations) {
+      toast({
+        title: "Insufficient stock",
+        description: "One or more items exceed available stock. Please reduce quantities.",
+        variant: "destructive",
+      });
+      return;
+    }
     createMutation.mutate({
       data: {
         ...data,

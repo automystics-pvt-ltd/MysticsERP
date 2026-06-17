@@ -333,6 +333,14 @@ export default function StockTransferNew() {
   };
 
   const onSubmit = (data: FormValues) => {
+    if (hasStockViolations) {
+      toast({
+        title: "Insufficient stock",
+        description: "One or more items exceed available stock. Please reduce quantities.",
+        variant: "destructive",
+      });
+      return;
+    }
     createMutation.mutate({
       data: {
         fromWarehouseId: data.fromWarehouseId,

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   useCreateSalesOrderShipment,
   useListItemBatches,
+  useListItems,
   getGetSalesOrderQueryKey,
   getListSalesOrderShipmentsQueryKey,
   getListStockMovementsQueryKey,
@@ -88,6 +89,15 @@ export function NewShipmentDialog({
   const [notes, setNotes] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
   const [scannerOpen, setScannerOpen] = useState(false);
+
+  const { data: warehouseItems } = useListItems({ warehouseId });
+  const warehouseStock = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const item of (warehouseItems ?? [])) {
+      m.set(item.id, Number(item.stockAtWarehouse ?? 0));
+    }
+    return m;
+  }, [warehouseItems]);
 
   useEffect(() => {
     if (!open) return;
@@ -190,7 +200,8 @@ export function NewShipmentDialog({
         );
       }
       const current = Number(target.quantity) || 0;
-      const next = Math.min(current + 1, target.remaining);
+      const available = warehouseStock.get(target.itemId) ?? Infinity;
+      const next = Math.min(current + 1, target.remaining, available);
       return prev.map((r, i) =>
         i === idx
           ? { ...r, selected: true, quantity: String(next) }
@@ -255,6 +266,15 @@ export function NewShipmentDialog({
           });
           return;
         }
+        const batchAvailable = warehouseStock.get(r.itemId);
+        if (batchAvailable !== undefined && sum - batchAvailable > 1e-6) {
+          toast({
+            title: `Insufficient stock for ${r.itemName}`,
+            description: `Only ${batchAvailable} units on hand at this warehouse.`,
+            variant: "destructive",
+          });
+          return;
+        }
       } else {
         const qty = Number(r.quantity);
         if (!Number.isFinite(qty) || qty <= 0) {
@@ -267,6 +287,15 @@ export function NewShipmentDialog({
         if (qty - r.remaining > 1e-6) {
           toast({
             title: `Cannot ship more than remaining (${r.remaining}) for ${r.itemName}`,
+            variant: "destructive",
+          });
+          return;
+        }
+        const available = warehouseStock.get(r.itemId);
+        if (available !== undefined && qty - available > 1e-6) {
+          toast({
+            title: `Insufficient stock for ${r.itemName}`,
+            description: `Only ${available} units on hand at this warehouse.`,
             variant: "destructive",
           });
           return;
@@ -375,6 +404,7 @@ export function NewShipmentDialog({
                   <TableHead className="text-right">Ordered</TableHead>
                   <TableHead className="text-right">Shipped</TableHead>
                   <TableHead className="text-right">Remaining</TableHead>
+                  <TableHead className="text-right">On hand</TableHead>
                   <TableHead className="text-right w-32">Ship now</TableHead>
                 </TableRow>
               </TableHeader>
@@ -416,6 +446,20 @@ export function NewShipmentDialog({
                         <TableCell className="text-right">{r.alreadyShipped}</TableCell>
                         <TableCell className="text-right">{r.remaining}</TableCell>
                         <TableCell className="text-right">
+                          {warehouseItems ? (
+                            (() => {
+                              const avail = warehouseStock.get(r.itemId) ?? 0;
+                              return (
+                                <span className={avail === 0 ? "text-destructive font-medium" : avail < r.remaining ? "text-amber-600 font-medium" : ""}>
+                                  {avail}
+                                </span>
+                              );
+                            })()
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
                           {r.trackBatches ? (
                             <span
                               className={
@@ -444,7 +488,7 @@ export function NewShipmentDialog({
                       </TableRow>
                       {r.trackBatches && r.selected && !disabled && (
                         <TableRow className="bg-muted/30">
-                          <TableCell colSpan={6} className="p-3">
+                          <TableCell colSpan={7} className="p-3">
                             <BatchPickerForLine
                               itemId={r.itemId}
                               warehouseId={warehouseId}

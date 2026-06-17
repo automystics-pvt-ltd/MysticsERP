@@ -8,6 +8,7 @@ import {
   useReceiveJobWorkOutput,
   useUpdateJobWorkOrder,
   useGetSupplier,
+  useListItems,
   getGetJobWorkOrderQueryKey,
   getListJobWorkOrdersQueryKey,
   getReportPendingJobWorkQueryKey,
@@ -1036,6 +1037,18 @@ function IssueMaterialDialog({
     new Date().toISOString().slice(0, 10),
   );
   const [notes, setNotes] = useState("");
+
+  const { data: sourceItemsData } = useListItems(
+    detail.order.sourceWarehouseId ? { warehouseId: detail.order.sourceWarehouseId } : undefined,
+  );
+  const sourceStock = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const item of (sourceItemsData ?? [])) {
+      m.set(item.id, Number(item.stockAtWarehouse ?? 0));
+    }
+    return m;
+  }, [sourceItemsData]);
+
   // Default each component to its remaining-to-issue quantity so a
   // partial issue is the easy path. Sum prior issued lines per
   // component and subtract from the BOM total.
@@ -1100,6 +1113,18 @@ function IssueMaterialDialog({
       });
       return;
     }
+    for (const line of lines) {
+      const available = sourceStock.get(line.componentItemId);
+      if (available !== undefined && line.quantity - available > 1e-6) {
+        const comp = detail.components.find((c) => c.componentItemId === line.componentItemId);
+        toast({
+          title: `Insufficient stock for ${comp?.componentItemName ?? "component"}`,
+          description: `Only ${available} units on hand at source warehouse.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
     issueMutation.mutate({
       id: detail.order.id,
       data: {
@@ -1142,6 +1167,7 @@ function IssueMaterialDialog({
                   <TableHead className="text-right w-28">
                     Already issued
                   </TableHead>
+                  <TableHead className="text-right w-28">On hand</TableHead>
                   <TableHead className="text-right w-32">Issue qty</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1171,6 +1197,21 @@ function IssueMaterialDialog({
                         {issued}
                       </TableCell>
                       <TableCell className="text-right">
+                        {sourceItemsData ? (
+                          (() => {
+                            const avail = sourceStock.get(c.componentItemId) ?? 0;
+                            const qty = Number(quantities[c.componentItemId] ?? 0);
+                            return (
+                              <span className={avail === 0 ? "text-destructive font-medium" : qty > avail ? "text-destructive font-medium" : ""}>
+                                {avail}
+                              </span>
+                            );
+                          })()
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
                         <Input
                           type="number"
                           step="0.001"
@@ -1182,7 +1223,12 @@ function IssueMaterialDialog({
                               [c.componentItemId]: e.target.value,
                             }))
                           }
-                          className="text-right"
+                          className={`text-right ${
+                            sourceStock.get(c.componentItemId) !== undefined &&
+                            Number(quantities[c.componentItemId] ?? 0) > (sourceStock.get(c.componentItemId) ?? Infinity)
+                              ? "border-destructive focus-visible:ring-destructive"
+                              : ""
+                          }`}
                           data-testid={`input-issue-qty-${c.componentItemId}`}
                         />
                       </TableCell>
