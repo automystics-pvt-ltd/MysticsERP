@@ -195,6 +195,12 @@ export default function JobWorkOrderDetail() {
   );
   const [downloadingOrderPdf, setDownloadingOrderPdf] = useState(false);
 
+  // Must be called unconditionally before any early return (Rules of Hooks).
+  const canTransferPerm = useCanI("job_work", "transfer");
+  const canApprovePerm = useCanI("job_work", "approve");
+  const canEditPerm = useCanI("job_work", "edit");
+  const canDeletePerm = useCanI("job_work", "delete");
+
   if (isLoading || !detail) {
     return (
       <div className="space-y-6">
@@ -223,10 +229,6 @@ export default function JobWorkOrderDetail() {
   // does NOT auto-reverse already-issued material — the user records
   // any pull-back as a separate stock transfer (this matches how
   // most Indian SMBs handle real-world job-work cancellations).
-  const canTransferPerm = useCanI("job_work", "transfer");
-  const canApprovePerm = useCanI("job_work", "approve");
-  const canEditPerm = useCanI("job_work", "edit");
-  const canDeletePerm = useCanI("job_work", "delete");
   const canCancel = (!isCancelled && !isCompleted) && canDeletePerm;
   const canIssue = (!isCancelled && !isCompleted) && canTransferPerm;
   const canReceive =

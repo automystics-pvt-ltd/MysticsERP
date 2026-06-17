@@ -238,6 +238,9 @@ export default function PurchaseOrderDetail() {
     returnMutation.mutate({ id: orderId, data: { notes: null } });
   };
 
+  // Must be called unconditionally before any early return (Rules of Hooks).
+  const canApprovePO = useCanI("purchase_orders", "approve");
+
   if (isLoading || !orderDetail) {
     return (
       <div className="space-y-6">
@@ -253,7 +256,6 @@ export default function PurchaseOrderDetail() {
   // disabled, and the only way to void the bill is to cancel the
   // originating receipt.
   const isJobWorkBill = order.jobWorkReceiptId != null;
-  const canApprovePO = useCanI("purchase_orders", "approve");
   const jwoLockMessage =
     "Locked because this bill was auto-created from a job-work receipt. Cancel the receipt on the job-work order to void it.";
 

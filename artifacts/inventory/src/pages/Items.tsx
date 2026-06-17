@@ -1499,7 +1499,7 @@ export default function Items() {
                           // synthetic breakdown so the parent row shows
                           // the same warehouse info as its children.
                           const variants = variantsByParent[parent.id] ?? [];
-                          const byWh = new Map<number, { warehouseId: number; warehouseName: string; quantity: number }>();
+                          const byWh = new Map<number, { warehouseId: number; warehouseName: string; quantity: number; isVirtual: boolean }>();
                           for (const v of variants) {
                             for (const w of v.warehouseStock ?? []) {
                               const existing = byWh.get(w.warehouseId);
