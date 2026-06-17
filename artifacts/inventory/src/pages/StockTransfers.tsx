@@ -33,6 +33,8 @@ import { Button } from "@/components/ui/button";
 import { TablePagination } from "@/components/TablePagination";
 import { BulkImportStockTransferDialog } from "@/components/BulkImportStockTransferDialog";
 import { useDebounce } from "@/hooks/use-debounce";
+import { FilterBar, type FilterChip } from "@/components/FilterBar";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import type { StockTransfer } from "@workspace/api-client-react";
 
 const PAGE_SIZE_OPTIONS = [10, 15, 25, 50, 100] as const;
@@ -116,7 +118,19 @@ export default function StockTransfers() {
 
   const transfers: StockTransfer[] = data?.transfers ?? [];
   const total = data?.total ?? 0;
-  const hasDateFilter = fromDate !== "" || toDate !== "";
+
+  const warehouseName = warehouseFilter !== "all"
+    ? (warehouses ?? []).find((w) => w.id === Number(warehouseFilter))?.name ?? warehouseFilter
+    : undefined;
+  const filterCount = [statusFilter !== "all", warehouseFilter !== "all", !!(fromDate || toDate)].filter(Boolean).length;
+  const activeChips: FilterChip[] = [
+    ...(statusFilter !== "all" ? [{ key: "status", label: `Status: ${statusFilter.replace("_", " ")}`, onRemove: () => { setStatusFilter("all"); setPage(1); } }] : []),
+    ...(warehouseFilter !== "all" && warehouseName ? [{ key: "wh", label: `Warehouse: ${warehouseName}`, onRemove: () => { setWarehouseFilter("all"); setPage(1); } }] : []),
+    ...((fromDate || toDate) ? [{ key: "date", label: fromDate && toDate ? `${fromDate} – ${toDate}` : (fromDate || toDate), onRemove: () => { setFromDate(""); setToDate(""); setPage(1); } }] : []),
+  ];
+  function clearFilters() {
+    setSearch(""); setStatusFilter("all"); setWarehouseFilter("all"); setFromDate(""); setToDate(""); setPage(1);
+  }
 
   return (
     <div className="space-y-6">
@@ -153,96 +167,59 @@ export default function StockTransfers() {
         }
       />
 
-      <div className="flex flex-col sm:flex-row sm:items-end gap-4 bg-card border rounded-lg p-4">
-        <div className="space-y-1 w-full sm:w-64">
-          <Label>Search</Label>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
-            <Input
-              className="pl-8 pr-8"
-              placeholder="Transfer #, warehouse…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              data-testid="filter-transfer-search"
-            />
-            {search && (
-              <button
-                type="button"
-                className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground"
-                onClick={() => setSearch("")}
-                aria-label="Clear search"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-        </div>
-        <div className="space-y-1 w-full sm:w-56">
-          <Label>Status</Label>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger data-testid="filter-transfer-status">
-              <SelectValue placeholder="All Statuses" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              <SelectItem value="draft">Draft</SelectItem>
-              <SelectItem value="in_transit">In transit</SelectItem>
-              <SelectItem value="completed">Completed</SelectItem>
-              <SelectItem value="cancelled">Cancelled</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1 w-full sm:w-64">
-          <Label>Warehouse (source or destination)</Label>
-          <Select
-            value={warehouseFilter}
-            onValueChange={setWarehouseFilter}
-          >
-            <SelectTrigger data-testid="filter-transfer-warehouse">
-              <SelectValue placeholder="All Warehouses" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Warehouses</SelectItem>
-              {warehouses?.map((w) => (
-                <SelectItem key={w.id} value={w.id.toString()}>
-                  {w.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1 w-full sm:w-44">
-          <Label>From date</Label>
-          <Input
-            type="date"
-            value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
-            data-testid="filter-transfer-from-date"
-          />
-        </div>
-        <div className="space-y-1 w-full sm:w-44">
-          <Label>To date</Label>
-          <Input
-            type="date"
-            value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
-            data-testid="filter-transfer-to-date"
-          />
-        </div>
-        {hasDateFilter && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setFromDate("");
-              setToDate("");
-            }}
-            data-testid="btn-clear-transfer-dates"
-          >
-            Clear dates
-          </Button>
-        )}
-      </div>
+      <FilterBar
+        search={search}
+        onSearchChange={(v) => setSearch(v)}
+        searchPlaceholder="Transfer #, warehouse…"
+        filterCount={filterCount}
+        onReset={clearFilters}
+        activeChips={activeChips}
+        filterContent={
+          <>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Status</Label>
+              <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
+                <SelectTrigger data-testid="filter-transfer-status">
+                  <SelectValue placeholder="All Statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="in_transit">In transit</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Warehouse</Label>
+              <Select value={warehouseFilter} onValueChange={(v) => { setWarehouseFilter(v); setPage(1); }}>
+                <SelectTrigger data-testid="filter-transfer-warehouse">
+                  <SelectValue placeholder="All Warehouses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Warehouses</SelectItem>
+                  {warehouses?.map((w) => (
+                    <SelectItem key={w.id} value={w.id.toString()}>{w.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Date range</Label>
+              <DateRangePicker
+                from={fromDate}
+                to={toDate}
+                onChange={(f, t) => { setFromDate(f); setToDate(t); setPage(1); }}
+                onClear={() => { setFromDate(""); setToDate(""); setPage(1); }}
+                align="start"
+                placeholder="All dates"
+                className="w-full justify-start"
+              />
+            </div>
+          </>
+        }
+      />
 
       <div className="rounded-md border bg-card">
         <Table>

@@ -42,6 +42,8 @@ import { Label } from "@/components/ui/label";
 import { RecordPaymentDialog } from "@/components/RecordPaymentDialog";
 import { BulkEinvoiceDialog } from "@/components/BulkEinvoiceDialog";
 import { useDebounce } from "@/hooks/use-debounce";
+import { FilterBar, type FilterChip } from "@/components/FilterBar";
+import { DateRangePicker } from "@/components/DateRangePicker";
 
 const SALE_CHANNEL_LABELS: Record<string, string> = {
   walkin: "Walk-in",
@@ -170,6 +172,54 @@ export default function SalesOrders() {
 
   const resetPage = () => setPage(1);
 
+  const clearFilters = () => {
+    setOverdueFilter(false);
+    setFromDate("");
+    setToDate("");
+    setStatusFilter("all");
+    setOrderTypeFilter("all");
+    setChannelFilter("all");
+    setCustomerFilter("all");
+    setSortBy("date");
+    setSortDir("desc");
+    setSearch("");
+    resetPage();
+  };
+
+  const customerName = customerFilter !== "all" ? (customers ?? []).find((c) => String(c.id) === customerFilter)?.name : undefined;
+  const filterCount = [
+    statusFilter !== "all",
+    orderTypeFilter !== "all",
+    channelFilter !== "all",
+    customerFilter !== "all",
+    !!(fromDate || toDate),
+    sortBy !== "date" || sortDir !== "desc",
+  ].filter(Boolean).length;
+  const soActiveChips: FilterChip[] = [
+    ...(statusFilter !== "all" ? [{ key: "status", label: `Status: ${statusFilter.replace(/_/g, " ")}`, onRemove: () => { setStatusFilter("all"); resetPage(); } }] : []),
+    ...(orderTypeFilter !== "all" ? [{ key: "type", label: `Type: ${orderTypeFilter === "pos" ? "POS" : "Sales Order"}`, onRemove: () => { setOrderTypeFilter("all"); resetPage(); } }] : []),
+    ...(channelFilter !== "all" ? [{ key: "channel", label: `Channel: ${SALE_CHANNEL_LABELS[channelFilter] ?? channelFilter}`, onRemove: () => { setChannelFilter("all"); resetPage(); } }] : []),
+    ...(customerFilter !== "all" && customerName ? [{ key: "customer", label: `Customer: ${customerName}`, onRemove: () => { setCustomerFilter("all"); resetPage(); } }] : []),
+    ...((fromDate || toDate) ? [{ key: "date", label: fromDate && toDate ? `${fromDate} – ${toDate}` : (fromDate ? `From ${fromDate}` : `To ${toDate}`), onRemove: () => { setFromDate(""); setToDate(""); resetPage(); } }] : []),
+    ...(sortBy !== "date" || sortDir !== "desc" ? [{ key: "sort", label: `Sort: ${sortBy} ${sortDir}`, onRemove: () => { setSortBy("date"); setSortDir("desc"); resetPage(); } }] : []),
+  ];
+
+  const overdueButton = (
+    <Button
+      variant={overdueFilter ? "default" : "outline"}
+      size="sm"
+      className={overdueFilter
+        ? "h-9 gap-1.5 bg-orange-600 hover:bg-orange-700 border-orange-600 text-white"
+        : "h-9 gap-1.5 text-muted-foreground"}
+      onClick={() => { setOverdueFilter((v) => !v); setStatusFilter("all"); resetPage(); }}
+      data-testid="filter-so-overdue"
+    >
+      <AlertCircle className="h-3.5 w-3.5" />
+      Overdue
+      {overdueFilter && <X className="h-3 w-3 ml-0.5 opacity-70" />}
+    </Button>
+  );
+
   const einvoiceConnection = useGetEinvoiceConnection();
   const einvoiceAvailable =
     einvoiceConnection.data?.connected === true &&
@@ -233,196 +283,125 @@ export default function SalesOrders() {
         }
       />
 
-      <div className="flex flex-wrap items-end gap-4">
-        <div className="flex flex-wrap items-end gap-4 bg-card border rounded-lg p-4 w-full lg:w-auto">
-          {/* Overdue quick-filter chip */}
-          <div className="space-y-1 w-full sm:w-auto">
-            <Label className="invisible sm:hidden">Filter</Label>
-            <Button
-              variant={overdueFilter ? "default" : "outline"}
-              size="sm"
-              className={overdueFilter
-                ? "h-9 gap-1.5 bg-orange-600 hover:bg-orange-700 border-orange-600 text-white"
-                : "h-9 gap-1.5 text-muted-foreground"}
-              onClick={() => { setOverdueFilter((v) => !v); setStatusFilter("all"); resetPage(); }}
-              data-testid="filter-so-overdue"
-            >
-              <AlertCircle className="h-3.5 w-3.5" />
-              Overdue invoices
-              {overdueFilter && <X className="h-3 w-3 ml-0.5 opacity-70" />}
-            </Button>
-          </div>
-
-          <div className="relative space-y-1 w-full sm:w-60">
-            <Label>Search</Label>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Order # or customer name…"
-                value={search}
-                onChange={(e) => { setSearch(e.target.value); resetPage(); }}
-                className="pl-8"
-                data-testid="filter-so-search"
-              />
-            </div>
-          </div>
-          <div className="space-y-1 w-full sm:w-44">
-            <Label htmlFor="filter-so-from">From Date</Label>
-            <Input
-              id="filter-so-from"
-              type="date"
-              value={fromDate}
-              max={toDate || undefined}
-              onChange={(e) => { setFromDate(e.target.value); resetPage(); }}
-              data-testid="filter-so-from"
-            />
-          </div>
-          <div className="space-y-1 w-full sm:w-44">
-            <Label htmlFor="filter-so-to">To Date</Label>
-            <Input
-              id="filter-so-to"
-              type="date"
-              value={toDate}
-              min={fromDate || undefined}
-              onChange={(e) => { setToDate(e.target.value); resetPage(); }}
-              data-testid="filter-so-to"
-            />
-          </div>
-          <div className="space-y-1 w-full sm:w-48">
-            <Label>Status</Label>
-            <Select
-              value={overdueFilter ? "all" : statusFilter}
-              onValueChange={(v) => { setStatusFilter(v); setOverdueFilter(false); resetPage(); }}
-              disabled={overdueFilter}
-            >
-              <SelectTrigger data-testid="filter-so-status" disabled={overdueFilter}>
-                <SelectValue placeholder="All Statuses" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="outstanding">Outstanding (unpaid)</SelectItem>
-                <SelectItem value="draft">Draft</SelectItem>
-                <SelectItem value="confirmed">Confirmed</SelectItem>
-                <SelectItem value="shipped">Shipped</SelectItem>
-                <SelectItem value="delivered">Delivered</SelectItem>
-                <SelectItem value="invoiced">Invoiced</SelectItem>
-                <SelectItem value="paid">Paid</SelectItem>
-                <SelectItem value="returned">Returned</SelectItem>
-                <SelectItem value="refunded">Refunded</SelectItem>
-                <SelectItem value="cancelled">Cancelled</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1 w-full sm:w-48">
-            <Label>Order Type</Label>
-            <Select
-              value={orderTypeFilter}
-              onValueChange={(v) => { setOrderTypeFilter(v); resetPage(); }}
-            >
-              <SelectTrigger data-testid="filter-so-order-type">
-                <SelectValue placeholder="All Types" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                <SelectItem value="sales_order">Sales Order</SelectItem>
-                <SelectItem value="pos">POS</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1 w-full sm:w-48">
-            <Label>Channel</Label>
-            <Select
-              value={channelFilter}
-              onValueChange={(v) => { setChannelFilter(v); resetPage(); }}
-            >
-              <SelectTrigger data-testid="filter-so-channel">
-                <SelectValue placeholder="All Channels" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Channels</SelectItem>
-                {Object.entries(SALE_CHANNEL_LABELS).map(([val, label]) => (
-                  <SelectItem key={val} value={val}>{label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1 w-full sm:w-52">
-            <Label>Customer</Label>
-            <Select
-              value={customerFilter}
-              onValueChange={(v) => { setCustomerFilter(v); resetPage(); }}
-            >
-              <SelectTrigger data-testid="filter-so-customer">
-                <SelectValue placeholder="All Customers" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Customers</SelectItem>
-                {customers?.map((c) => (
-                  <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1 w-full sm:w-48">
-            <Label>Sort</Label>
-            <div className="flex items-center gap-1">
-              <Select value={sortBy} onValueChange={(v) => { setSortBy(v); resetPage(); }}>
-                <SelectTrigger className="flex-1" data-testid="filter-so-sort-by">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="date">Order Date</SelectItem>
-                  <SelectItem value="created">Created</SelectItem>
-                  <SelectItem value="total">Total</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-9 w-9 shrink-0"
-                onClick={() => { setSortDir((d) => d === "desc" ? "asc" : "desc"); resetPage(); }}
-                data-testid="btn-so-sort-dir"
-                title={sortDir === "desc" ? "Newest first" : "Oldest first"}
-              >
-                <ArrowUpDown className={`h-4 w-4 transition-transform ${sortDir === "asc" ? "rotate-180" : ""}`} />
-              </Button>
-            </div>
-          </div>
-          {(overdueFilter ||
-            fromDate ||
-            toDate ||
-            statusFilter !== "all" ||
-            orderTypeFilter !== "all" ||
-            channelFilter !== "all" ||
-            customerFilter !== "all" ||
-            sortBy !== "date" ||
-            sortDir !== "desc" ||
-            !!search.trim()) && (
-            <div className="space-y-1">
-              <Label className="invisible">Reset</Label>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setOverdueFilter(false);
-                  setFromDate("");
-                  setToDate("");
-                  setStatusFilter("all");
-                  setOrderTypeFilter("all");
-                  setChannelFilter("all");
-                  setCustomerFilter("all");
-                  setSortBy("date");
-                  setSortDir("desc");
-                  setSearch("");
-                  resetPage();
-                }}
-                data-testid="btn-so-clear-filters"
-              >
-                Clear filters
-              </Button>
-            </div>
-          )}
-        </div>
+      <div className="flex flex-wrap items-start gap-4">
+        <FilterBar
+          className="flex-1"
+          search={search}
+          onSearchChange={(v) => { setSearch(v); resetPage(); }}
+          searchPlaceholder="Order # or customer name…"
+          filterCount={filterCount}
+          onReset={clearFilters}
+          activeChips={soActiveChips}
+          rightSlot={overdueButton}
+          filterPopoverWidth="320px"
+          filterContent={
+            <>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Status</Label>
+                <Select
+                  value={overdueFilter ? "all" : statusFilter}
+                  onValueChange={(v) => { setStatusFilter(v); setOverdueFilter(false); resetPage(); }}
+                  disabled={overdueFilter}
+                >
+                  <SelectTrigger data-testid="filter-so-status" disabled={overdueFilter}>
+                    <SelectValue placeholder="All Statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="outstanding">Outstanding (unpaid)</SelectItem>
+                    <SelectItem value="draft">Draft</SelectItem>
+                    <SelectItem value="confirmed">Confirmed</SelectItem>
+                    <SelectItem value="shipped">Shipped</SelectItem>
+                    <SelectItem value="delivered">Delivered</SelectItem>
+                    <SelectItem value="invoiced">Invoiced</SelectItem>
+                    <SelectItem value="paid">Paid</SelectItem>
+                    <SelectItem value="returned">Returned</SelectItem>
+                    <SelectItem value="refunded">Refunded</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Order Type</Label>
+                <Select value={orderTypeFilter} onValueChange={(v) => { setOrderTypeFilter(v); resetPage(); }}>
+                  <SelectTrigger data-testid="filter-so-order-type">
+                    <SelectValue placeholder="All Types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="sales_order">Sales Order</SelectItem>
+                    <SelectItem value="pos">POS</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Channel</Label>
+                <Select value={channelFilter} onValueChange={(v) => { setChannelFilter(v); resetPage(); }}>
+                  <SelectTrigger data-testid="filter-so-channel">
+                    <SelectValue placeholder="All Channels" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Channels</SelectItem>
+                    {Object.entries(SALE_CHANNEL_LABELS).map(([val, label]) => (
+                      <SelectItem key={val} value={val}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Customer</Label>
+                <Select value={customerFilter} onValueChange={(v) => { setCustomerFilter(v); resetPage(); }}>
+                  <SelectTrigger data-testid="filter-so-customer">
+                    <SelectValue placeholder="All Customers" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Customers</SelectItem>
+                    {customers?.map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Date range</Label>
+                <DateRangePicker
+                  from={fromDate}
+                  to={toDate}
+                  onChange={(f, t) => { setFromDate(f); setToDate(t); resetPage(); }}
+                  onClear={() => { setFromDate(""); setToDate(""); resetPage(); }}
+                  align="start"
+                  placeholder="All dates"
+                  className="w-full justify-start"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Sort</Label>
+                <div className="flex items-center gap-1">
+                  <Select value={sortBy} onValueChange={(v) => { setSortBy(v); resetPage(); }}>
+                    <SelectTrigger className="flex-1" data-testid="filter-so-sort-by">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="date">Order Date</SelectItem>
+                      <SelectItem value="created">Created</SelectItem>
+                      <SelectItem value="total">Total</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-9 w-9 shrink-0"
+                    onClick={() => { setSortDir((d) => d === "desc" ? "asc" : "desc"); resetPage(); }}
+                    data-testid="btn-so-sort-dir"
+                    title={sortDir === "desc" ? "Newest first" : "Oldest first"}
+                  >
+                    <ArrowUpDown className={`h-4 w-4 transition-transform ${sortDir === "asc" ? "rotate-180" : ""}`} />
+                  </Button>
+                </div>
+              </div>
+            </>
+          }
+        />
 
         {showSelection && selectedEligibleIds.length > 0 && (
           <div className="flex items-center gap-2 rounded-lg border bg-card px-4 py-3">

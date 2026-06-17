@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Can } from "@/components/Can";
 import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
@@ -25,6 +25,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useDebounce } from "@/hooks/use-debounce";
+import { FilterBar, type FilterChip } from "@/components/FilterBar";
 
 const STATUS_OPTIONS = [
   { value: "all", label: "All statuses" },
@@ -38,11 +39,11 @@ const STATUS_OPTIONS = [
 const PAGE_SIZE_OPTIONS = [15, 25, 50, 100];
 
 export default function JobWorkOrders() {
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [supplierFilter, setSupplierFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>(() => new URLSearchParams(window.location.search).get("status") ?? "all");
+  const [supplierFilter, setSupplierFilter] = useState<string>(() => new URLSearchParams(window.location.search).get("worker") ?? "all");
   const [pageSize, setPageSize] = useState(15);
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("q") ?? "");
+  const [page, setPage] = useState(() => Number(new URLSearchParams(window.location.search).get("p") ?? "1"));
 
   const debouncedSearch = useDebounce(search, 400);
 
@@ -70,6 +71,26 @@ export default function JobWorkOrders() {
 
   const resetPage = () => setPage(1);
 
+  useEffect(() => {
+    const p = new URLSearchParams();
+    if (search) p.set("q", search);
+    if (statusFilter !== "all") p.set("status", statusFilter);
+    if (supplierFilter !== "all") p.set("worker", supplierFilter);
+    if (page > 1) p.set("p", String(page));
+    const qs = p.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+  }, [search, statusFilter, supplierFilter, page]);
+
+  const workerName = supplierFilter !== "all" ? jobWorkers.find((s) => s.id === Number(supplierFilter))?.name : undefined;
+  const filterCount = [statusFilter !== "all", supplierFilter !== "all"].filter(Boolean).length;
+  const activeChips: FilterChip[] = [
+    ...(statusFilter !== "all" ? [{ key: "status", label: `Status: ${STATUS_OPTIONS.find((o) => o.value === statusFilter)?.label ?? statusFilter}`, onRemove: () => { setStatusFilter("all"); resetPage(); } }] : []),
+    ...(supplierFilter !== "all" && workerName ? [{ key: "worker", label: `Worker: ${workerName}`, onRemove: () => { setSupplierFilter("all"); resetPage(); } }] : []),
+  ];
+  function clearFilters() {
+    setSearch(""); setStatusFilter("all"); setSupplierFilter("all"); resetPage();
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -87,52 +108,45 @@ export default function JobWorkOrders() {
         }
       />
 
-      <div className="flex flex-col sm:flex-row sm:items-end gap-4 bg-card border rounded-lg p-4">
-        <div className="relative space-y-1 w-full sm:w-60">
-          <Label>Search</Label>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="JWO # or item name…"
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); resetPage(); }}
-              className="pl-8"
-              data-testid="filter-jwo-search"
-            />
-          </div>
-        </div>
-        <div className="space-y-1 w-full sm:w-56">
-          <Label>Status</Label>
-          <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); resetPage(); }}>
-            <SelectTrigger data-testid="filter-jwo-status">
-              <SelectValue placeholder="All statuses" />
-            </SelectTrigger>
-            <SelectContent>
-              {STATUS_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1 w-full sm:w-64">
-          <Label>Job worker</Label>
-          <Select value={supplierFilter} onValueChange={(v) => { setSupplierFilter(v); resetPage(); }}>
-            <SelectTrigger data-testid="filter-jwo-supplier">
-              <SelectValue placeholder="All workers" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All workers</SelectItem>
-              {jobWorkers.map((s) => (
-                <SelectItem key={s.id} value={s.id.toString()}>
-                  {s.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      <FilterBar
+        search={search}
+        onSearchChange={(v) => { setSearch(v); resetPage(); }}
+        searchPlaceholder="JWO # or item name…"
+        filterCount={filterCount}
+        onReset={clearFilters}
+        activeChips={activeChips}
+        filterContent={
+          <>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Status</Label>
+              <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); resetPage(); }}>
+                <SelectTrigger data-testid="filter-jwo-status">
+                  <SelectValue placeholder="All statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUS_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Job worker</Label>
+              <Select value={supplierFilter} onValueChange={(v) => { setSupplierFilter(v); resetPage(); }}>
+                <SelectTrigger data-testid="filter-jwo-supplier">
+                  <SelectValue placeholder="All workers" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All workers</SelectItem>
+                  {jobWorkers.map((s) => (
+                    <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        }
+      />
 
       <div className="rounded-md border bg-card">
         <Table>

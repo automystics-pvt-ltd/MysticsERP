@@ -25,6 +25,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import { INDIAN_STATES } from "@/lib/indianStates";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -32,6 +33,7 @@ import * as z from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useDebounce } from "@/hooks/use-debounce";
+import { FilterBar, type FilterChip } from "@/components/FilterBar";
 
 const PAGE_SIZE_OPTIONS = [15, 25, 50, 100];
 
@@ -269,48 +271,55 @@ export default function Customers() {
         }
       />
 
-      <div className="flex flex-wrap items-center gap-3 bg-card border rounded-lg p-4">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search customers..."
-            className="pl-9"
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            data-testid="input-search-customers"
-          />
-        </div>
-        <Button
-          variant={hasBalance ? "default" : "outline"}
-          size="sm"
-          onClick={() => { setHasBalance((v) => !v); setPage(1); }}
-          data-testid="btn-filter-has-balance"
-        >
-          <IndianRupee className="mr-1.5 h-3.5 w-3.5" />
-          Outstanding only
-        </Button>
-        <Select
-          value={`${sortBy}:${sortDir}`}
-          onValueChange={(v) => {
-            const [by, dir] = v.split(":") as ["name" | "balance" | "createdAt", "asc" | "desc"];
-            setSortBy(by);
-            setSortDir(dir);
-            setPage(1);
-          }}
-        >
-          <SelectTrigger className="w-[170px]" data-testid="select-customers-sort">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="name:asc">Name A → Z</SelectItem>
-            <SelectItem value="name:desc">Name Z → A</SelectItem>
-            <SelectItem value="balance:desc">Balance (high first)</SelectItem>
-            <SelectItem value="balance:asc">Balance (low first)</SelectItem>
-            <SelectItem value="createdAt:desc">Newest first</SelectItem>
-            <SelectItem value="createdAt:asc">Oldest first</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <FilterBar
+        search={search}
+        onSearchChange={(v) => { setSearch(v); setPage(1); }}
+        searchPlaceholder="Search customers..."
+        filterCount={hasBalance ? 1 : 0}
+        onReset={() => { setHasBalance(false); setSortBy("name"); setSortDir("asc"); setPage(1); }}
+        activeChips={(hasBalance ? [{ key: "balance", label: "Outstanding only", onRemove: () => { setHasBalance(false); setPage(1); } }] : []) satisfies FilterChip[]}
+        filterContent={
+          <>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Balance</Label>
+              <Button
+                variant={hasBalance ? "default" : "outline"}
+                size="sm"
+                className="w-full justify-start"
+                onClick={() => { setHasBalance((v) => !v); setPage(1); }}
+                data-testid="btn-filter-has-balance"
+              >
+                <IndianRupee className="mr-1.5 h-3.5 w-3.5" />
+                Outstanding only
+              </Button>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Sort</Label>
+              <Select
+                value={`${sortBy}:${sortDir}`}
+                onValueChange={(v) => {
+                  const [by, dir] = v.split(":") as ["name" | "balance" | "createdAt", "asc" | "desc"];
+                  setSortBy(by);
+                  setSortDir(dir);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger data-testid="select-customers-sort">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="name:asc">Name A → Z</SelectItem>
+                  <SelectItem value="name:desc">Name Z → A</SelectItem>
+                  <SelectItem value="balance:desc">Balance (high first)</SelectItem>
+                  <SelectItem value="balance:asc">Balance (low first)</SelectItem>
+                  <SelectItem value="createdAt:desc">Newest first</SelectItem>
+                  <SelectItem value="createdAt:asc">Oldest first</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        }
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="rounded-lg border bg-card p-4 flex items-center gap-3">

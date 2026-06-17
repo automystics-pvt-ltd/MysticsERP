@@ -61,6 +61,7 @@ import {
 } from "lucide-react";
 import { TablePagination } from "@/components/TablePagination";
 import { BulkImportItemsDialog } from "@/components/BulkImportItemsDialog";
+import { FilterBar, type FilterChip } from "@/components/FilterBar";
 import { CreatableCombobox } from "@/components/CreatableCombobox";
 import {
   DropdownMenu,
@@ -69,6 +70,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Sheet,
@@ -455,7 +457,6 @@ export default function Items() {
   const [priceMax, setPriceMax] = useState<string>("");
   const debouncedPriceMin = useDebounce(priceMin, 600);
   const debouncedPriceMax = useDebounce(priceMax, 600);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -572,6 +573,30 @@ export default function Items() {
     setPriceMax("");
     setBrandFilter("");
   }
+
+  function clearAllItemFilters() {
+    setSearch("");
+    setCategoryFilter("");
+    setWarehouseFilterState("all");
+    clearAdvancedFilters();
+    setPage(1);
+  }
+
+  const itemFilterCount = [
+    !!categoryFilter,
+    warehouseFilter !== "all",
+    !!brandFilter,
+    stockFilter !== "all",
+    priceMin !== "" || priceMax !== "",
+  ].filter(Boolean).length;
+
+  const itemActiveChips: FilterChip[] = [
+    ...(categoryFilter ? [{ key: "cat", label: `Category: ${categoryFilter}`, onRemove: () => setCategoryFilter("") }] : []),
+    ...(warehouseFilter !== "all" && scopedWarehouseName ? [{ key: "wh", label: `Warehouse: ${scopedWarehouseName}`, onRemove: () => setWarehouseFilterState("all") }] : []),
+    ...(brandFilter ? [{ key: "brand", label: `Brand: ${brandFilter}`, onRemove: () => setBrandFilter("") }] : []),
+    ...(stockFilter !== "all" ? [{ key: "stock", label: `Stock: ${stockFilter.replace(/-/g, " ")}`, onRemove: () => setStockFilter("all") }] : []),
+    ...((priceMin || priceMax) ? [{ key: "price", label: `Price: ${priceMin ? `₹${priceMin}` : "any"} – ${priceMax ? `₹${priceMax}` : "any"}`, onRemove: () => { setPriceMin(""); setPriceMax(""); } }] : []),
+  ];
 
   const parentInfoMap = useMemo(() => {
     const map = new Map<number, { sku: string; axes: string[] }>();
@@ -1175,96 +1200,130 @@ export default function Items() {
         }}
       />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search items by name or SKU..."
-            className="pl-9"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            data-testid="input-search-items"
-          />
-        </div>
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => setScannerMode("search")}
-          aria-label="Scan barcode"
-          data-testid="btn-scan-items"
-        >
-          <ScanLine className="h-4 w-4" />
-        </Button>
-        <Select
-          value={categoryFilter || "__all__"}
-          onValueChange={(v) => setCategoryFilter(v === "__all__" ? "" : v)}
-        >
-          <SelectTrigger
-            className="w-44"
-            data-testid="select-items-category"
-          >
-            <SelectValue placeholder="All categories" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItemUI value="__all__">All categories</SelectItemUI>
-            {categoryOptions.map((c) => (
-              <SelectItemUI key={c} value={c}>
-                {c}
-              </SelectItemUI>
-            ))}
-          </SelectContent>
-        </Select>
-        {visibleWarehouses.length > 1 && (
-          <Select
-            value={warehouseFilter === "all" ? "all" : String(warehouseFilter)}
-            onValueChange={(v) =>
-              setWarehouseFilter(v === "all" ? "all" : Number(v))
-            }
-          >
-            <SelectTrigger className="w-44" data-testid="select-items-warehouse">
-              <Store className="h-4 w-4 mr-1 text-muted-foreground shrink-0" />
-              <SelectValue placeholder="All warehouses" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItemUI value="all">All warehouses</SelectItemUI>
-              {visibleWarehouses.map((w) => (
-                <SelectItemUI key={w.id} value={String(w.id)}>
-                  {w.name}
-                </SelectItemUI>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-        <Button
-          variant={advancedOpen || hasAdvancedFilters ? "secondary" : "outline"}
-          size="sm"
-          onClick={() => setAdvancedOpen((o) => !o)}
-          data-testid="btn-advanced-filter"
-          className="gap-1.5"
-        >
-          <SlidersHorizontal className="h-4 w-4" />
-          Filters
-          {hasAdvancedFilters && (
-            <Badge variant="destructive" className="ml-1 h-4 w-4 rounded-full p-0 flex items-center justify-center text-[10px]">
-              !
-            </Badge>
-          )}
-        </Button>
-        <div className="flex items-center gap-2 ml-auto">
-          {selectedIds.size > 0 && (
-            <Can module="items" action="edit">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setBulkEditOpen(true)}
-                data-testid="btn-bulk-edit-items"
+      <FilterBar
+        search={search}
+        onSearchChange={(v) => setSearch(v)}
+        searchPlaceholder="Search items by name or SKU..."
+        filterCount={itemFilterCount}
+        onReset={clearAllItemFilters}
+        activeChips={itemActiveChips}
+        filterPopoverWidth="300px"
+        rightSlot={
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setScannerMode("search")}
+              aria-label="Scan barcode"
+              data-testid="btn-scan-items"
+            >
+              <ScanLine className="h-4 w-4" />
+            </Button>
+            <Select
+              value={categoryFilter || "__all__"}
+              onValueChange={(v) => setCategoryFilter(v === "__all__" ? "" : v)}
+            >
+              <SelectTrigger className="w-36 h-9 text-sm" data-testid="select-items-category">
+                <SelectValue placeholder="All categories" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItemUI value="__all__">All categories</SelectItemUI>
+                {categoryOptions.map((c) => (
+                  <SelectItemUI key={c} value={c}>{c}</SelectItemUI>
+                ))}
+              </SelectContent>
+            </Select>
+            {visibleWarehouses.length > 1 && (
+              <Select
+                value={warehouseFilter === "all" ? "all" : String(warehouseFilter)}
+                onValueChange={(v) => setWarehouseFilter(v === "all" ? "all" : Number(v))}
               >
-                <Edit className="mr-2 h-4 w-4" />
-                Edit ({selectedIds.size})
-              </Button>
-            </Can>
-          )}
-          {selectedIds.size > 0 && canBulkDelete && (
+                <SelectTrigger className="w-36 h-9 text-sm" data-testid="select-items-warehouse">
+                  <Store className="h-4 w-4 mr-1 text-muted-foreground shrink-0" />
+                  <SelectValue placeholder="All warehouses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItemUI value="all">All warehouses</SelectItemUI>
+                  {visibleWarehouses.map((w) => (
+                    <SelectItemUI key={w.id} value={String(w.id)}>{w.name}</SelectItemUI>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+        }
+        filterContent={
+          <>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Brand</Label>
+              <Select value={brandFilter || "__all__"} onValueChange={(v) => setBrandFilter(v === "__all__" ? "" : v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All brands" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItemUI value="__all__">All brands</SelectItemUI>
+                  {brandOptions.map((b) => (
+                    <SelectItemUI key={b} value={b}>{b}</SelectItemUI>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Stock status</Label>
+              <Select value={stockFilter} onValueChange={(v) => setStockFilter(v as typeof stockFilter)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItemUI value="all">All stock</SelectItemUI>
+                  <SelectItemUI value="in-stock">In stock</SelectItemUI>
+                  <SelectItemUI value="low-stock">Low stock</SelectItemUI>
+                  <SelectItemUI value="out-of-stock">Out of stock</SelectItemUI>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Price range (₹)</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  placeholder="Min"
+                  className="h-8 text-sm"
+                  value={priceMin}
+                  onChange={(e) => setPriceMin(e.target.value)}
+                />
+                <span className="text-muted-foreground text-xs">–</span>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  placeholder="Max"
+                  className="h-8 text-sm"
+                  value={priceMax}
+                  onChange={(e) => setPriceMax(e.target.value)}
+                />
+              </div>
+            </div>
+          </>
+        }
+      />
+
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-2">
+          <Can module="items" action="edit">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setBulkEditOpen(true)}
+              data-testid="btn-bulk-edit-items"
+            >
+              <Edit className="mr-2 h-4 w-4" />
+              Edit ({selectedIds.size})
+            </Button>
+          </Can>
+          {canBulkDelete && (
             <Button
               variant="destructive"
               size="sm"
@@ -1279,76 +1338,19 @@ export default function Items() {
             filename="items"
             columns={exportColumns}
             rows={exportRows}
-            selectedRows={selectedIds.size > 0 ? selectedExportRows : undefined}
+            selectedRows={selectedExportRows}
             hidePdf
           />
         </div>
-      </div>
-
-      {advancedOpen && (
-        <div className="rounded-md border bg-card p-4 space-y-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium">Advanced Filters</p>
-            {hasAdvancedFilters && (
-              <Button variant="ghost" size="sm" onClick={clearAdvancedFilters} className="h-7 gap-1 text-muted-foreground">
-                <X className="h-3 w-3" /> Clear all
-              </Button>
-            )}
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Brand</label>
-              <Select value={brandFilter || "__all__"} onValueChange={(v) => setBrandFilter(v === "__all__" ? "" : v)}>
-                <SelectTrigger className="h-8 text-sm">
-                  <SelectValue placeholder="All brands" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItemUI value="__all__">All brands</SelectItemUI>
-                  {brandOptions.map((b) => (
-                    <SelectItemUI key={b} value={b}>{b}</SelectItemUI>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Stock Status</label>
-              <Select value={stockFilter} onValueChange={(v) => setStockFilter(v as typeof stockFilter)}>
-                <SelectTrigger className="h-8 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItemUI value="all">All stock</SelectItemUI>
-                  <SelectItemUI value="in-stock">In stock</SelectItemUI>
-                  <SelectItemUI value="low-stock">Low stock</SelectItemUI>
-                  <SelectItemUI value="out-of-stock">Out of stock</SelectItemUI>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Min Price (₹)</label>
-              <Input
-                type="number"
-                min={0}
-                step="0.01"
-                placeholder="0"
-                className="h-8 text-sm"
-                value={priceMin}
-                onChange={(e) => setPriceMin(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">Max Price (₹)</label>
-              <Input
-                type="number"
-                min={0}
-                step="0.01"
-                placeholder="Any"
-                className="h-8 text-sm"
-                value={priceMax}
-                onChange={(e) => setPriceMax(e.target.value)}
-              />
-            </div>
-          </div>
+      )}
+      {selectedIds.size === 0 && (
+        <div className="flex justify-end">
+          <ReportExportButton
+            filename="items"
+            columns={exportColumns}
+            rows={exportRows}
+            hidePdf
+          />
         </div>
       )}
 

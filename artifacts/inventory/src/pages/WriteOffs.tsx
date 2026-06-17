@@ -39,6 +39,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TablePagination } from "@/components/TablePagination";
 import { Can } from "@/components/Can";
@@ -70,6 +71,8 @@ import {
 } from "lucide-react";
 import { format, startOfMonth, endOfMonth, subMonths, isAfter, isBefore, parseISO } from "date-fns";
 import { cn } from "@/lib/utils";
+import { FilterBar, type FilterChip as FilterChipDef } from "@/components/FilterBar";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import type { StockMovement } from "@workspace/api-client-react";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -315,18 +318,7 @@ function ReasonBreakdown({
   );
 }
 
-// ─── Active filter chip ───────────────────────────────────────────────────────
-
-function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
-  return (
-    <span className="inline-flex items-center gap-1 text-[11px] bg-muted border border-border rounded-full px-2.5 py-0.5 font-medium">
-      {label}
-      <button onClick={onRemove} className="text-muted-foreground hover:text-foreground">
-        <X className="h-3 w-3" />
-      </button>
-    </span>
-  );
-}
+// ─── (FilterChip removed — FilterBar handles active chips) ───────────────────
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
@@ -500,6 +492,13 @@ export default function WriteOffs() {
       ? (warehouses ?? []).find((w) => String(w.id) === warehouseFilter)?.name ?? "Warehouse"
       : null;
 
+  const woFilterCount = [warehouseFilter !== "all", reasonFilter !== "all", !!(fromDate || toDate)].filter(Boolean).length;
+  const woActiveChips: FilterChipDef[] = [
+    ...(reasonFilter !== "all" ? [{ key: "reason", label: `Reason: ${reasonLabel(reasonFilter)}`, onRemove: () => { setReasonFilter("all"); resetPage(); } }] : []),
+    ...(warehouseFilter !== "all" && warehouseName ? [{ key: "wh", label: `Warehouse: ${warehouseName}`, onRemove: () => { setWarehouseFilter("all"); resetPage(); } }] : []),
+    ...((fromDate || toDate) ? [{ key: "date", label: fromDate && toDate ? `${format(parseISO(fromDate), "d MMM")} – ${format(parseISO(toDate), "d MMM yyyy")}` : (fromDate ? `From ${fromDate}` : `To ${toDate}`), onRemove: () => { setFromDate(""); setToDate(""); resetPage(); } }] : []),
+  ];
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -652,130 +651,58 @@ export default function WriteOffs() {
         </div>
 
         <div className="lg:col-span-3 space-y-3">
-          {/* Filters */}
-          <div className="rounded-xl border border-border/60 bg-card p-4 space-y-3 shadow-sm">
-            <div className="flex items-center gap-2">
-              <Filter className="h-4 w-4 text-muted-foreground" />
-              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Filters</p>
-              {hasFilters && (
-                <Button variant="ghost" size="sm" className="h-6 px-2 text-xs gap-1 ml-auto" onClick={clearFilters}>
-                  <X className="h-3 w-3" /> Clear all
-                </Button>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-2.5">
-              {/* Search */}
-              <div className="col-span-2 relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                <Input
-                  placeholder="Search item name, SKU, category or warehouse…"
-                  className="pl-8 h-8 text-sm"
-                  value={search}
-                  onChange={(e) => { setSearch(e.target.value); resetPage(); }}
-                />
-                {search && (
-                  <button onClick={() => { setSearch(""); resetPage(); }} className="absolute right-2 top-1/2 -translate-y-1/2">
-                    <X className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
-                  </button>
-                )}
-              </div>
-
-              {/* Warehouse */}
-              <div className="space-y-1">
-                <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">Warehouse</p>
-                <Select value={warehouseFilter} onValueChange={(v) => { setWarehouseFilter(v); resetPage(); }}>
-                  <SelectTrigger className="h-8 text-xs">
-                    <Warehouse className="h-3.5 w-3.5 mr-1.5 text-muted-foreground shrink-0" />
-                    <SelectValue placeholder="All Warehouses" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Warehouses</SelectItem>
-                    {(warehouses ?? []).filter((w) => !w.isVirtual).map((w) => (
-                      <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Reason */}
-              <div className="space-y-1">
-                <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">Reason</p>
-                <Select value={reasonFilter} onValueChange={(v) => { setReasonFilter(v); resetPage(); }}>
-                  <SelectTrigger className="h-8 text-xs">
-                    <AlertTriangle className="h-3.5 w-3.5 mr-1.5 text-muted-foreground shrink-0" />
-                    <SelectValue placeholder="All Reasons" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Reasons</SelectItem>
-                    {WRITE_OFF_REASONS.map((r) => (
-                      <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Date from */}
-              <div className="space-y-1">
-                <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">From</p>
-                <Input
-                  type="date"
-                  className="h-8 text-xs"
-                  value={fromDate}
-                  max={toDate || undefined}
-                  onChange={(e) => { setFromDate(e.target.value); resetPage(); }}
-                />
-              </div>
-
-              {/* Date to */}
-              <div className="space-y-1">
-                <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">To</p>
-                <Input
-                  type="date"
-                  className="h-8 text-xs"
-                  value={toDate}
-                  min={fromDate || undefined}
-                  onChange={(e) => { setToDate(e.target.value); resetPage(); }}
-                />
-              </div>
-            </div>
-
-            {/* Active filter chips */}
-            {hasFilters && (
-              <div className="flex flex-wrap gap-1.5 pt-1 border-t border-border/40">
-                {reasonFilter !== "all" && (
-                  <FilterChip
-                    label={reasonLabel(reasonFilter)}
-                    onRemove={() => { setReasonFilter("all"); resetPage(); }}
+          <FilterBar
+            search={search}
+            onSearchChange={(v) => { setSearch(v); resetPage(); }}
+            searchPlaceholder="Search item name, SKU, category or warehouse…"
+            filterCount={woFilterCount}
+            onReset={clearFilters}
+            activeChips={woActiveChips}
+            filterContent={
+              <>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Warehouse</Label>
+                  <Select value={warehouseFilter} onValueChange={(v) => { setWarehouseFilter(v); resetPage(); }}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All Warehouses" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Warehouses</SelectItem>
+                      {(warehouses ?? []).filter((w) => !w.isVirtual).map((w) => (
+                        <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Reason</Label>
+                  <Select value={reasonFilter} onValueChange={(v) => { setReasonFilter(v); resetPage(); }}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All Reasons" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Reasons</SelectItem>
+                      {WRITE_OFF_REASONS.map((r) => (
+                        <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Date range</Label>
+                  <DateRangePicker
+                    from={fromDate}
+                    to={toDate}
+                    onChange={(f, t) => { setFromDate(f); setToDate(t); resetPage(); }}
+                    onClear={() => { setFromDate(""); setToDate(""); resetPage(); }}
+                    align="start"
+                    placeholder="All dates"
+                    className="w-full justify-start"
                   />
-                )}
-                {warehouseName && (
-                  <FilterChip
-                    label={warehouseName}
-                    onRemove={() => { setWarehouseFilter("all"); resetPage(); }}
-                  />
-                )}
-                {search && (
-                  <FilterChip
-                    label={`"${search}"`}
-                    onRemove={() => { setSearch(""); resetPage(); }}
-                  />
-                )}
-                {fromDate && (
-                  <FilterChip
-                    label={`From ${format(parseISO(fromDate), "dd MMM yyyy")}`}
-                    onRemove={() => { setFromDate(""); resetPage(); }}
-                  />
-                )}
-                {toDate && (
-                  <FilterChip
-                    label={`To ${format(parseISO(toDate), "dd MMM yyyy")}`}
-                    onRemove={() => { setToDate(""); resetPage(); }}
-                  />
-                )}
-              </div>
-            )}
-          </div>
+                </div>
+              </>
+            }
+          />
         </div>
       </div>
 

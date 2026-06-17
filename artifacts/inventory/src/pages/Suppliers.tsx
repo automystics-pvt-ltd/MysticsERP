@@ -30,6 +30,7 @@ import * as z from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useDebounce } from "@/hooks/use-debounce";
+import { FilterBar, type FilterChip } from "@/components/FilterBar";
 import type { Supplier } from "@/lib/queryKeys";
 
 const supplierSchema = z.object({
@@ -261,29 +262,30 @@ export default function Suppliers() {
         }
       />
 
-      <div className="flex flex-wrap items-center gap-3 bg-card border rounded-lg p-4">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search suppliers..."
-            className="pl-9"
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            data-testid="input-search-suppliers"
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id="has-balance"
-            checked={hasBalance}
-            onCheckedChange={(checked) => { setHasBalance(!!checked); setPage(1); }}
-            data-testid="checkbox-has-balance"
-          />
-          <Label htmlFor="has-balance" className="cursor-pointer text-sm font-normal">
-            Has outstanding balance
-          </Label>
-        </div>
-      </div>
+      <FilterBar
+        search={search}
+        onSearchChange={(v) => { setSearch(v); setPage(1); }}
+        searchPlaceholder="Search suppliers..."
+        filterCount={hasBalance ? 1 : 0}
+        onReset={() => { setHasBalance(false); setPage(1); }}
+        activeChips={(hasBalance ? [{ key: "balance", label: "Has balance", onRemove: () => { setHasBalance(false); setPage(1); } }] : []) satisfies FilterChip[]}
+        filterContent={
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium">Balance</Label>
+            <div className="flex items-center gap-2 pt-0.5">
+              <Checkbox
+                id="has-balance"
+                checked={hasBalance}
+                onCheckedChange={(checked) => { setHasBalance(!!checked); setPage(1); }}
+                data-testid="checkbox-has-balance"
+              />
+              <Label htmlFor="has-balance" className="cursor-pointer text-sm font-normal">
+                Has outstanding balance
+              </Label>
+            </div>
+          </div>
+        }
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="rounded-lg border bg-card p-4 flex items-center gap-3">

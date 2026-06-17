@@ -13,6 +13,8 @@ import { TablePagination } from "@/components/TablePagination";
 import { format } from "date-fns";
 import { Search, X } from "lucide-react";
 import { useDebounce } from "@/hooks/use-debounce";
+import { FilterBar, type FilterChip } from "@/components/FilterBar";
+import { DateRangePicker } from "@/components/DateRangePicker";
 
 const PAGE_SIZE_OPTIONS = [15, 25, 50, 100] as const;
 
@@ -59,13 +61,16 @@ const MOVEMENT_TYPE_COLOR: Record<string, string> = {
 };
 
 export default function StockMovements() {
-  const [search, setSearch] = useState("");
-  const [warehouseId, setWarehouseId] = useState<number | undefined>();
-  const [movementType, setMovementType] = useState("");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<number>(25);
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("q") ?? "");
+  const [warehouseId, setWarehouseId] = useState<number | undefined>(() => {
+    const v = new URLSearchParams(window.location.search).get("wh");
+    return v ? Number(v) : undefined;
+  });
+  const [movementType, setMovementType] = useState(() => new URLSearchParams(window.location.search).get("type") ?? "");
+  const [fromDate, setFromDate] = useState(() => new URLSearchParams(window.location.search).get("from") ?? "");
+  const [toDate, setToDate] = useState(() => new URLSearchParams(window.location.search).get("to") ?? "");
+  const [page, setPage] = useState(() => Number(new URLSearchParams(window.location.search).get("p") ?? "1"));
+  const [pageSize, setPageSize] = useState<number>(() => Number(new URLSearchParams(window.location.search).get("ps") ?? "25"));
 
   const debouncedSearch = useDebounce(search, 400);
 
@@ -97,14 +102,18 @@ export default function StockMovements() {
   const movements = data?.movements ?? [];
   const total = data?.total ?? 0;
 
-  const activeFilterCount = [
-    !!debouncedSearch,
-    !!warehouseId,
-    !!movementType,
-    !!fromDate,
-    !!toDate,
-  ].filter(Boolean).length;
-  const hasActiveFilters = activeFilterCount > 0;
+  useEffect(() => {
+    const p = new URLSearchParams();
+    if (search) p.set("q", search);
+    if (warehouseId) p.set("wh", String(warehouseId));
+    if (movementType) p.set("type", movementType);
+    if (fromDate) p.set("from", fromDate);
+    if (toDate) p.set("to", toDate);
+    if (page > 1) p.set("p", String(page));
+    if (pageSize !== 25) p.set("ps", String(pageSize));
+    const qs = p.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+  }, [search, warehouseId, movementType, fromDate, toDate, page, pageSize]);
 
   function clearFilters() {
     setSearch("");
@@ -115,6 +124,14 @@ export default function StockMovements() {
     setPage(1);
   }
 
+  const warehouseName = warehouseId ? (warehouses ?? []).find((w) => w.id === warehouseId)?.name : undefined;
+  const filterCount = [!!warehouseId, !!movementType, !!(fromDate || toDate)].filter(Boolean).length;
+  const activeChips: FilterChip[] = [
+    ...(warehouseId && warehouseName ? [{ key: "wh", label: `Warehouse: ${warehouseName}`, onRemove: () => { setWarehouseId(undefined); setPage(1); } }] : []),
+    ...(movementType ? [{ key: "type", label: `Type: ${MOVEMENT_TYPE_LABELS[movementType] ?? movementType}`, onRemove: () => { setMovementType(""); setPage(1); } }] : []),
+    ...((fromDate || toDate) ? [{ key: "date", label: fromDate && toDate ? `${format(new Date(fromDate + "T00:00"), "d MMM")} – ${format(new Date(toDate + "T00:00"), "d MMM yyyy")}` : (fromDate || toDate), onRemove: () => { setFromDate(""); setToDate(""); setPage(1); } }] : []),
+  ];
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -122,105 +139,64 @@ export default function StockMovements() {
         description="View the complete ledger of all inventory additions and deductions."
       />
 
-      {/* Filter bar */}
-      <div className="rounded-xl border border-border/60 bg-card p-4 space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-          {/* Search */}
-          <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
-            <Label className="text-xs font-medium">Search</Label>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-              <Input
-                className="pl-8 h-9 text-sm"
-                placeholder="Item name or SKU…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                data-testid="input-search-movements"
-              />
-              {search && (
-                <button
-                  type="button"
-                  onClick={() => setSearch("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
+      <FilterBar
+        search={search}
+        onSearchChange={(v) => { setSearch(v); setPage(1); }}
+        searchPlaceholder="Item name or SKU…"
+        filterCount={filterCount}
+        onReset={clearFilters}
+        activeChips={activeChips}
+        filterContent={
+          <>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Warehouse</Label>
+              <Select
+                value={warehouseId ? warehouseId.toString() : "all"}
+                onValueChange={(val) => { setWarehouseId(val === "all" ? undefined : parseInt(val)); setPage(1); }}
+              >
+                <SelectTrigger className="h-9 text-sm" data-testid="filter-warehouse">
+                  <SelectValue placeholder="All warehouses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All warehouses</SelectItem>
+                  {warehouses?.map((w) => (
+                    <SelectItem key={w.id} value={w.id.toString()}>{w.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          </div>
-
-          {/* Warehouse */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">Warehouse</Label>
-            <Select
-              value={warehouseId ? warehouseId.toString() : "all"}
-              onValueChange={(val) => setWarehouseId(val === "all" ? undefined : parseInt(val))}
-            >
-              <SelectTrigger className="h-9 text-sm" data-testid="filter-warehouse">
-                <SelectValue placeholder="All warehouses" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All warehouses</SelectItem>
-                {warehouses?.map((w) => (
-                  <SelectItem key={w.id} value={w.id.toString()}>{w.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Movement type */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">Type</Label>
-            <Select value={movementType || "all"} onValueChange={(val) => setMovementType(val === "all" ? "" : val)}>
-              <SelectTrigger className="h-9 text-sm" data-testid="filter-movement-type">
-                <SelectValue placeholder="All types" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All types</SelectItem>
-                {Object.entries(MOVEMENT_TYPE_LABELS).map(([key, label]) => (
-                  <SelectItem key={key} value={key}>{label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* From date */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">From date</Label>
-            <Input
-              type="date"
-              className="h-9 text-sm"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              data-testid="filter-from-date"
-            />
-          </div>
-
-          {/* To date */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">To date</Label>
-            <Input
-              type="date"
-              className="h-9 text-sm"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              data-testid="filter-to-date"
-            />
-          </div>
-        </div>
-
-        {hasActiveFilters && (
-          <div className="flex items-center gap-2 pt-1">
-            <span className="text-xs text-muted-foreground">
-              {activeFilterCount} filter{activeFilterCount > 1 ? "s" : ""} active
-            </span>
-            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1" onClick={clearFilters}>
-              <X className="h-3 w-3" />
-              Clear all
-            </Button>
-          </div>
-        )}
-      </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Movement type</Label>
+              <Select
+                value={movementType || "all"}
+                onValueChange={(val) => { setMovementType(val === "all" ? "" : val); setPage(1); }}
+              >
+                <SelectTrigger className="h-9 text-sm" data-testid="filter-movement-type">
+                  <SelectValue placeholder="All types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All types</SelectItem>
+                  {Object.entries(MOVEMENT_TYPE_LABELS).map(([key, label]) => (
+                    <SelectItem key={key} value={key}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Date range</Label>
+              <DateRangePicker
+                from={fromDate}
+                to={toDate}
+                onChange={(f, t) => { setFromDate(f); setToDate(t); setPage(1); }}
+                onClear={() => { setFromDate(""); setToDate(""); setPage(1); }}
+                align="start"
+                placeholder="All dates"
+                className="w-full justify-start"
+              />
+            </div>
+          </>
+        }
+      />
 
       {/* Table */}
       <div className="rounded-lg border bg-card overflow-hidden">
@@ -242,7 +218,7 @@ export default function StockMovements() {
             ) : total === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
-                  {hasActiveFilters ? "No movements match your filters." : "No movements found."}
+                  {filterCount > 0 || debouncedSearch ? "No movements match your filters." : "No movements found."}
                 </TableCell>
               </TableRow>
             ) : (

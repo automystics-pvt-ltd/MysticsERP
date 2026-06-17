@@ -18,6 +18,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { RecordSupplierPaymentDialog } from "@/components/RecordSupplierPaymentDialog";
 import { useDebounce } from "@/hooks/use-debounce";
+import { FilterBar, type FilterChip } from "@/components/FilterBar";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import { ReportExportButton, type ExportColumn } from "@/components/ReportExportButton";
 
 const PAYABLE_STATUSES = new Set([
@@ -101,7 +103,6 @@ export default function PurchaseOrders() {
   const orders = data?.orders ?? [];
   const total = data?.total ?? 0;
 
-  const hasFilters = overdueFilter || statusFilter !== "all" || !!search.trim() || !!fromDate || !!toDate || warehouseFilter !== "all";
   const clearFilters = () => {
     setOverdueFilter(false);
     setStatusFilter("all");
@@ -113,6 +114,30 @@ export default function PurchaseOrders() {
   };
 
   const resetPage = () => setPage(1);
+
+  const poWarehouseName = warehouseFilter !== "all" ? (warehouses ?? []).find((w) => String(w.id) === warehouseFilter)?.name : undefined;
+  const filterCount = [statusFilter !== "all", warehouseFilter !== "all", !!(fromDate || toDate)].filter(Boolean).length;
+  const poActiveChips: FilterChip[] = [
+    ...(statusFilter !== "all" ? [{ key: "status", label: `Status: ${statusFilter.replace(/_/g, " ")}`, onRemove: () => { setStatusFilter("all"); resetPage(); } }] : []),
+    ...(warehouseFilter !== "all" && poWarehouseName ? [{ key: "wh", label: `Warehouse: ${poWarehouseName}`, onRemove: () => { setWarehouseFilter("all"); resetPage(); } }] : []),
+    ...((fromDate || toDate) ? [{ key: "date", label: fromDate && toDate ? `${fromDate} – ${toDate}` : (fromDate ? `From ${fromDate}` : `To ${toDate}`), onRemove: () => { setFromDate(""); setToDate(""); resetPage(); } }] : []),
+  ];
+
+  const overdueButtonPO = (
+    <Button
+      variant={overdueFilter ? "default" : "outline"}
+      size="sm"
+      className={overdueFilter
+        ? "h-9 gap-1.5 bg-orange-600 hover:bg-orange-700 border-orange-600 text-white"
+        : "h-9 gap-1.5 text-muted-foreground"}
+      onClick={() => { setOverdueFilter((v) => !v); setStatusFilter("all"); resetPage(); }}
+      data-testid="filter-po-overdue"
+    >
+      <AlertCircle className="h-3.5 w-3.5" />
+      Overdue
+      {overdueFilter && <X className="h-3 w-3 ml-0.5 opacity-70" />}
+    </Button>
+  );
 
   type OrderRow = NonNullable<typeof data>["orders"][number];
   const exportColumns: ExportColumn<OrderRow>[] = [
@@ -175,110 +200,68 @@ export default function PurchaseOrders() {
         }
       />
 
-      <div className="flex flex-wrap items-end gap-4 bg-card border rounded-lg p-4 w-full">
-        {/* Overdue quick-filter chip */}
-        <div className="space-y-1 w-full sm:w-auto">
-          <Label className="invisible sm:hidden">Filter</Label>
-          <Button
-            variant={overdueFilter ? "default" : "outline"}
-            size="sm"
-            className={overdueFilter
-              ? "h-9 gap-1.5 bg-orange-600 hover:bg-orange-700 border-orange-600 text-white"
-              : "h-9 gap-1.5 text-muted-foreground"}
-            onClick={() => { setOverdueFilter((v) => !v); setStatusFilter("all"); resetPage(); }}
-            data-testid="filter-po-overdue"
-          >
-            <AlertCircle className="h-3.5 w-3.5" />
-            Overdue bills
-            {overdueFilter && <X className="h-3 w-3 ml-0.5 opacity-70" />}
-          </Button>
-        </div>
-
-        <div className="relative space-y-1 w-full sm:w-60">
-          <Label>Search</Label>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Order # or supplier name…"
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); resetPage(); }}
-              className="pl-8"
-              data-testid="filter-po-search"
-            />
-          </div>
-        </div>
-        <div className="space-y-1 w-full sm:w-48">
-          <Label>Status</Label>
-          <Select
-            value={overdueFilter ? "all" : statusFilter}
-            onValueChange={(v) => { setStatusFilter(v); setOverdueFilter(false); resetPage(); }}
-            disabled={overdueFilter}
-          >
-            <SelectTrigger data-testid="filter-po-status" disabled={overdueFilter}>
-              <SelectValue placeholder="All Statuses" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              <SelectItem value="outstanding">Outstanding (unpaid)</SelectItem>
-              <SelectItem value="draft">Draft</SelectItem>
-              <SelectItem value="ordered">Ordered</SelectItem>
-              <SelectItem value="partially_received">Partially Received</SelectItem>
-              <SelectItem value="received">Received</SelectItem>
-              <SelectItem value="billed">Billed</SelectItem>
-              <SelectItem value="paid">Paid</SelectItem>
-              <SelectItem value="cancelled">Cancelled</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1 w-full sm:w-36">
-          <Label>From</Label>
-          <Input
-            type="date"
-            value={fromDate}
-            max={toDate || undefined}
-            onChange={(e) => { setFromDate(e.target.value); resetPage(); }}
-            data-testid="filter-po-from"
-          />
-        </div>
-        <div className="space-y-1 w-full sm:w-36">
-          <Label>To</Label>
-          <Input
-            type="date"
-            value={toDate}
-            min={fromDate || undefined}
-            onChange={(e) => { setToDate(e.target.value); resetPage(); }}
-            data-testid="filter-po-to"
-          />
-        </div>
-        <div className="space-y-1 w-full sm:w-44">
-          <Label>Warehouse</Label>
-          <Select
-            value={warehouseFilter}
-            onValueChange={(v) => { setWarehouseFilter(v); resetPage(); }}
-          >
-            <SelectTrigger data-testid="filter-po-warehouse">
-              <SelectValue placeholder="All warehouses" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All warehouses</SelectItem>
-              {warehouses?.map((w) => (
-                <SelectItem key={w.id} value={String(w.id)}>
-                  {w.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        {hasFilters && (
-          <div className="space-y-1">
-            <Label className="invisible">Clear</Label>
-            <Button variant="ghost" size="sm" onClick={clearFilters} data-testid="btn-po-clear-filters">
-              <X className="mr-1 h-3.5 w-3.5" />
-              Clear
-            </Button>
-          </div>
-        )}
-      </div>
+      <FilterBar
+        search={search}
+        onSearchChange={(v) => { setSearch(v); resetPage(); }}
+        searchPlaceholder="Order # or supplier name…"
+        filterCount={filterCount}
+        onReset={clearFilters}
+        activeChips={poActiveChips}
+        rightSlot={overdueButtonPO}
+        filterContent={
+          <>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Status</Label>
+              <Select
+                value={overdueFilter ? "all" : statusFilter}
+                onValueChange={(v) => { setStatusFilter(v); setOverdueFilter(false); resetPage(); }}
+                disabled={overdueFilter}
+              >
+                <SelectTrigger data-testid="filter-po-status" disabled={overdueFilter}>
+                  <SelectValue placeholder="All Statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  <SelectItem value="outstanding">Outstanding (unpaid)</SelectItem>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="ordered">Ordered</SelectItem>
+                  <SelectItem value="partially_received">Partially Received</SelectItem>
+                  <SelectItem value="received">Received</SelectItem>
+                  <SelectItem value="billed">Billed</SelectItem>
+                  <SelectItem value="paid">Paid</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Warehouse</Label>
+              <Select value={warehouseFilter} onValueChange={(v) => { setWarehouseFilter(v); resetPage(); }}>
+                <SelectTrigger data-testid="filter-po-warehouse">
+                  <SelectValue placeholder="All warehouses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All warehouses</SelectItem>
+                  {warehouses?.map((w) => (
+                    <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Date range</Label>
+              <DateRangePicker
+                from={fromDate}
+                to={toDate}
+                onChange={(f, t) => { setFromDate(f); setToDate(t); resetPage(); }}
+                onClear={() => { setFromDate(""); setToDate(""); resetPage(); }}
+                align="start"
+                placeholder="All dates"
+                className="w-full justify-start"
+              />
+            </div>
+          </>
+        }
+      />
 
       <div className="rounded-md border bg-card">
         <Table>
@@ -308,7 +291,7 @@ export default function PurchaseOrders() {
                 <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                   {overdueFilter
                     ? "No overdue purchase orders — all bills are within payment terms."
-                    : hasFilters
+                    : (statusFilter !== "all" || !!search.trim() || !!fromDate || !!toDate || warehouseFilter !== "all")
                     ? "No orders match the current filters."
                     : "No purchase orders yet."}
                 </TableCell>
