@@ -93,9 +93,9 @@ function LineStockWarning({ index, control, items }: StockWarningProps) {
   if (!Number.isFinite(qty) || qty <= available) return null;
 
   return (
-    <p className="text-xs text-amber-600 flex items-center gap-1 mt-1">
+    <p className="text-xs text-destructive flex items-center gap-1 mt-1">
       <AlertTriangle className="h-3 w-3 flex-shrink-0" />
-      Only {available} in stock at source — dispatch will fail if unchanged
+      Only {available} available — reduce quantity to proceed
     </p>
   );
 }
@@ -157,6 +157,16 @@ export default function StockTransferNew() {
   const { data: items } = useListItems(
     fromWarehouseId ? { warehouseId: Number(fromWarehouseId) } : {},
   );
+  const watchedLines = useWatch({ control: form.control, name: "lines" });
+  const hasStockViolations = useMemo(() => {
+    if (!items) return false;
+    return (watchedLines ?? []).some((line) => {
+      if (!line?.itemId) return false;
+      const item = items.find((i) => i.id === Number(line.itemId));
+      if (!item || item.stockAtWarehouse == null) return false;
+      return Number(line.quantity) > Number(item.stockAtWarehouse);
+    });
+  }, [watchedLines, items]);
   const [parentByLine, setParentByLine] = useState<Record<string, number>>({});
   const [scannerOpen, setScannerOpen] = useState(false);
 
@@ -582,7 +592,7 @@ export default function StockTransferNew() {
             </Button>
             <Button
               type="submit"
-              disabled={createMutation.isPending}
+              disabled={createMutation.isPending || hasStockViolations}
               data-testid="btn-submit-transfer"
             >
               {createMutation.isPending ? "Creating..." : "Create transfer"}

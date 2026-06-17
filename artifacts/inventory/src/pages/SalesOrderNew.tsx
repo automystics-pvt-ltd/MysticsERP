@@ -45,7 +45,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { formatCurrency } from "@/lib/format";
-import { Trash2, Plus, ArrowLeft, ScanBarcode, UserPlus, Loader2 } from "lucide-react";
+import { Trash2, Plus, ArrowLeft, ScanBarcode, UserPlus, Loader2, AlertTriangle } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { ItemPicker } from "@/components/ItemPicker";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -186,6 +186,17 @@ export default function SalesOrderNew() {
     ? Math.min(subtotal + taxTotal, Math.round((subtotal + taxTotal) * orderDiscountValue / 100 * 100) / 100)
     : Math.min(subtotal + taxTotal, orderDiscountValue);
   const total = subtotal + taxTotal - orderDiscountComputed;
+
+  const stockViolations = useMemo(() => {
+    if (!items || !warehouseIdNum) return watchLines.map(() => false);
+    return watchLines.map((line) => {
+      if (!line.itemId) return false;
+      const item = items.find((i) => i.id === line.itemId);
+      if (!item || item.stockAtWarehouse == null) return false;
+      return line.quantity > item.stockAtWarehouse;
+    });
+  }, [watchLines, items, warehouseIdNum]);
+  const hasStockViolations = stockViolations.some(Boolean);
 
   const onSubmit = (data: SalesOrderFormValues) => {
     createMutation.mutate({
@@ -518,6 +529,12 @@ export default function SalesOrderNew() {
                                 />
                               </FormControl>
                               <FormMessage />
+                              {stockViolations[index] && (
+                                <p className="text-xs text-destructive flex items-center gap-1 mt-1">
+                                  <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+                                  Only {items?.find((i) => i.id === watchLines[index]?.itemId)?.stockAtWarehouse ?? 0} available
+                                </p>
+                              )}
                             </FormItem>
                           )}
                         />
@@ -731,7 +748,7 @@ export default function SalesOrderNew() {
             </Button>
             <Button
               type="submit"
-              disabled={createMutation.isPending}
+              disabled={createMutation.isPending || hasStockViolations}
               data-testid="btn-submit-order"
             >
               {createMutation.isPending ? "Creating..." : "Create Order"}

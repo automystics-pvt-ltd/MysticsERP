@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Plus, ArrowRight, Trash2, Printer, RefreshCw, Edit, Pencil } from "lucide-react";
+import { ArrowLeft, Plus, ArrowRight, Trash2, Printer, RefreshCw, Edit, Pencil, AlertTriangle } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useImageSrc } from "@/hooks/use-image-src";
 import {
@@ -312,6 +312,11 @@ export default function ItemDetail() {
       notes: "",
     },
   });
+  const adjustWh = form.watch("warehouseId");
+  const adjustQtyRaw = form.watch("quantity");
+  const adjustQty = Number(adjustQtyRaw) || 0;
+  const adjustCurrentStock = itemDetail?.stockByWarehouse.find((s) => s.warehouseId === adjustWh)?.quantity ?? 0;
+  const adjustWouldGoNeg = !!adjustWh && adjustQty < 0 && adjustCurrentStock + adjustQty < -1e-9;
 
   const onSubmit = (data: AdjustStockFormValues) => {
     adjustMutation.mutate({
@@ -852,6 +857,12 @@ export default function ItemDetail() {
                             />
                           </FormControl>
                           <FormMessage />
+                          {adjustWouldGoNeg && (
+                            <p className="text-xs text-destructive flex items-center gap-1 mt-1">
+                              <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+                              Exceeds available stock ({adjustCurrentStock} on hand)
+                            </p>
+                          )}
                         </FormItem>
                       )}
                     />
@@ -902,7 +913,7 @@ export default function ItemDetail() {
                     <div className="flex justify-end pt-4">
                       <Button
                         type="submit"
-                        disabled={adjustMutation.isPending}
+                        disabled={adjustMutation.isPending || adjustWouldGoNeg}
                         data-testid="btn-submit-adjust"
                       >
                         {adjustMutation.isPending

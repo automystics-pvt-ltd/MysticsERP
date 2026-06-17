@@ -109,6 +109,16 @@ export function WriteOffDialog({
     [selections],
   );
 
+  const hasQtyErrors = useMemo(() => {
+    for (const [itemIdStr, sel] of selections.entries()) {
+      const item = allItems.find((i) => i.itemId === Number(itemIdStr));
+      if (!item) continue;
+      const qty = Number(sel.qty);
+      if (qty > 0 && qty > Number(item.availableQty)) return true;
+    }
+    return false;
+  }, [selections, allItems]);
+
   const filteredItems = useMemo(() => {
     if (!search.trim()) return allItems;
     const q = search.toLowerCase();
@@ -589,7 +599,7 @@ export function WriteOffDialog({
               </Button>
               <Button
                 onClick={() => setConfirmStep(true)}
-                disabled={isSubmitting || !warehouseId || !readyEntries.length}
+                disabled={isSubmitting || !warehouseId || !readyEntries.length || hasQtyErrors}
                 className="gap-2 bg-amber-600 hover:bg-amber-700 text-white border-0"
               >
                 Review {readyEntries.length > 0 ? readyEntries.length : ""} Write-off{readyEntries.length !== 1 ? "s" : ""}
