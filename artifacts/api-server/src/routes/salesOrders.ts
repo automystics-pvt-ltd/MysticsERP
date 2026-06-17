@@ -350,6 +350,15 @@ router.post("/sales-orders", async (req, res, next) => {
       res.status(400).json({ error: "Every line must include itemId" });
       return;
     }
+    const invalidLine = b.lines.find((l: { quantity: unknown; unitPrice: unknown }) => {
+      const qty = Number(l.quantity);
+      const price = Number(l.unitPrice);
+      return !Number.isFinite(qty) || qty <= 0 || !Number.isFinite(price) || price < 0;
+    });
+    if (invalidLine) {
+      res.status(400).json({ error: "Every line must have quantity > 0 and unitPrice >= 0" });
+      return;
+    }
     const own = await assertOwnership({
       organizationId: t.organizationId,
       customerIds: [Number(b.customerId)],
@@ -501,6 +510,15 @@ router.patch("/sales-orders/:id", async (req, res, next) => {
     };
 
     if (Array.isArray(b.lines)) {
+      const invalidLine = b.lines.find((l: { quantity: unknown; unitPrice: unknown }) => {
+        const qty = Number(l.quantity);
+        const price = Number(l.unitPrice);
+        return !Number.isFinite(qty) || qty <= 0 || !Number.isFinite(price) || price < 0;
+      });
+      if (invalidLine) {
+        res.status(400).json({ error: "Every line must have quantity > 0 and unitPrice >= 0" });
+        return;
+      }
       const totals = computeOrderTotals(b.lines);
       // Apply an optional order-level discount (e.g. preserved from a POS
       // checkout where an order-level discount was applied on top of line

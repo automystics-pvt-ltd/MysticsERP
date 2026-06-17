@@ -104,6 +104,9 @@ function NotificationBell() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["approval-notifications"] });
     },
+    onError: () => {
+      qc.invalidateQueries({ queryKey: ["approval-notifications"] });
+    },
   });
 
   const unreadCount = data?.unreadCount ?? 0;
