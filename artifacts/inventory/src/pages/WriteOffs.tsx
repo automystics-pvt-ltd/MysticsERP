@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { PageHeader } from "@/components/PageHeader";
@@ -324,17 +324,39 @@ function ReasonBreakdown({
 
 export default function WriteOffs() {
   const [writeOffOpen, setWriteOffOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  const [warehouseFilter, setWarehouseFilter] = useState<string>("all");
-  const [reasonFilter, setReasonFilter] = useState<string>("all");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
+  const [search, setSearch] = useState(
+    () => new URLSearchParams(window.location.search).get("q") ?? "",
+  );
+  const [warehouseFilter, setWarehouseFilter] = useState<string>(
+    () => new URLSearchParams(window.location.search).get("wh") ?? "all",
+  );
+  const [reasonFilter, setReasonFilter] = useState<string>(
+    () => new URLSearchParams(window.location.search).get("reason") ?? "all",
+  );
+  const [fromDate, setFromDate] = useState(
+    () => new URLSearchParams(window.location.search).get("from") ?? "",
+  );
+  const [toDate, setToDate] = useState(
+    () => new URLSearchParams(window.location.search).get("to") ?? "",
+  );
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(25);
 
   const queryClient = useQueryClient();
   const canApproveWriteOffs = useCanI("write_offs", "approve");
+
+  // Sync filter state to URL so the page is bookmarkable / refresh-safe.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    search ? params.set("q", search) : params.delete("q");
+    warehouseFilter !== "all" ? params.set("wh", warehouseFilter) : params.delete("wh");
+    reasonFilter !== "all" ? params.set("reason", reasonFilter) : params.delete("reason");
+    fromDate ? params.set("from", fromDate) : params.delete("from");
+    toDate ? params.set("to", toDate) : params.delete("to");
+    const qs = params.toString();
+    window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
+  }, [search, warehouseFilter, reasonFilter, fromDate, toDate]);
 
   const { data: warehouses } = useListWarehouses();
 

@@ -44,24 +44,36 @@ export default function PurchaseOrders() {
   const [overdueFilter, setOverdueFilter] = useState<boolean>(() =>
     new URLSearchParams(window.location.search).get("overdue") === "true"
   );
-  const [warehouseFilter, setWarehouseFilter] = useState<string>("all");
-  const [search, setSearch] = useState<string>("");
-  const [fromDate, setFromDate] = useState<string>("");
-  const [toDate, setToDate] = useState<string>("");
+  const [warehouseFilter, setWarehouseFilter] = useState<string>(
+    () => new URLSearchParams(window.location.search).get("wh") ?? "all",
+  );
+  const [search, setSearch] = useState<string>(
+    () => new URLSearchParams(window.location.search).get("q") ?? "",
+  );
+  const [fromDate, setFromDate] = useState<string>(
+    () => new URLSearchParams(window.location.search).get("from") ?? "",
+  );
+  const [toDate, setToDate] = useState<string>(
+    () => new URLSearchParams(window.location.search).get("to") ?? "",
+  );
 
   const { data: warehouses } = useListWarehouses();
   const [pageSize, setPageSize] = useState(15);
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState<string>(() => {
+    const u = new URLSearchParams(window.location.search).get("sortBy");
+    if (u) return u;
     try { return JSON.parse(sessionStorage.getItem("sort:purchase-orders") ?? "{}").sortBy ?? "date"; } catch { return "date"; }
   });
   const [sortDir, setSortDir] = useState<"asc" | "desc">(() => {
+    const u = new URLSearchParams(window.location.search).get("sortDir") as "asc" | "desc" | null;
+    if (u === "asc" || u === "desc") return u;
     try { return JSON.parse(sessionStorage.getItem("sort:purchase-orders") ?? "{}").sortDir ?? "desc"; } catch { return "desc"; }
   });
 
   const debouncedSearch = useDebounce(search, 400);
 
-  // Keep URL in sync with overdue + status filters so links are bookmarkable.
+  // Keep URL in sync with all filters so links are bookmarkable / refresh-safe.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (overdueFilter) {
@@ -69,15 +81,17 @@ export default function PurchaseOrders() {
       params.delete("status");
     } else {
       params.delete("overdue");
-      if (statusFilter !== "all") {
-        params.set("status", statusFilter);
-      } else {
-        params.delete("status");
-      }
+      statusFilter !== "all" ? params.set("status", statusFilter) : params.delete("status");
     }
+    search ? params.set("q", search) : params.delete("q");
+    fromDate ? params.set("from", fromDate) : params.delete("from");
+    toDate ? params.set("to", toDate) : params.delete("to");
+    warehouseFilter !== "all" ? params.set("wh", warehouseFilter) : params.delete("wh");
+    sortBy !== "date" ? params.set("sortBy", sortBy) : params.delete("sortBy");
+    sortDir !== "desc" ? params.set("sortDir", sortDir) : params.delete("sortDir");
     const qs = params.toString();
     window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
-  }, [overdueFilter, statusFilter]);
+  }, [overdueFilter, statusFilter, search, fromDate, toDate, warehouseFilter, sortBy, sortDir]);
 
   const { data, isLoading } = useQuery({
     queryKey: [

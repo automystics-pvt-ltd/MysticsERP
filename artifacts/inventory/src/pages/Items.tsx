@@ -411,7 +411,9 @@ export default function Items() {
 
   const canBulkDelete = useCanI("items", "delete");
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(
+    () => new URLSearchParams(window.location.search).get("q") ?? "",
+  );
   const debouncedSearch = useDebounce(search, 500);
   // Warehouse filter — last selection remembered in localStorage.
   const [warehouseFilter, setWarehouseFilterState] = useState<number | "all">(
@@ -450,11 +452,22 @@ export default function Items() {
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   const [variantsByParent, setVariantsByParent] = useState<Record<number, Item[]>>({});
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
-  const [categoryFilter, setCategoryFilter] = useState<string>("");
-  const [brandFilter, setBrandFilter] = useState<string>("");
-  const [stockFilter, setStockFilter] = useState<"all" | "in-stock" | "low-stock" | "out-of-stock">("all");
-  const [priceMin, setPriceMin] = useState<string>("");
-  const [priceMax, setPriceMax] = useState<string>("");
+  const [categoryFilter, setCategoryFilter] = useState<string>(
+    () => new URLSearchParams(window.location.search).get("cat") ?? "",
+  );
+  const [brandFilter, setBrandFilter] = useState<string>(
+    () => new URLSearchParams(window.location.search).get("brand") ?? "",
+  );
+  const [stockFilter, setStockFilter] = useState<"all" | "in-stock" | "low-stock" | "out-of-stock">(() => {
+    const s = new URLSearchParams(window.location.search).get("stock");
+    return (s === "in-stock" || s === "low-stock" || s === "out-of-stock") ? s : "all";
+  });
+  const [priceMin, setPriceMin] = useState<string>(
+    () => new URLSearchParams(window.location.search).get("minPrice") ?? "",
+  );
+  const [priceMax, setPriceMax] = useState<string>(
+    () => new URLSearchParams(window.location.search).get("maxPrice") ?? "",
+  );
   const debouncedPriceMin = useDebounce(priceMin, 600);
   const debouncedPriceMax = useDebounce(priceMax, 600);
   const [page, setPage] = useState(1);
@@ -565,6 +578,20 @@ export default function Items() {
     setPage(1);
     setSelectedIds(new Set());
   }, [categoryFilter, brandFilter, stockFilter, debouncedPriceMin, debouncedPriceMax, debouncedSearch, warehouseFilter]);
+
+  // Sync filter state to URL so the page is bookmarkable / refresh-safe.
+  // warehouseFilter is intentionally kept in localStorage only (user preference).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    search ? params.set("q", search) : params.delete("q");
+    categoryFilter ? params.set("cat", categoryFilter) : params.delete("cat");
+    brandFilter ? params.set("brand", brandFilter) : params.delete("brand");
+    stockFilter !== "all" ? params.set("stock", stockFilter) : params.delete("stock");
+    priceMin ? params.set("minPrice", priceMin) : params.delete("minPrice");
+    priceMax ? params.set("maxPrice", priceMax) : params.delete("maxPrice");
+    const qs = params.toString();
+    window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
+  }, [search, categoryFilter, brandFilter, stockFilter, priceMin, priceMax]);
 
   const hasAdvancedFilters = stockFilter !== "all" || priceMin !== "" || priceMax !== "" || brandFilter !== "";
   function clearAdvancedFilters() {

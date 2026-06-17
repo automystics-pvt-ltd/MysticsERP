@@ -52,13 +52,22 @@ const customerSchema = z.object({
 type CustomerFormValues = z.infer<typeof customerSchema>;
 
 export default function Customers() {
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(
+    () => new URLSearchParams(window.location.search).get("q") ?? "",
+  );
   const debouncedSearch = useDebounce(search, 400);
   const [pageSize, setPageSize] = useState(15);
   const [page, setPage] = useState(1);
-  const [hasBalance, setHasBalance] = useState(false);
-  const [sortBy, setSortBy] = useState<"name" | "balance" | "createdAt">("name");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [hasBalance, setHasBalance] = useState(
+    () => new URLSearchParams(window.location.search).get("hasBalance") === "true",
+  );
+  const [sortBy, setSortBy] = useState<"name" | "balance" | "createdAt">(() => {
+    const s = new URLSearchParams(window.location.search).get("sort");
+    return s === "balance" || s === "createdAt" ? s : "name";
+  });
+  const [sortDir, setSortDir] = useState<"asc" | "desc">(() => {
+    return new URLSearchParams(window.location.search).get("sortDir") === "desc" ? "desc" : "asc";
+  });
 
   const queryParams = {
     page,
@@ -78,6 +87,17 @@ export default function Customers() {
   const customers = data?.customers ?? [];
   const total = data?.total ?? 0;
   const totalOutstanding = data?.totalOutstanding ?? "0";
+
+  // Sync filter state to URL so the page is bookmarkable / refresh-safe.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    search ? params.set("q", search) : params.delete("q");
+    hasBalance ? params.set("hasBalance", "true") : params.delete("hasBalance");
+    sortBy !== "name" ? params.set("sort", sortBy) : params.delete("sort");
+    sortDir !== "asc" ? params.set("sortDir", sortDir) : params.delete("sortDir");
+    const qs = params.toString();
+    window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
+  }, [search, hasBalance, sortBy, sortDir]);
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);

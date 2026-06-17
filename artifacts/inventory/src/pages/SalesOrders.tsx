@@ -98,13 +98,27 @@ export default function SalesOrders() {
   });
   const [pageSize, setPageSize] = useState(15);
   const [page, setPage] = useState(1);
-  const [orderTypeFilter, setOrderTypeFilter] = useState<string>("all");
-  const [channelFilter, setChannelFilter] = useState<string>("all");
-  const [customerFilter, setCustomerFilter] = useState<string>("all");
-  const [fromDate, setFromDate] = useState<string>("");
-  const [toDate, setToDate] = useState<string>("");
-  const [sortBy, setSortBy] = useState<string>("date");
-  const [sortDir, setSortDir] = useState<string>("desc");
+  const [orderTypeFilter, setOrderTypeFilter] = useState<string>(
+    () => new URLSearchParams(window.location.search).get("orderType") ?? "all",
+  );
+  const [channelFilter, setChannelFilter] = useState<string>(
+    () => new URLSearchParams(window.location.search).get("channel") ?? "all",
+  );
+  const [customerFilter, setCustomerFilter] = useState<string>(
+    () => new URLSearchParams(window.location.search).get("customer") ?? "all",
+  );
+  const [fromDate, setFromDate] = useState<string>(
+    () => new URLSearchParams(window.location.search).get("from") ?? "",
+  );
+  const [toDate, setToDate] = useState<string>(
+    () => new URLSearchParams(window.location.search).get("to") ?? "",
+  );
+  const [sortBy, setSortBy] = useState<string>(
+    () => new URLSearchParams(window.location.search).get("sortBy") ?? "date",
+  );
+  const [sortDir, setSortDir] = useState<string>(
+    () => new URLSearchParams(window.location.search).get("sortDir") ?? "desc",
+  );
   const [paymentTarget, setPaymentTarget] = useState<{
     customerId: number;
     salesOrderId: number;
@@ -123,7 +137,7 @@ export default function SalesOrders() {
   const { data: org } = useGetCurrentOrganization();
   const ptDays: number = (org as { defaultPaymentTermsDays?: number } | undefined)?.defaultPaymentTermsDays ?? 30;
 
-  // Keep URL in sync with overdue + status filters so links are bookmarkable.
+  // Keep URL in sync with all filters so links are bookmarkable / refresh-safe.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (overdueFilter) {
@@ -131,15 +145,19 @@ export default function SalesOrders() {
       params.delete("status");
     } else {
       params.delete("overdue");
-      if (statusFilter !== "all") {
-        params.set("status", statusFilter);
-      } else {
-        params.delete("status");
-      }
+      statusFilter !== "all" ? params.set("status", statusFilter) : params.delete("status");
     }
+    search ? params.set("q", search) : params.delete("q");
+    fromDate ? params.set("from", fromDate) : params.delete("from");
+    toDate ? params.set("to", toDate) : params.delete("to");
+    orderTypeFilter !== "all" ? params.set("orderType", orderTypeFilter) : params.delete("orderType");
+    channelFilter !== "all" ? params.set("channel", channelFilter) : params.delete("channel");
+    customerFilter !== "all" ? params.set("customer", customerFilter) : params.delete("customer");
+    sortBy !== "date" ? params.set("sortBy", sortBy) : params.delete("sortBy");
+    sortDir !== "desc" ? params.set("sortDir", sortDir) : params.delete("sortDir");
     const qs = params.toString();
     window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
-  }, [overdueFilter, statusFilter]);
+  }, [overdueFilter, statusFilter, search, fromDate, toDate, orderTypeFilter, channelFilter, customerFilter, sortBy, sortDir]);
 
   const queryParams = {
     page,

@@ -47,19 +47,29 @@ const supplierSchema = z.object({
 type SupplierFormValues = z.infer<typeof supplierSchema>;
 
 export default function Suppliers() {
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(
+    () => new URLSearchParams(window.location.search).get("q") ?? "",
+  );
   const debouncedSearch = useDebounce(search, 400);
   const PAGE_SIZE_OPTIONS = [15, 25, 50, 100];
   const [pageSize, setPageSize] = useState(15);
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState<string>(() => {
+    const u = new URLSearchParams(window.location.search).get("sort");
+    if (u) return u;
     try { return JSON.parse(sessionStorage.getItem("sort:suppliers") ?? "{}").sortBy ?? "name"; } catch { return "name"; }
   });
   const [sortDir, setSortDir] = useState<"asc" | "desc">(() => {
+    const u = new URLSearchParams(window.location.search).get("sortDir") as "asc" | "desc" | null;
+    if (u === "asc" || u === "desc") return u;
     try { return JSON.parse(sessionStorage.getItem("sort:suppliers") ?? "{}").sortDir ?? "asc"; } catch { return "asc"; }
   });
-  const [hasBalance, setHasBalance] = useState(false);
-  const [overdueOnly, setOverdueOnly] = useState(false);
+  const [hasBalance, setHasBalance] = useState(
+    () => new URLSearchParams(window.location.search).get("hasBalance") === "true",
+  );
+  const [overdueOnly, setOverdueOnly] = useState(
+    () => new URLSearchParams(window.location.search).get("overdue") === "true",
+  );
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -82,6 +92,18 @@ export default function Suppliers() {
   const suppliers = data?.suppliers ?? [];
   const total = data?.total ?? 0;
   const totalPayable = data?.totalPayable ?? "0";
+
+  // Sync filter state to URL so the page is bookmarkable / refresh-safe.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    search ? params.set("q", search) : params.delete("q");
+    hasBalance ? params.set("hasBalance", "true") : params.delete("hasBalance");
+    overdueOnly ? params.set("overdue", "true") : params.delete("overdue");
+    sortBy !== "name" ? params.set("sort", sortBy) : params.delete("sort");
+    sortDir !== "asc" ? params.set("sortDir", sortDir) : params.delete("sortDir");
+    const qs = params.toString();
+    window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
+  }, [search, hasBalance, overdueOnly, sortBy, sortDir]);
   const overduePayablesCount = data?.overduePayablesCount ?? 0;
   const overduePayablesAmount = parseFloat(data?.overduePayablesAmount ?? "0") || 0;
   const [sheetOpen, setSheetOpen] = useState(false);
