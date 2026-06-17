@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useMemo, useCallback, useRef } from "react";
+import { useSearch, useLocation } from "wouter";
+import { useDebounce } from "./use-debounce";
 
 /** Key → default string value mapping. All filter values are strings in the URL. */
 export type FilterDefaults = Record<string, string>;
@@ -7,80 +9,101 @@ export interface UseListFiltersReturn {
   values: FilterDefaults;
   /** Update a single filter key. Pass the default value (or "") to clear it. */
   set: (key: string, value: string) => void;
-  /** Reset all filters to their defaults and clear the URL params. */
+  /** Atomically update multiple filter keys in a single navigation call. */
+  setMany: (updates: Record<string, string>) => void;
+  /** Reset all filters to their defaults and remove their URL params. */
   reset: () => void;
   /** Number of filters currently set to a non-default, non-empty value. */
   activeCount: number;
+  /**
+   * Debounced value of `values.search` (400 ms).
+   * Pass this to API query functions instead of `values.search` directly.
+   */
+  debouncedSearch: string;
 }
 
 /**
  * Manages a set of URL-synced filter params for list pages.
  *
- * - Reads initial values from the current URL search params (falling back to defaults).
- * - Writes changes back via `window.history.replaceState` on every state change so
- *   filters are bookmarkable and survive a browser refresh.
- * - `reset()` restores all values to their defaults and removes their URL params.
+ * Uses wouter's `useSearch` / `useLocation` so the URL is the single source
+ * of truth — the browser back-button and direct-link sharing work for free.
  *
  * Example usage:
  * ```ts
- * const { values, set, reset, activeCount } = useListFilters({
- *   status: "all",
+ * const { values, set, setMany, reset, activeCount, debouncedSearch } = useListFilters({
  *   search: "",
+ *   status: "all",
  *   from: "",
  *   to: "",
  * });
- * const [search, setSearch] = [values.search, (v: string) => set("search", v)];
  * ```
  */
 export function useListFilters(defaults: FilterDefaults): UseListFiltersReturn {
-  const keys = Object.keys(defaults);
   const defaultsRef = useRef(defaults);
+  const rawSearch = useSearch();          // query string WITHOUT leading "?"
+  const [currentPath, navigate] = useLocation();
 
-  const [values, setValues] = useState<FilterDefaults>(() => {
-    const params = new URLSearchParams(window.location.search);
-    const init: FilterDefaults = {};
-    for (const key of keys) {
+  const values = useMemo(() => {
+    const params = new URLSearchParams(rawSearch);
+    const result: FilterDefaults = {};
+    for (const key of Object.keys(defaultsRef.current)) {
       const v = params.get(key);
-      init[key] = v !== null && v !== "" ? v : defaults[key];
+      result[key] = v !== null && v !== "" ? v : defaultsRef.current[key];
     }
-    return init;
-  });
+    return result;
+  }, [rawSearch]);
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const def = defaultsRef.current;
-    for (const key of keys) {
-      const val = values[key] ?? "";
-      const dflt = def[key] ?? "";
-      if (val && val !== dflt) {
-        params.set(key, val);
-      } else {
-        params.delete(key);
+  const buildQs = useCallback(
+    (updates: Record<string, string>) => {
+      const params = new URLSearchParams(rawSearch);
+      const def = defaultsRef.current;
+      for (const [key, value] of Object.entries(updates)) {
+        const dflt = def[key] ?? "";
+        if (value && value !== dflt) {
+          params.set(key, value);
+        } else {
+          params.delete(key);
+        }
       }
-    }
-    const qs = params.toString();
-    window.history.replaceState(
-      null,
-      "",
-      qs ? `?${qs}` : window.location.pathname,
-    );
-    // keys is derived from defaults object keys — stable across renders
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [values]);
+      return params.toString();
+    },
+    [rawSearch],
+  );
 
-  const set = useCallback((key: string, value: string) => {
-    setValues((prev) => ({ ...prev, [key]: value }));
-  }, []);
+  const set = useCallback(
+    (key: string, value: string) => {
+      const qs = buildQs({ [key]: value });
+      navigate(currentPath + (qs ? `?${qs}` : ""), { replace: true });
+    },
+    [buildQs, navigate, currentPath],
+  );
+
+  const setMany = useCallback(
+    (updates: Record<string, string>) => {
+      const qs = buildQs(updates);
+      navigate(currentPath + (qs ? `?${qs}` : ""), { replace: true });
+    },
+    [buildQs, navigate, currentPath],
+  );
 
   const reset = useCallback(() => {
-    setValues({ ...defaultsRef.current });
-  }, []);
+    const params = new URLSearchParams(rawSearch);
+    for (const key of Object.keys(defaultsRef.current)) {
+      params.delete(key);
+    }
+    const qs = params.toString();
+    navigate(currentPath + (qs ? `?${qs}` : ""), { replace: true });
+  }, [rawSearch, navigate, currentPath]);
 
-  const activeCount = keys.filter((k) => {
-    const val = values[k] ?? "";
-    const dflt = defaultsRef.current[k] ?? "";
-    return val !== "" && val !== dflt;
-  }).length;
+  const activeCount = useMemo(() => {
+    return Object.keys(defaultsRef.current).filter((k) => {
+      const val = values[k] ?? "";
+      const dflt = defaultsRef.current[k] ?? "";
+      return val !== "" && val !== dflt;
+    }).length;
+  }, [values]);
 
-  return { values, set, reset, activeCount };
+  const debouncedSearch = useDebounce(values.search ?? "", 400);
+
+  return { values, set, setMany, reset, activeCount, debouncedSearch };
 }

@@ -1,4 +1,4 @@
-import { Link, useSearch, useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { Can } from "@/components/Can";
 import { useQuery } from "@tanstack/react-query";
@@ -32,8 +32,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { TablePagination } from "@/components/TablePagination";
 import { BulkImportStockTransferDialog } from "@/components/BulkImportStockTransferDialog";
-import { useDebounce } from "@/hooks/use-debounce";
-import { FilterBar, type FilterChip } from "@/components/FilterBar";
+import { useListFilters } from "@/hooks/use-list-filters";
+import { FilterBar } from "@/components/FilterBar";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import type { StockTransfer } from "@workspace/api-client-react";
 
@@ -49,18 +49,23 @@ const EXPORT_COLUMNS: ExportColumn<StockTransfer>[] = [
 ];
 
 export default function StockTransfers() {
-  const [, setLocation] = useLocation();
-  const _qs = useSearch();
   const hasMounted = useRef(false);
+  const [, setLocation] = useLocation();
 
-  const [search, setSearch] = useState<string>(() => new URLSearchParams(_qs).get("q") ?? "");
-  const debouncedSearch = useDebounce(search, 400);
-  const [statusFilter, setStatusFilter] = useState<string>(() => new URLSearchParams(_qs).get("status") ?? "all");
-  const [warehouseFilter, setWarehouseFilter] = useState<string>(() => new URLSearchParams(_qs).get("wh") ?? "all");
-  const [fromDate, setFromDate] = useState<string>(() => new URLSearchParams(_qs).get("from") ?? "");
-  const [toDate, setToDate] = useState<string>(() => new URLSearchParams(_qs).get("to") ?? "");
-  const [page, setPage] = useState(() => Number(new URLSearchParams(_qs).get("p") ?? "1"));
-  const [pageSize, setPageSize] = useState<number>(() => Number(new URLSearchParams(_qs).get("ps") ?? "15"));
+  const { values, set, setMany, reset, debouncedSearch } = useListFilters({
+    search: "",
+    status: "all",
+    wh: "all",
+    from: "",
+    to: "",
+  });
+  const search = values.search;
+  const statusFilter = values.status;
+  const warehouseFilter = values.wh;
+  const fromDate = values.from;
+  const toDate = values.to;
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(15);
   const [importOpen, setImportOpen] = useState(false);
 
   const saveScrollPos = useCallback(() => {
@@ -85,19 +90,6 @@ export default function StockTransfers() {
     setPage(1);
   }, [debouncedSearch, statusFilter, warehouseFilter, fromDate, toDate]);
 
-  useEffect(() => {
-    const p = new URLSearchParams();
-    if (search) p.set("q", search);
-    if (statusFilter !== "all") p.set("status", statusFilter);
-    if (warehouseFilter !== "all") p.set("wh", warehouseFilter);
-    if (fromDate) p.set("from", fromDate);
-    if (toDate) p.set("to", toDate);
-    if (page > 1) p.set("p", String(page));
-    if (pageSize !== 15) p.set("ps", String(pageSize));
-    const qs = p.toString();
-    window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
-  }, [search, statusFilter, warehouseFilter, fromDate, toDate, page, pageSize]);
-
   useEffect(() => { hasMounted.current = true; }, []);
 
   const { data: warehouses } = useListWarehouses();
@@ -119,18 +111,6 @@ export default function StockTransfers() {
   const transfers: StockTransfer[] = data?.transfers ?? [];
   const total = data?.total ?? 0;
 
-  const warehouseName = warehouseFilter !== "all"
-    ? (warehouses ?? []).find((w) => w.id === Number(warehouseFilter))?.name ?? warehouseFilter
-    : undefined;
-  const filterCount = [statusFilter !== "all", warehouseFilter !== "all", !!(fromDate || toDate)].filter(Boolean).length;
-  const activeChips: FilterChip[] = [
-    ...(statusFilter !== "all" ? [{ key: "status", label: `Status: ${statusFilter.replace("_", " ")}`, onRemove: () => { setStatusFilter("all"); setPage(1); } }] : []),
-    ...(warehouseFilter !== "all" && warehouseName ? [{ key: "wh", label: `Warehouse: ${warehouseName}`, onRemove: () => { setWarehouseFilter("all"); setPage(1); } }] : []),
-    ...((fromDate || toDate) ? [{ key: "date", label: fromDate && toDate ? `${fromDate} – ${toDate}` : (fromDate || toDate), onRemove: () => { setFromDate(""); setToDate(""); setPage(1); } }] : []),
-  ];
-  function clearFilters() {
-    setSearch(""); setStatusFilter("all"); setWarehouseFilter("all"); setFromDate(""); setToDate(""); setPage(1);
-  }
 
   return (
     <div className="space-y-6">
@@ -168,57 +148,28 @@ export default function StockTransfers() {
       />
 
       <FilterBar
-        search={search}
-        onSearchChange={(v) => setSearch(v)}
+        search={values.search}
+        onSearchChange={(v) => { set("search", v); setPage(1); }}
         searchPlaceholder="Transfer #, warehouse…"
-        filterCount={filterCount}
-        onReset={clearFilters}
-        activeChips={activeChips}
-        filterContent={
-          <>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Status</Label>
-              <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
-                <SelectTrigger data-testid="filter-transfer-status">
-                  <SelectValue placeholder="All Statuses" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="draft">Draft</SelectItem>
-                  <SelectItem value="in_transit">In transit</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Warehouse</Label>
-              <Select value={warehouseFilter} onValueChange={(v) => { setWarehouseFilter(v); setPage(1); }}>
-                <SelectTrigger data-testid="filter-transfer-warehouse">
-                  <SelectValue placeholder="All Warehouses" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Warehouses</SelectItem>
-                  {warehouses?.map((w) => (
-                    <SelectItem key={w.id} value={w.id.toString()}>{w.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Date range</Label>
-              <DateRangePicker
-                from={fromDate}
-                to={toDate}
-                onChange={(f, t) => { setFromDate(f); setToDate(t); setPage(1); }}
-                onClear={() => { setFromDate(""); setToDate(""); setPage(1); }}
-                align="start"
-                placeholder="All dates"
-                className="w-full justify-start"
-              />
-            </div>
-          </>
-        }
+        filterDefs={[
+          {
+            key: "status", label: "Status", type: "select",
+            options: [
+              { value: "draft", label: "Draft" },
+              { value: "in_transit", label: "In transit" },
+              { value: "completed", label: "Completed" },
+              { value: "cancelled", label: "Cancelled" },
+            ],
+          },
+          {
+            key: "wh", label: "Warehouse", type: "select",
+            options: (warehouses ?? []).filter((w) => !w.isVirtual).map((w) => ({ value: String(w.id), label: w.name })),
+          },
+          { key: "date", label: "Date range", type: "daterange", fromKey: "from", toKey: "to" },
+        ]}
+        filterValues={values}
+        onFilterChange={(k, v) => { set(k, v); setPage(1); }}
+        onReset={() => { reset(); setPage(1); }}
       />
 
       <div className="rounded-md border bg-card">

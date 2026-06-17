@@ -29,8 +29,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { useDebounce } from "@/hooks/use-debounce";
-import { FilterBar, type FilterChip } from "@/components/FilterBar";
+import { useListFilters } from "@/hooks/use-list-filters";
+import { FilterBar } from "@/components/FilterBar";
 import type { Supplier } from "@/lib/queryKeys";
 
 const supplierSchema = z.object({
@@ -47,29 +47,21 @@ const supplierSchema = z.object({
 type SupplierFormValues = z.infer<typeof supplierSchema>;
 
 export default function Suppliers() {
-  const [search, setSearch] = useState(
-    () => new URLSearchParams(window.location.search).get("q") ?? "",
-  );
-  const debouncedSearch = useDebounce(search, 400);
+  const { values, set, setMany, reset, debouncedSearch } = useListFilters({
+    search: "",
+    sort: "name",
+    sortDir: "asc",
+    hasBalance: "false",
+    overdue: "false",
+  });
+  const search = values.search;
+  const sortBy = values.sort;
+  const sortDir = values.sortDir as "asc" | "desc";
+  const hasBalance = values.hasBalance === "true";
+  const overdueOnly = values.overdue === "true";
   const PAGE_SIZE_OPTIONS = [15, 25, 50, 100];
   const [pageSize, setPageSize] = useState(15);
   const [page, setPage] = useState(1);
-  const [sortBy, setSortBy] = useState<string>(() => {
-    const u = new URLSearchParams(window.location.search).get("sort");
-    if (u) return u;
-    try { return JSON.parse(sessionStorage.getItem("sort:suppliers") ?? "{}").sortBy ?? "name"; } catch { return "name"; }
-  });
-  const [sortDir, setSortDir] = useState<"asc" | "desc">(() => {
-    const u = new URLSearchParams(window.location.search).get("sortDir") as "asc" | "desc" | null;
-    if (u === "asc" || u === "desc") return u;
-    try { return JSON.parse(sessionStorage.getItem("sort:suppliers") ?? "{}").sortDir ?? "asc"; } catch { return "asc"; }
-  });
-  const [hasBalance, setHasBalance] = useState(
-    () => new URLSearchParams(window.location.search).get("hasBalance") === "true",
-  );
-  const [overdueOnly, setOverdueOnly] = useState(
-    () => new URLSearchParams(window.location.search).get("overdue") === "true",
-  );
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -92,18 +84,6 @@ export default function Suppliers() {
   const suppliers = data?.suppliers ?? [];
   const total = data?.total ?? 0;
   const totalPayable = data?.totalPayable ?? "0";
-
-  // Sync filter state to URL so the page is bookmarkable / refresh-safe.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    search ? params.set("q", search) : params.delete("q");
-    hasBalance ? params.set("hasBalance", "true") : params.delete("hasBalance");
-    overdueOnly ? params.set("overdue", "true") : params.delete("overdue");
-    sortBy !== "name" ? params.set("sort", sortBy) : params.delete("sort");
-    sortDir !== "asc" ? params.set("sortDir", sortDir) : params.delete("sortDir");
-    const qs = params.toString();
-    window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
-  }, [search, hasBalance, overdueOnly, sortBy, sortDir]);
   const overduePayablesCount = data?.overduePayablesCount ?? 0;
   const overduePayablesAmount = parseFloat(data?.overduePayablesAmount ?? "0") || 0;
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -255,11 +235,8 @@ export default function Suppliers() {
   };
 
   const handleSort = (col: string) => {
-    const newBy = col;
-    const newDir: "asc" | "desc" = sortBy === col ? (sortDir === "desc" ? "asc" : "desc") : "desc";
-    setSortBy(newBy);
-    setSortDir(newDir);
-    try { sessionStorage.setItem("sort:suppliers", JSON.stringify({ sortBy: newBy, sortDir: newDir })); } catch {}
+    const newDir: "asc" | "desc" = values.sort === col ? (values.sortDir === "desc" ? "asc" : "desc") : "desc";
+    setMany({ sort: col, sortDir: newDir });
     setPage(1);
   };
   const SortIcon = ({ col }: { col: string }) =>
@@ -285,28 +262,23 @@ export default function Suppliers() {
       />
 
       <FilterBar
-        search={search}
-        onSearchChange={(v) => { setSearch(v); setPage(1); }}
+        search={values.search}
+        onSearchChange={(v) => { set("search", v); setPage(1); }}
         searchPlaceholder="Search suppliers..."
-        filterCount={hasBalance ? 1 : 0}
-        onReset={() => { setHasBalance(false); setPage(1); }}
-        activeChips={(hasBalance ? [{ key: "balance", label: "Has balance", onRemove: () => { setHasBalance(false); setPage(1); } }] : []) satisfies FilterChip[]}
-        filterContent={
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">Balance</Label>
-            <div className="flex items-center gap-2 pt-0.5">
-              <Checkbox
-                id="has-balance"
-                checked={hasBalance}
-                onCheckedChange={(checked) => { setHasBalance(!!checked); setPage(1); }}
-                data-testid="checkbox-has-balance"
-              />
-              <Label htmlFor="has-balance" className="cursor-pointer text-sm font-normal">
-                Has outstanding balance
-              </Label>
-            </div>
-          </div>
-        }
+        filterDefs={[
+          { key: "hasBalance", label: "Has outstanding balance", type: "boolean" },
+          { key: "overdue", label: "Overdue only", type: "boolean" },
+        ]}
+        filterValues={values}
+        onFilterChange={(k, v) => { set(k, v); setPage(1); }}
+        sortDefs={[
+          { key: "name", label: "Name" },
+          { key: "balance", label: "Balance" },
+          { key: "createdAt", label: "Date created" },
+        ]}
+        sortValues={{ sortBy: values.sort, sortDir: values.sortDir as "asc" | "desc" }}
+        onSortChange={(s, d) => { setMany({ sort: s, sortDir: d }); setPage(1); }}
+        onReset={() => { reset(); setPage(1); }}
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -326,7 +298,7 @@ export default function Suppliers() {
         <button
           type="button"
           onClick={() => {
-            setOverdueOnly((v) => !v);
+            set("overdue", overdueOnly ? "false" : "true");
             setPage(1);
           }}
           className={`rounded-lg border p-4 flex items-center gap-3 text-left w-full transition-colors ${

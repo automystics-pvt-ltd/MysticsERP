@@ -32,8 +32,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { useDebounce } from "@/hooks/use-debounce";
-import { FilterBar, type FilterChip } from "@/components/FilterBar";
+import { useListFilters } from "@/hooks/use-list-filters";
+import { FilterBar } from "@/components/FilterBar";
 
 const PAGE_SIZE_OPTIONS = [15, 25, 50, 100];
 
@@ -52,22 +52,18 @@ const customerSchema = z.object({
 type CustomerFormValues = z.infer<typeof customerSchema>;
 
 export default function Customers() {
-  const [search, setSearch] = useState(
-    () => new URLSearchParams(window.location.search).get("q") ?? "",
-  );
-  const debouncedSearch = useDebounce(search, 400);
+  const { values, set, setMany, reset, debouncedSearch } = useListFilters({
+    search: "",
+    hasBalance: "false",
+    sort: "name",
+    sortDir: "asc",
+  });
+  const search = values.search;
+  const hasBalance = values.hasBalance === "true";
+  const sortBy = values.sort as "name" | "balance" | "createdAt";
+  const sortDir = values.sortDir as "asc" | "desc";
   const [pageSize, setPageSize] = useState(15);
   const [page, setPage] = useState(1);
-  const [hasBalance, setHasBalance] = useState(
-    () => new URLSearchParams(window.location.search).get("hasBalance") === "true",
-  );
-  const [sortBy, setSortBy] = useState<"name" | "balance" | "createdAt">(() => {
-    const s = new URLSearchParams(window.location.search).get("sort");
-    return s === "balance" || s === "createdAt" ? s : "name";
-  });
-  const [sortDir, setSortDir] = useState<"asc" | "desc">(() => {
-    return new URLSearchParams(window.location.search).get("sortDir") === "desc" ? "desc" : "asc";
-  });
 
   const queryParams = {
     page,
@@ -87,17 +83,6 @@ export default function Customers() {
   const customers = data?.customers ?? [];
   const total = data?.total ?? 0;
   const totalOutstanding = data?.totalOutstanding ?? "0";
-
-  // Sync filter state to URL so the page is bookmarkable / refresh-safe.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    search ? params.set("q", search) : params.delete("q");
-    hasBalance ? params.set("hasBalance", "true") : params.delete("hasBalance");
-    sortBy !== "name" ? params.set("sort", sortBy) : params.delete("sort");
-    sortDir !== "asc" ? params.set("sortDir", sortDir) : params.delete("sortDir");
-    const qs = params.toString();
-    window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
-  }, [search, hasBalance, sortBy, sortDir]);
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -292,53 +277,22 @@ export default function Customers() {
       />
 
       <FilterBar
-        search={search}
-        onSearchChange={(v) => { setSearch(v); setPage(1); }}
+        search={values.search}
+        onSearchChange={(v) => { set("search", v); setPage(1); }}
         searchPlaceholder="Search customers..."
-        filterCount={hasBalance ? 1 : 0}
-        onReset={() => { setHasBalance(false); setSortBy("name"); setSortDir("asc"); setPage(1); }}
-        activeChips={(hasBalance ? [{ key: "balance", label: "Outstanding only", onRemove: () => { setHasBalance(false); setPage(1); } }] : []) satisfies FilterChip[]}
-        filterContent={
-          <>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Balance</Label>
-              <Button
-                variant={hasBalance ? "default" : "outline"}
-                size="sm"
-                className="w-full justify-start"
-                onClick={() => { setHasBalance((v) => !v); setPage(1); }}
-                data-testid="btn-filter-has-balance"
-              >
-                <IndianRupee className="mr-1.5 h-3.5 w-3.5" />
-                Outstanding only
-              </Button>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Sort</Label>
-              <Select
-                value={`${sortBy}:${sortDir}`}
-                onValueChange={(v) => {
-                  const [by, dir] = v.split(":") as ["name" | "balance" | "createdAt", "asc" | "desc"];
-                  setSortBy(by);
-                  setSortDir(dir);
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger data-testid="select-customers-sort">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="name:asc">Name A → Z</SelectItem>
-                  <SelectItem value="name:desc">Name Z → A</SelectItem>
-                  <SelectItem value="balance:desc">Balance (high first)</SelectItem>
-                  <SelectItem value="balance:asc">Balance (low first)</SelectItem>
-                  <SelectItem value="createdAt:desc">Newest first</SelectItem>
-                  <SelectItem value="createdAt:asc">Oldest first</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </>
-        }
+        filterDefs={[
+          { key: "hasBalance", label: "Outstanding balance only", type: "boolean" },
+        ]}
+        filterValues={values}
+        onFilterChange={(k, v) => { set(k, v); setPage(1); }}
+        sortDefs={[
+          { key: "name", label: "Name" },
+          { key: "balance", label: "Balance" },
+          { key: "createdAt", label: "Date created" },
+        ]}
+        sortValues={{ sortBy: values.sort, sortDir: values.sortDir as "asc" | "desc" }}
+        onSortChange={(s, d) => { setMany({ sort: s, sortDir: d }); setPage(1); }}
+        onReset={() => { reset(); setPage(1); }}
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

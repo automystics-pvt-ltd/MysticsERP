@@ -12,8 +12,8 @@ import { TableSkeleton } from "@/components/TableSkeleton";
 import { TablePagination } from "@/components/TablePagination";
 import { format } from "date-fns";
 import { Search, X } from "lucide-react";
-import { useDebounce } from "@/hooks/use-debounce";
-import { FilterBar, type FilterChip } from "@/components/FilterBar";
+import { useListFilters } from "@/hooks/use-list-filters";
+import { FilterBar } from "@/components/FilterBar";
 import { DateRangePicker } from "@/components/DateRangePicker";
 
 const PAGE_SIZE_OPTIONS = [15, 25, 50, 100] as const;
@@ -61,24 +61,23 @@ const MOVEMENT_TYPE_COLOR: Record<string, string> = {
 };
 
 export default function StockMovements() {
-  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("q") ?? "");
-  const [warehouseId, setWarehouseId] = useState<number | undefined>(() => {
-    const v = new URLSearchParams(window.location.search).get("wh");
-    return v ? Number(v) : undefined;
+  const { values, set, setMany, reset, activeCount, debouncedSearch } = useListFilters({
+    search: "",
+    wh: "all",
+    type: "all",
+    from: "",
+    to: "",
   });
-  const [movementType, setMovementType] = useState(() => new URLSearchParams(window.location.search).get("type") ?? "");
-  const [fromDate, setFromDate] = useState(() => new URLSearchParams(window.location.search).get("from") ?? "");
-  const [toDate, setToDate] = useState(() => new URLSearchParams(window.location.search).get("to") ?? "");
-  const [page, setPage] = useState(() => Number(new URLSearchParams(window.location.search).get("p") ?? "1"));
-  const [pageSize, setPageSize] = useState<number>(() => Number(new URLSearchParams(window.location.search).get("ps") ?? "25"));
-
-  const debouncedSearch = useDebounce(search, 400);
+  const warehouseId = values.wh !== "all" ? Number(values.wh) : undefined;
+  const movementType = values.type !== "all" ? values.type : "";
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(25);
 
   const hasMounted = useRef(false);
   useEffect(() => {
     if (!hasMounted.current) { hasMounted.current = true; return; }
     setPage(1);
-  }, [debouncedSearch, warehouseId, movementType, fromDate, toDate]);
+  }, [debouncedSearch, values.wh, values.type, values.from, values.to]);
 
   const queryParams = {
     page,
@@ -86,8 +85,8 @@ export default function StockMovements() {
     warehouseId,
     movementType: movementType || undefined,
     search: debouncedSearch || undefined,
-    fromDate: fromDate || undefined,
-    toDate: toDate || undefined,
+    fromDate: values.from || undefined,
+    toDate: values.to || undefined,
   };
 
   const { data, isLoading } = useQuery({
@@ -102,36 +101,6 @@ export default function StockMovements() {
   const movements = data?.movements ?? [];
   const total = data?.total ?? 0;
 
-  useEffect(() => {
-    const p = new URLSearchParams();
-    if (search) p.set("q", search);
-    if (warehouseId) p.set("wh", String(warehouseId));
-    if (movementType) p.set("type", movementType);
-    if (fromDate) p.set("from", fromDate);
-    if (toDate) p.set("to", toDate);
-    if (page > 1) p.set("p", String(page));
-    if (pageSize !== 25) p.set("ps", String(pageSize));
-    const qs = p.toString();
-    window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
-  }, [search, warehouseId, movementType, fromDate, toDate, page, pageSize]);
-
-  function clearFilters() {
-    setSearch("");
-    setWarehouseId(undefined);
-    setMovementType("");
-    setFromDate("");
-    setToDate("");
-    setPage(1);
-  }
-
-  const warehouseName = warehouseId ? (warehouses ?? []).find((w) => w.id === warehouseId)?.name : undefined;
-  const filterCount = [!!warehouseId, !!movementType, !!(fromDate || toDate)].filter(Boolean).length;
-  const activeChips: FilterChip[] = [
-    ...(warehouseId && warehouseName ? [{ key: "wh", label: `Warehouse: ${warehouseName}`, onRemove: () => { setWarehouseId(undefined); setPage(1); } }] : []),
-    ...(movementType ? [{ key: "type", label: `Type: ${MOVEMENT_TYPE_LABELS[movementType] ?? movementType}`, onRemove: () => { setMovementType(""); setPage(1); } }] : []),
-    ...((fromDate || toDate) ? [{ key: "date", label: fromDate && toDate ? `${format(new Date(fromDate + "T00:00"), "d MMM")} – ${format(new Date(toDate + "T00:00"), "d MMM yyyy")}` : (fromDate || toDate), onRemove: () => { setFromDate(""); setToDate(""); setPage(1); } }] : []),
-  ];
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -140,62 +109,23 @@ export default function StockMovements() {
       />
 
       <FilterBar
-        search={search}
-        onSearchChange={(v) => { setSearch(v); setPage(1); }}
+        search={values.search}
+        onSearchChange={(v) => { set("search", v); setPage(1); }}
         searchPlaceholder="Item name or SKU…"
-        filterCount={filterCount}
-        onReset={clearFilters}
-        activeChips={activeChips}
-        filterContent={
-          <>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Warehouse</Label>
-              <Select
-                value={warehouseId ? warehouseId.toString() : "all"}
-                onValueChange={(val) => { setWarehouseId(val === "all" ? undefined : parseInt(val)); setPage(1); }}
-              >
-                <SelectTrigger className="h-9 text-sm" data-testid="filter-warehouse">
-                  <SelectValue placeholder="All warehouses" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All warehouses</SelectItem>
-                  {warehouses?.map((w) => (
-                    <SelectItem key={w.id} value={w.id.toString()}>{w.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Movement type</Label>
-              <Select
-                value={movementType || "all"}
-                onValueChange={(val) => { setMovementType(val === "all" ? "" : val); setPage(1); }}
-              >
-                <SelectTrigger className="h-9 text-sm" data-testid="filter-movement-type">
-                  <SelectValue placeholder="All types" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All types</SelectItem>
-                  {Object.entries(MOVEMENT_TYPE_LABELS).map(([key, label]) => (
-                    <SelectItem key={key} value={key}>{label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Date range</Label>
-              <DateRangePicker
-                from={fromDate}
-                to={toDate}
-                onChange={(f, t) => { setFromDate(f); setToDate(t); setPage(1); }}
-                onClear={() => { setFromDate(""); setToDate(""); setPage(1); }}
-                align="start"
-                placeholder="All dates"
-                className="w-full justify-start"
-              />
-            </div>
-          </>
-        }
+        filterDefs={[
+          {
+            key: "wh", label: "Warehouse", type: "select",
+            options: (warehouses ?? []).filter((w) => !w.isVirtual).map((w) => ({ value: String(w.id), label: w.name })),
+          },
+          {
+            key: "type", label: "Movement type", type: "select",
+            options: Object.entries(MOVEMENT_TYPE_LABELS).map(([k, v]) => ({ value: k, label: v })),
+          },
+          { key: "date", label: "Date range", type: "daterange", fromKey: "from", toKey: "to" },
+        ]}
+        filterValues={values}
+        onFilterChange={(k, v) => { set(k, v); setPage(1); }}
+        onReset={() => { reset(); setPage(1); }}
       />
 
       {/* Table */}
@@ -218,7 +148,7 @@ export default function StockMovements() {
             ) : total === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
-                  {filterCount > 0 || debouncedSearch ? "No movements match your filters." : "No movements found."}
+                  {activeCount > 0 || debouncedSearch ? "No movements match your filters." : "No movements found."}
                 </TableCell>
               </TableRow>
             ) : (

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { useListFilters } from "@/hooks/use-list-filters";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { PageHeader } from "@/components/PageHeader";
@@ -324,39 +325,25 @@ function ReasonBreakdown({
 
 export default function WriteOffs() {
   const [writeOffOpen, setWriteOffOpen] = useState(false);
-  const [search, setSearch] = useState(
-    () => new URLSearchParams(window.location.search).get("q") ?? "",
-  );
-  const [warehouseFilter, setWarehouseFilter] = useState<string>(
-    () => new URLSearchParams(window.location.search).get("wh") ?? "all",
-  );
-  const [reasonFilter, setReasonFilter] = useState<string>(
-    () => new URLSearchParams(window.location.search).get("reason") ?? "all",
-  );
-  const [fromDate, setFromDate] = useState(
-    () => new URLSearchParams(window.location.search).get("from") ?? "",
-  );
-  const [toDate, setToDate] = useState(
-    () => new URLSearchParams(window.location.search).get("to") ?? "",
-  );
-  const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
+  const { values, set, setMany, reset, activeCount } = useListFilters({
+    search: "",
+    wh: "all",
+    reason: "all",
+    from: "",
+    to: "",
+    sortDir: "desc",
+  });
+  const search = values.search;
+  const warehouseFilter = values.wh;
+  const reasonFilter = values.reason;
+  const fromDate = values.from;
+  const toDate = values.to;
+  const sortDir = values.sortDir as "desc" | "asc";
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(25);
 
   const queryClient = useQueryClient();
   const canApproveWriteOffs = useCanI("write_offs", "approve");
-
-  // Sync filter state to URL so the page is bookmarkable / refresh-safe.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    search ? params.set("q", search) : params.delete("q");
-    warehouseFilter !== "all" ? params.set("wh", warehouseFilter) : params.delete("wh");
-    reasonFilter !== "all" ? params.set("reason", reasonFilter) : params.delete("reason");
-    fromDate ? params.set("from", fromDate) : params.delete("from");
-    toDate ? params.set("to", toDate) : params.delete("to");
-    const qs = params.toString();
-    window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
-  }, [search, warehouseFilter, reasonFilter, fromDate, toDate]);
 
   const { data: warehouses } = useListWarehouses();
 
@@ -465,17 +452,7 @@ export default function WriteOffs() {
 
   const pagedRows = filtered.slice((page - 1) * pageSize, page * pageSize);
 
-  const resetPage = () => setPage(1);
-  const clearFilters = () => {
-    setSearch("");
-    setWarehouseFilter("all");
-    setReasonFilter("all");
-    setFromDate("");
-    setToDate("");
-    resetPage();
-  };
-  const hasFilters =
-    search || warehouseFilter !== "all" || reasonFilter !== "all" || fromDate || toDate;
+  const hasFilters = !!(search || warehouseFilter !== "all" || reasonFilter !== "all" || fromDate || toDate);
 
   const handleExport = (which: "filtered" | "all") => {
     const rows = which === "all" ? allWriteOffs : filtered;
@@ -507,19 +484,6 @@ export default function WriteOffs() {
     const cost = m.itemUnitCost ?? 0;
     return s + Math.abs(m.quantity) * cost;
   }, 0);
-
-  // Warehouse name for chip label
-  const warehouseName =
-    warehouseFilter !== "all"
-      ? (warehouses ?? []).find((w) => String(w.id) === warehouseFilter)?.name ?? "Warehouse"
-      : null;
-
-  const woFilterCount = [warehouseFilter !== "all", reasonFilter !== "all", !!(fromDate || toDate)].filter(Boolean).length;
-  const woActiveChips: FilterChipDef[] = [
-    ...(reasonFilter !== "all" ? [{ key: "reason", label: `Reason: ${reasonLabel(reasonFilter)}`, onRemove: () => { setReasonFilter("all"); resetPage(); } }] : []),
-    ...(warehouseFilter !== "all" && warehouseName ? [{ key: "wh", label: `Warehouse: ${warehouseName}`, onRemove: () => { setWarehouseFilter("all"); resetPage(); } }] : []),
-    ...((fromDate || toDate) ? [{ key: "date", label: fromDate && toDate ? `${format(parseISO(fromDate), "d MMM")} – ${format(parseISO(toDate), "d MMM yyyy")}` : (fromDate ? `From ${fromDate}` : `To ${toDate}`), onRemove: () => { setFromDate(""); setToDate(""); resetPage(); } }] : []),
-  ];
 
   return (
     <div className="space-y-6">
@@ -668,62 +632,29 @@ export default function WriteOffs() {
             movements={allWriteOffs}
             loading={isLoading}
             activeReason={reasonFilter}
-            onReasonClick={(r) => { setReasonFilter(r); resetPage(); }}
+            onReasonClick={(r) => { set("reason", r); setPage(1); }}
           />
         </div>
 
         <div className="lg:col-span-3 space-y-3">
           <FilterBar
-            search={search}
-            onSearchChange={(v) => { setSearch(v); resetPage(); }}
+            search={values.search}
+            onSearchChange={(v) => { set("search", v); setPage(1); }}
             searchPlaceholder="Search item name, SKU, category or warehouse…"
-            filterCount={woFilterCount}
-            onReset={clearFilters}
-            activeChips={woActiveChips}
-            filterContent={
-              <>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">Warehouse</Label>
-                  <Select value={warehouseFilter} onValueChange={(v) => { setWarehouseFilter(v); resetPage(); }}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All Warehouses" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Warehouses</SelectItem>
-                      {(warehouses ?? []).filter((w) => !w.isVirtual).map((w) => (
-                        <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">Reason</Label>
-                  <Select value={reasonFilter} onValueChange={(v) => { setReasonFilter(v); resetPage(); }}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All Reasons" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Reasons</SelectItem>
-                      {WRITE_OFF_REASONS.map((r) => (
-                        <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">Date range</Label>
-                  <DateRangePicker
-                    from={fromDate}
-                    to={toDate}
-                    onChange={(f, t) => { setFromDate(f); setToDate(t); resetPage(); }}
-                    onClear={() => { setFromDate(""); setToDate(""); resetPage(); }}
-                    align="start"
-                    placeholder="All dates"
-                    className="w-full justify-start"
-                  />
-                </div>
-              </>
-            }
+            filterDefs={[
+              {
+                key: "wh", label: "Warehouse", type: "select",
+                options: (warehouses ?? []).filter((w) => !w.isVirtual).map((w) => ({ value: String(w.id), label: w.name })),
+              },
+              {
+                key: "reason", label: "Reason", type: "select",
+                options: WRITE_OFF_REASONS.map((r) => ({ value: r.value, label: r.label })),
+              },
+              { key: "date", label: "Date range", type: "daterange", fromKey: "from", toKey: "to" },
+            ]}
+            filterValues={values}
+            onFilterChange={(k, v) => { set(k, v); setPage(1); }}
+            onReset={() => { reset(); setPage(1); }}
           />
         </div>
       </div>
@@ -760,12 +691,12 @@ export default function WriteOffs() {
               variant="outline"
               size="sm"
               className="h-8 gap-1.5 text-xs"
-              onClick={() => setSortDir((d) => (d === "desc" ? "asc" : "desc"))}
+              onClick={() => set("sortDir", sortDir === "desc" ? "asc" : "desc")}
             >
               <ArrowUpDown className="h-3.5 w-3.5" />
               {sortDir === "desc" ? "Newest first" : "Oldest first"}
             </Button>
-            <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); resetPage(); }}>
+            <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}>
               <SelectTrigger className="h-8 w-[90px] text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {PAGE_SIZE_OPTIONS.map((n) => (
@@ -831,7 +762,7 @@ export default function WriteOffs() {
                         </Can>
                       )}
                       {hasFilters && (
-                        <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-1 text-xs">
+                        <Button variant="ghost" size="sm" onClick={reset} className="gap-1 text-xs">
                           <X className="h-3.5 w-3.5" /> Clear filters
                         </Button>
                       )}

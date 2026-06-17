@@ -41,8 +41,8 @@ import {
 import { Label } from "@/components/ui/label";
 import { RecordPaymentDialog } from "@/components/RecordPaymentDialog";
 import { BulkEinvoiceDialog } from "@/components/BulkEinvoiceDialog";
-import { useDebounce } from "@/hooks/use-debounce";
-import { FilterBar, type FilterChip } from "@/components/FilterBar";
+import { useListFilters } from "@/hooks/use-list-filters";
+import { FilterBar } from "@/components/FilterBar";
 import { DateRangePicker } from "@/components/DateRangePicker";
 
 const SALE_CHANNEL_LABELS: Record<string, string> = {
@@ -89,36 +89,30 @@ const SO_STATUS_VALUES = [
 ];
 
 export default function SalesOrders() {
-  const [overdueFilter, setOverdueFilter] = useState<boolean>(() =>
-    new URLSearchParams(window.location.search).get("overdue") === "true"
-  );
-  const [statusFilter, setStatusFilter] = useState<string>(() => {
-    const s = new URLSearchParams(window.location.search).get("status");
-    return s && SO_STATUS_VALUES.includes(s) ? s : "all";
+  const { values, set, setMany, reset, debouncedSearch } = useListFilters({
+    search: "",
+    overdue: "false",
+    status: "all",
+    orderType: "all",
+    channel: "all",
+    customer: "all",
+    from: "",
+    to: "",
+    sort: "date",
+    sortDir: "desc",
   });
+  const search = values.search;
+  const overdueFilter = values.overdue === "true";
+  const statusFilter = values.status;
+  const orderTypeFilter = values.orderType;
+  const channelFilter = values.channel;
+  const customerFilter = values.customer;
+  const fromDate = values.from;
+  const toDate = values.to;
+  const sortBy = values.sort;
+  const sortDir = values.sortDir;
   const [pageSize, setPageSize] = useState(15);
   const [page, setPage] = useState(1);
-  const [orderTypeFilter, setOrderTypeFilter] = useState<string>(
-    () => new URLSearchParams(window.location.search).get("orderType") ?? "all",
-  );
-  const [channelFilter, setChannelFilter] = useState<string>(
-    () => new URLSearchParams(window.location.search).get("channel") ?? "all",
-  );
-  const [customerFilter, setCustomerFilter] = useState<string>(
-    () => new URLSearchParams(window.location.search).get("customer") ?? "all",
-  );
-  const [fromDate, setFromDate] = useState<string>(
-    () => new URLSearchParams(window.location.search).get("from") ?? "",
-  );
-  const [toDate, setToDate] = useState<string>(
-    () => new URLSearchParams(window.location.search).get("to") ?? "",
-  );
-  const [sortBy, setSortBy] = useState<string>(
-    () => new URLSearchParams(window.location.search).get("sortBy") ?? "date",
-  );
-  const [sortDir, setSortDir] = useState<string>(
-    () => new URLSearchParams(window.location.search).get("sortDir") ?? "desc",
-  );
   const [paymentTarget, setPaymentTarget] = useState<{
     customerId: number;
     salesOrderId: number;
@@ -130,34 +124,9 @@ export default function SalesOrders() {
     orderIds: number[];
   }>({ open: false, orderIds: [] });
 
-  const [search, setSearch] = useState<string>("");
-  const debouncedSearch = useDebounce(search, 400);
-
   const { data: customers } = useListCustomers({});
   const { data: org } = useGetCurrentOrganization();
   const ptDays: number = (org as { defaultPaymentTermsDays?: number } | undefined)?.defaultPaymentTermsDays ?? 30;
-
-  // Keep URL in sync with all filters so links are bookmarkable / refresh-safe.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (overdueFilter) {
-      params.set("overdue", "true");
-      params.delete("status");
-    } else {
-      params.delete("overdue");
-      statusFilter !== "all" ? params.set("status", statusFilter) : params.delete("status");
-    }
-    search ? params.set("q", search) : params.delete("q");
-    fromDate ? params.set("from", fromDate) : params.delete("from");
-    toDate ? params.set("to", toDate) : params.delete("to");
-    orderTypeFilter !== "all" ? params.set("orderType", orderTypeFilter) : params.delete("orderType");
-    channelFilter !== "all" ? params.set("channel", channelFilter) : params.delete("channel");
-    customerFilter !== "all" ? params.set("customer", customerFilter) : params.delete("customer");
-    sortBy !== "date" ? params.set("sortBy", sortBy) : params.delete("sortBy");
-    sortDir !== "desc" ? params.set("sortDir", sortDir) : params.delete("sortDir");
-    const qs = params.toString();
-    window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
-  }, [overdueFilter, statusFilter, search, fromDate, toDate, orderTypeFilter, channelFilter, customerFilter, sortBy, sortDir]);
 
   const queryParams = {
     page,
@@ -188,39 +157,6 @@ export default function SalesOrders() {
   const orders = data?.orders ?? [];
   const total = data?.total ?? 0;
 
-  const resetPage = () => setPage(1);
-
-  const clearFilters = () => {
-    setOverdueFilter(false);
-    setFromDate("");
-    setToDate("");
-    setStatusFilter("all");
-    setOrderTypeFilter("all");
-    setChannelFilter("all");
-    setCustomerFilter("all");
-    setSortBy("date");
-    setSortDir("desc");
-    setSearch("");
-    resetPage();
-  };
-
-  const customerName = customerFilter !== "all" ? (customers ?? []).find((c) => String(c.id) === customerFilter)?.name : undefined;
-  const filterCount = [
-    statusFilter !== "all",
-    orderTypeFilter !== "all",
-    channelFilter !== "all",
-    customerFilter !== "all",
-    !!(fromDate || toDate),
-    sortBy !== "date" || sortDir !== "desc",
-  ].filter(Boolean).length;
-  const soActiveChips: FilterChip[] = [
-    ...(statusFilter !== "all" ? [{ key: "status", label: `Status: ${statusFilter.replace(/_/g, " ")}`, onRemove: () => { setStatusFilter("all"); resetPage(); } }] : []),
-    ...(orderTypeFilter !== "all" ? [{ key: "type", label: `Type: ${orderTypeFilter === "pos" ? "POS" : "Sales Order"}`, onRemove: () => { setOrderTypeFilter("all"); resetPage(); } }] : []),
-    ...(channelFilter !== "all" ? [{ key: "channel", label: `Channel: ${SALE_CHANNEL_LABELS[channelFilter] ?? channelFilter}`, onRemove: () => { setChannelFilter("all"); resetPage(); } }] : []),
-    ...(customerFilter !== "all" && customerName ? [{ key: "customer", label: `Customer: ${customerName}`, onRemove: () => { setCustomerFilter("all"); resetPage(); } }] : []),
-    ...((fromDate || toDate) ? [{ key: "date", label: fromDate && toDate ? `${fromDate} – ${toDate}` : (fromDate ? `From ${fromDate}` : `To ${toDate}`), onRemove: () => { setFromDate(""); setToDate(""); resetPage(); } }] : []),
-    ...(sortBy !== "date" || sortDir !== "desc" ? [{ key: "sort", label: `Sort: ${sortBy} ${sortDir}`, onRemove: () => { setSortBy("date"); setSortDir("desc"); resetPage(); } }] : []),
-  ];
 
   const overdueButton = (
     <Button
@@ -229,7 +165,7 @@ export default function SalesOrders() {
       className={overdueFilter
         ? "h-9 gap-1.5 bg-orange-600 hover:bg-orange-700 border-orange-600 text-white"
         : "h-9 gap-1.5 text-muted-foreground"}
-      onClick={() => { setOverdueFilter((v) => !v); setStatusFilter("all"); resetPage(); }}
+      onClick={() => { setMany({ overdue: overdueFilter ? "false" : "true", status: "all" }); setPage(1); }}
       data-testid="filter-so-overdue"
     >
       <AlertCircle className="h-3.5 w-3.5" />
@@ -304,121 +240,60 @@ export default function SalesOrders() {
       <div className="flex flex-wrap items-start gap-4">
         <FilterBar
           className="flex-1"
-          search={search}
-          onSearchChange={(v) => { setSearch(v); resetPage(); }}
+          search={values.search}
+          onSearchChange={(v) => { set("search", v); setPage(1); }}
           searchPlaceholder="Order # or customer name…"
-          filterCount={filterCount}
-          onReset={clearFilters}
-          activeChips={soActiveChips}
+          filterDefs={[
+            {
+              key: "status", label: "Status", type: "select",
+              options: [
+                { value: "outstanding", label: "Outstanding (unpaid)" },
+                { value: "draft", label: "Draft" },
+                { value: "confirmed", label: "Confirmed" },
+                { value: "shipped", label: "Shipped" },
+                { value: "delivered", label: "Delivered" },
+                { value: "invoiced", label: "Invoiced" },
+                { value: "paid", label: "Paid" },
+                { value: "returned", label: "Returned" },
+                { value: "refunded", label: "Refunded" },
+                { value: "cancelled", label: "Cancelled" },
+              ],
+            },
+            {
+              key: "orderType", label: "Order Type", type: "select",
+              options: [
+                { value: "sales_order", label: "Sales Order" },
+                { value: "pos", label: "POS" },
+              ],
+            },
+            {
+              key: "channel", label: "Channel", type: "select",
+              options: Object.entries(SALE_CHANNEL_LABELS).map(([v, l]) => ({ value: v, label: l })),
+            },
+            {
+              key: "customer", label: "Customer", type: "select",
+              options: (customers ?? []).map((c) => ({ value: String(c.id), label: c.name })),
+            },
+            { key: "date", label: "Date range", type: "daterange", fromKey: "from", toKey: "to" },
+          ]}
+          filterValues={values}
+          onFilterChange={(k, v) => {
+            if (k === "status") {
+              setMany({ status: v, overdue: "false" });
+            } else {
+              set(k, v);
+            }
+            setPage(1);
+          }}
+          sortDefs={[
+            { key: "date", label: "Order Date" },
+            { key: "created", label: "Created" },
+            { key: "total", label: "Total" },
+          ]}
+          sortValues={{ sortBy: values.sort, sortDir: values.sortDir as "asc" | "desc" }}
+          onSortChange={(s, d) => { setMany({ sort: s, sortDir: d }); setPage(1); }}
           rightSlot={overdueButton}
-          filterPopoverWidth="320px"
-          filterContent={
-            <>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Status</Label>
-                <Select
-                  value={overdueFilter ? "all" : statusFilter}
-                  onValueChange={(v) => { setStatusFilter(v); setOverdueFilter(false); resetPage(); }}
-                  disabled={overdueFilter}
-                >
-                  <SelectTrigger data-testid="filter-so-status" disabled={overdueFilter}>
-                    <SelectValue placeholder="All Statuses" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Statuses</SelectItem>
-                    <SelectItem value="outstanding">Outstanding (unpaid)</SelectItem>
-                    <SelectItem value="draft">Draft</SelectItem>
-                    <SelectItem value="confirmed">Confirmed</SelectItem>
-                    <SelectItem value="shipped">Shipped</SelectItem>
-                    <SelectItem value="delivered">Delivered</SelectItem>
-                    <SelectItem value="invoiced">Invoiced</SelectItem>
-                    <SelectItem value="paid">Paid</SelectItem>
-                    <SelectItem value="returned">Returned</SelectItem>
-                    <SelectItem value="refunded">Refunded</SelectItem>
-                    <SelectItem value="cancelled">Cancelled</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Order Type</Label>
-                <Select value={orderTypeFilter} onValueChange={(v) => { setOrderTypeFilter(v); resetPage(); }}>
-                  <SelectTrigger data-testid="filter-so-order-type">
-                    <SelectValue placeholder="All Types" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Types</SelectItem>
-                    <SelectItem value="sales_order">Sales Order</SelectItem>
-                    <SelectItem value="pos">POS</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Channel</Label>
-                <Select value={channelFilter} onValueChange={(v) => { setChannelFilter(v); resetPage(); }}>
-                  <SelectTrigger data-testid="filter-so-channel">
-                    <SelectValue placeholder="All Channels" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Channels</SelectItem>
-                    {Object.entries(SALE_CHANNEL_LABELS).map(([val, label]) => (
-                      <SelectItem key={val} value={val}>{label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Customer</Label>
-                <Select value={customerFilter} onValueChange={(v) => { setCustomerFilter(v); resetPage(); }}>
-                  <SelectTrigger data-testid="filter-so-customer">
-                    <SelectValue placeholder="All Customers" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Customers</SelectItem>
-                    {customers?.map((c) => (
-                      <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Date range</Label>
-                <DateRangePicker
-                  from={fromDate}
-                  to={toDate}
-                  onChange={(f, t) => { setFromDate(f); setToDate(t); resetPage(); }}
-                  onClear={() => { setFromDate(""); setToDate(""); resetPage(); }}
-                  align="start"
-                  placeholder="All dates"
-                  className="w-full justify-start"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Sort</Label>
-                <div className="flex items-center gap-1">
-                  <Select value={sortBy} onValueChange={(v) => { setSortBy(v); resetPage(); }}>
-                    <SelectTrigger className="flex-1" data-testid="filter-so-sort-by">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="date">Order Date</SelectItem>
-                      <SelectItem value="created">Created</SelectItem>
-                      <SelectItem value="total">Total</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-9 w-9 shrink-0"
-                    onClick={() => { setSortDir((d) => d === "desc" ? "asc" : "desc"); resetPage(); }}
-                    data-testid="btn-so-sort-dir"
-                    title={sortDir === "desc" ? "Newest first" : "Oldest first"}
-                  >
-                    <ArrowUpDown className={`h-4 w-4 transition-transform ${sortDir === "asc" ? "rotate-180" : ""}`} />
-                  </Button>
-                </div>
-              </div>
-            </>
-          }
+          onReset={() => { reset(); setPage(1); }}
         />
 
         {showSelection && selectedEligibleIds.length > 0 && (

@@ -2,8 +2,6 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
 import { useListWarehouses } from "@/lib/queryKeys";
 import { customFetch, type DashboardSummary, useGetLowStockReport, type LowStockRow } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
@@ -21,14 +19,11 @@ import {
 } from "recharts";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  format, parseISO, startOfWeek, startOfMonth, endOfMonth, subMonths, subDays,
-  startOfQuarter, endOfQuarter, formatDistanceToNow,
-} from "date-fns";
+import { format, parseISO, formatDistanceToNow } from "date-fns";
 import { Link } from "wouter";
 import { getEinvoiceFixSummary } from "@/lib/einvoiceFixes";
 import { cn } from "@/lib/utils";
-import type { DateRange as DayPickerRange } from "react-day-picker";
+import { DateRangePicker, getPresetRange, formatRangeLabel } from "@/components/DateRangePicker";
 
 // ─── Period-over-period delta ─────────────────────────────────────────────────
 
@@ -69,140 +64,10 @@ function formatPrevPeriodLabel(prevFromISO: string, prevToISO: string): string {
   return `vs. ${format(from, "MMM d, yyyy")} – ${format(to, "MMM d, yyyy")}`;
 }
 
-// ─── Date Range ───────────────────────────────────────────────────────────────
-
-type DatePreset = "this_week" | "this_month" | "last_month" | "last_quarter" | "last_30_days" | "custom";
-
-interface DateRangeValue { from: string; to: string }
-
-function toISO(d: Date): string { return format(d, "yyyy-MM-dd"); }
-
-function getPresetRange(preset: Exclude<DatePreset, "custom">): DateRangeValue {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  switch (preset) {
-    case "this_week": {
-      const mon = startOfWeek(today, { weekStartsOn: 1 });
-      return { from: toISO(mon), to: toISO(today) };
-    }
-    case "this_month":
-      return { from: toISO(startOfMonth(today)), to: toISO(today) };
-    case "last_month": {
-      const prev = subMonths(today, 1);
-      return { from: toISO(startOfMonth(prev)), to: toISO(endOfMonth(prev)) };
-    }
-    case "last_quarter": {
-      const prevQ = subMonths(today, 3);
-      return { from: toISO(startOfQuarter(prevQ)), to: toISO(endOfQuarter(prevQ)) };
-    }
-    case "last_30_days":
-      return { from: toISO(subDays(today, 29)), to: toISO(today) };
-  }
-}
-
-const PRESET_LABELS: Record<DatePreset, string> = {
-  this_week: "This Week",
-  this_month: "This Month",
-  last_month: "Last Month",
-  last_quarter: "Last Quarter",
-  last_30_days: "Last 30 Days",
-  custom: "Custom",
-};
-
-function formatRangeLabel(preset: DatePreset, range: DateRangeValue): string {
-  if (preset !== "custom") return PRESET_LABELS[preset];
-  return `${format(parseISO(range.from), "d MMM")} – ${format(parseISO(range.to), "d MMM yyyy")}`;
-}
-
-// ─── Date Range Picker ────────────────────────────────────────────────────────
-
-interface DateRangePickerProps {
-  preset: DatePreset;
-  range: DateRangeValue;
-  onPresetChange: (preset: DatePreset, range: DateRangeValue) => void;
-}
-
-function DateRangePicker({ preset, range, onPresetChange }: DateRangePickerProps) {
-  const [open, setOpen] = useState(false);
-  const [customRange, setCustomRange] = useState<DayPickerRange | undefined>(() => ({
-    from: parseISO(range.from),
-    to: parseISO(range.to),
-  }));
-
-  function handlePreset(p: Exclude<DatePreset, "custom">) {
-    const r = getPresetRange(p);
-    setCustomRange({ from: parseISO(r.from), to: parseISO(r.to) });
-    onPresetChange(p, r);
-    setOpen(false);
-  }
-
-  function handleCustomSelect(selected: DayPickerRange | undefined) {
-    setCustomRange(selected);
-    if (selected?.from && selected?.to) {
-      const r: DateRangeValue = { from: toISO(selected.from), to: toISO(selected.to) };
-      onPresetChange("custom", r);
-    }
-  }
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs font-medium pr-3 pl-2.5" data-testid="btn-date-range-picker">
-          <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
-          {formatRangeLabel(preset, range)}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="end">
-        <div className="flex">
-          <div className="flex flex-col gap-0.5 border-r p-2 min-w-[130px]">
-            {(["this_week", "this_month", "last_month", "last_quarter", "last_30_days"] as const).map((p) => (
-              <button
-                key={p}
-                onClick={() => handlePreset(p)}
-                className={cn(
-                  "rounded-md px-3 py-1.5 text-left text-xs font-medium transition-colors",
-                  preset === p
-                    ? "bg-primary text-primary-foreground"
-                    : "hover:bg-muted text-muted-foreground hover:text-foreground",
-                )}
-                data-testid={`btn-preset-${p}`}
-              >
-                {PRESET_LABELS[p]}
-              </button>
-            ))}
-            <div className="my-1 border-t" />
-            <button
-              onClick={() => { onPresetChange("custom", range); setOpen(true); }}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-left text-xs font-medium transition-colors",
-                preset === "custom"
-                  ? "bg-primary text-primary-foreground"
-                  : "hover:bg-muted text-muted-foreground hover:text-foreground",
-              )}
-              data-testid="btn-preset-custom"
-            >
-              Custom
-            </button>
-          </div>
-          <div className="p-2">
-            <Calendar
-              mode="range"
-              selected={customRange}
-              onSelect={handleCustomSelect}
-              numberOfMonths={1}
-              disabled={(date) => date > new Date()}
-              initialFocus
-            />
-          </div>
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
 
 // ─── Data hook ───────────────────────────────────────────────────────────────
 
-function useDashboardSummary(warehouseId: number | undefined, range: DateRangeValue) {
+function useDashboardSummary(warehouseId: number | undefined, range: { from: string; to: string }) {
   const params = new URLSearchParams({ from: range.from, to: range.to });
   if (warehouseId) params.set("warehouseId", warehouseId.toString());
   return useQuery<DashboardSummary>({
@@ -561,44 +426,54 @@ function LowStockSummaryCard({ warehouseId }: { warehouseId?: number }) {
 
 // ─── Persist date range ───────────────────────────────────────────────────────
 
-const DEFAULT_PRESET: Exclude<DatePreset, "custom"> = "this_month";
 const LS_KEY = "dashboard:dateRange";
-interface PersistedRange { preset: DatePreset; from: string; to: string }
 
-function loadPersistedRange(): { preset: DatePreset; range: DateRangeValue } {
+const PRESET_COMPAT: Record<string, Parameters<typeof getPresetRange>[0]> = {
+  last_30_days: "last_30",
+  this_week: "this_week",
+  this_month: "this_month",
+  last_month: "last_month",
+  last_quarter: "last_quarter",
+};
+
+function loadPersistedRange(): { from: string; to: string } {
   try {
     const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return { preset: DEFAULT_PRESET, range: getPresetRange(DEFAULT_PRESET) };
-    const saved: PersistedRange = JSON.parse(raw);
-    if (!saved?.preset) return { preset: DEFAULT_PRESET, range: getPresetRange(DEFAULT_PRESET) };
-    if (saved.preset !== "custom") return { preset: saved.preset, range: getPresetRange(saved.preset) };
-    if (/^\d{4}-\d{2}-\d{2}$/.test(saved.from) && /^\d{4}-\d{2}-\d{2}$/.test(saved.to)) {
-      return { preset: "custom", range: { from: saved.from, to: saved.to } };
+    if (!raw) return getPresetRange("this_month");
+    const saved = JSON.parse(raw) as { preset?: string; from?: string; to?: string };
+    if (saved?.preset && saved.preset !== "custom") {
+      const mapped = PRESET_COMPAT[saved.preset];
+      if (mapped) return getPresetRange(mapped);
+    }
+    if (
+      saved?.from && saved?.to &&
+      /^\d{4}-\d{2}-\d{2}$/.test(saved.from) &&
+      /^\d{4}-\d{2}-\d{2}$/.test(saved.to)
+    ) {
+      return { from: saved.from, to: saved.to };
     }
   } catch { /* ignore */ }
-  return { preset: DEFAULT_PRESET, range: getPresetRange(DEFAULT_PRESET) };
+  return getPresetRange("this_month");
 }
 
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 
 export default function Dashboard() {
   const [warehouseId, setWarehouseId] = useState<number | undefined>(undefined);
-  const [preset, setPreset] = useState<DatePreset>(() => loadPersistedRange().preset);
-  const [range, setRange] = useState<DateRangeValue>(() => loadPersistedRange().range);
+  const [range, setRange] = useState<{ from: string; to: string }>(() => loadPersistedRange());
 
   const { data: warehouses } = useListWarehouses();
   const { data: summary, isLoading, refetch } = useDashboardSummary(warehouseId, range);
   const visibleWarehouses = (warehouses ?? []).filter((w) => !w.isVirtual);
 
-  function handleRangeChange(p: DatePreset, r: DateRangeValue) {
-    setPreset(p);
-    setRange(r);
+  function handleRangeChange(from: string, to: string) {
+    setRange({ from, to });
     try {
-      localStorage.setItem(LS_KEY, JSON.stringify({ preset: p, ...r }));
+      localStorage.setItem(LS_KEY, JSON.stringify({ from, to }));
     } catch { /* ignore */ }
   }
 
-  const periodLabel = formatRangeLabel(preset, range);
+  const periodLabel = formatRangeLabel(range.from, range.to);
   const prevPeriodLabel =
     summary?.prevFromISO && summary?.prevToISO
       ? formatPrevPeriodLabel(summary.prevFromISO, summary.prevToISO)
@@ -695,7 +570,13 @@ export default function Dashboard() {
             </SelectContent>
           </Select>
 
-          <DateRangePicker preset={preset} range={range} onPresetChange={handleRangeChange} />
+          <DateRangePicker
+            from={range.from}
+            to={range.to}
+            onChange={handleRangeChange}
+            presets={["this_week", "this_month", "last_month", "last_quarter", "last_30"]}
+            align="end"
+          />
 
           <Button
             variant="outline"
@@ -802,7 +683,7 @@ export default function Dashboard() {
                 <CardTitle className="text-sm font-semibold">Revenue Trend</CardTitle>
                 <CardDescription className="text-xs mt-0.5">
                   Sales vs Purchases —{" "}
-                  {preset !== "custom" ? `${periodLabel} · ` : ""}
+                  {`${periodLabel} · `}
                   {formatCurrentPeriodDates(range.from, range.to)}
                 </CardDescription>
               </div>

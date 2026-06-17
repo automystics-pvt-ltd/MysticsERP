@@ -62,6 +62,7 @@ import {
 import { TablePagination } from "@/components/TablePagination";
 import { BulkImportItemsDialog } from "@/components/BulkImportItemsDialog";
 import { FilterBar, type FilterChip } from "@/components/FilterBar";
+import { useListFilters } from "@/hooks/use-list-filters";
 import { CreatableCombobox } from "@/components/CreatableCombobox";
 import {
   DropdownMenu,
@@ -411,10 +412,16 @@ export default function Items() {
 
   const canBulkDelete = useCanI("items", "delete");
 
-  const [search, setSearch] = useState(
-    () => new URLSearchParams(window.location.search).get("q") ?? "",
-  );
-  const debouncedSearch = useDebounce(search, 500);
+  const { values: filterValues, set: setFilter, reset: resetItemFilters, debouncedSearch } = useListFilters({
+    search: "",
+    cat: "",
+    brand: "all",
+    stock: "all",
+  });
+  const search = filterValues.search;
+  const categoryFilter = filterValues.cat;
+  const brandFilter = filterValues.brand === "all" ? "" : filterValues.brand;
+  const stockFilter = filterValues.stock as "all" | "in-stock" | "low-stock" | "out-of-stock";
   // Warehouse filter — last selection remembered in localStorage.
   const [warehouseFilter, setWarehouseFilterState] = useState<number | "all">(
     () => {
@@ -452,16 +459,6 @@ export default function Items() {
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   const [variantsByParent, setVariantsByParent] = useState<Record<number, Item[]>>({});
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
-  const [categoryFilter, setCategoryFilter] = useState<string>(
-    () => new URLSearchParams(window.location.search).get("cat") ?? "",
-  );
-  const [brandFilter, setBrandFilter] = useState<string>(
-    () => new URLSearchParams(window.location.search).get("brand") ?? "",
-  );
-  const [stockFilter, setStockFilter] = useState<"all" | "in-stock" | "low-stock" | "out-of-stock">(() => {
-    const s = new URLSearchParams(window.location.search).get("stock");
-    return (s === "in-stock" || s === "low-stock" || s === "out-of-stock") ? s : "all";
-  });
   const [priceMin, setPriceMin] = useState<string>(
     () => new URLSearchParams(window.location.search).get("minPrice") ?? "",
   );
@@ -577,51 +574,34 @@ export default function Items() {
   useEffect(() => {
     setPage(1);
     setSelectedIds(new Set());
-  }, [categoryFilter, brandFilter, stockFilter, debouncedPriceMin, debouncedPriceMax, debouncedSearch, warehouseFilter]);
+  }, [filterValues.cat, filterValues.brand, filterValues.stock, debouncedPriceMin, debouncedPriceMax, debouncedSearch, warehouseFilter]);
 
-  // Sync filter state to URL so the page is bookmarkable / refresh-safe.
-  // warehouseFilter is intentionally kept in localStorage only (user preference).
+  // search/cat/brand/stock are synced by useListFilters; warehouseFilter stays in localStorage.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    search ? params.set("q", search) : params.delete("q");
-    categoryFilter ? params.set("cat", categoryFilter) : params.delete("cat");
-    brandFilter ? params.set("brand", brandFilter) : params.delete("brand");
-    stockFilter !== "all" ? params.set("stock", stockFilter) : params.delete("stock");
     priceMin ? params.set("minPrice", priceMin) : params.delete("minPrice");
     priceMax ? params.set("maxPrice", priceMax) : params.delete("maxPrice");
     const qs = params.toString();
     window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
-  }, [search, categoryFilter, brandFilter, stockFilter, priceMin, priceMax]);
-
-  const hasAdvancedFilters = stockFilter !== "all" || priceMin !== "" || priceMax !== "" || brandFilter !== "";
-  function clearAdvancedFilters() {
-    setStockFilter("all");
-    setPriceMin("");
-    setPriceMax("");
-    setBrandFilter("");
-  }
+  }, [priceMin, priceMax]);
 
   function clearAllItemFilters() {
-    setSearch("");
-    setCategoryFilter("");
+    resetItemFilters();
     setWarehouseFilterState("all");
-    clearAdvancedFilters();
+    setPriceMin("");
+    setPriceMax("");
     setPage(1);
   }
 
-  const itemFilterCount = [
+  const itemExtraFilterCount = [
     !!categoryFilter,
     warehouseFilter !== "all",
-    !!brandFilter,
-    stockFilter !== "all",
     priceMin !== "" || priceMax !== "",
   ].filter(Boolean).length;
 
   const itemActiveChips: FilterChip[] = [
-    ...(categoryFilter ? [{ key: "cat", label: `Category: ${categoryFilter}`, onRemove: () => setCategoryFilter("") }] : []),
+    ...(categoryFilter ? [{ key: "cat", label: `Category: ${categoryFilter}`, onRemove: () => { setFilter("cat", ""); setPage(1); } }] : []),
     ...(warehouseFilter !== "all" && scopedWarehouseName ? [{ key: "wh", label: `Warehouse: ${scopedWarehouseName}`, onRemove: () => setWarehouseFilterState("all") }] : []),
-    ...(brandFilter ? [{ key: "brand", label: `Brand: ${brandFilter}`, onRemove: () => setBrandFilter("") }] : []),
-    ...(stockFilter !== "all" ? [{ key: "stock", label: `Stock: ${stockFilter.replace(/-/g, " ")}`, onRemove: () => setStockFilter("all") }] : []),
     ...((priceMin || priceMax) ? [{ key: "price", label: `Price: ${priceMin ? `₹${priceMin}` : "any"} – ${priceMax ? `₹${priceMax}` : "any"}`, onRemove: () => { setPriceMin(""); setPriceMax(""); } }] : []),
   ];
 
@@ -1218,7 +1198,8 @@ export default function Items() {
           } catch {
             // No match — drop the code into the search bar so the user
             // can verify or follow up manually.
-            setSearch(trimmed);
+            setFilter("search", trimmed);
+            setPage(1);
             toast({
               title: "No item found",
               description: `Searched for "${trimmed}". Add it as a new item if needed.`,
@@ -1228,12 +1209,53 @@ export default function Items() {
       />
 
       <FilterBar
-        search={search}
-        onSearchChange={(v) => setSearch(v)}
+        search={filterValues.search}
+        onSearchChange={(v) => { setFilter("search", v); setPage(1); }}
         searchPlaceholder="Search items by name or SKU..."
-        filterCount={itemFilterCount}
-        onReset={clearAllItemFilters}
+        filterDefs={[
+          {
+            key: "brand", label: "Brand", type: "select",
+            options: brandOptions.map((b) => ({ value: b, label: b })),
+          },
+          {
+            key: "stock", label: "Stock Status", type: "select",
+            options: [
+              { value: "in-stock", label: "In stock" },
+              { value: "low-stock", label: "Low stock" },
+              { value: "out-of-stock", label: "Out of stock" },
+            ],
+          },
+        ]}
+        filterValues={filterValues}
+        onFilterChange={(k, v) => { setFilter(k, v); setPage(1); }}
+        filterCount={itemExtraFilterCount}
         activeChips={itemActiveChips}
+        filterContent={
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium">Price range (₹)</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                placeholder="Min"
+                className="h-8 text-sm"
+                value={priceMin}
+                onChange={(e) => setPriceMin(e.target.value)}
+              />
+              <span className="text-muted-foreground text-xs">–</span>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                placeholder="Max"
+                className="h-8 text-sm"
+                value={priceMax}
+                onChange={(e) => setPriceMax(e.target.value)}
+              />
+            </div>
+          </div>
+        }
         filterPopoverWidth="300px"
         rightSlot={
           <div className="flex items-center gap-2">
@@ -1248,7 +1270,7 @@ export default function Items() {
             </Button>
             <Select
               value={categoryFilter || "__all__"}
-              onValueChange={(v) => setCategoryFilter(v === "__all__" ? "" : v)}
+              onValueChange={(v) => { setFilter("cat", v === "__all__" ? "" : v); setPage(1); }}
             >
               <SelectTrigger className="w-36 h-9 text-sm" data-testid="select-items-category">
                 <SelectValue placeholder="All categories" />
@@ -1279,62 +1301,7 @@ export default function Items() {
             )}
           </div>
         }
-        filterContent={
-          <>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Brand</Label>
-              <Select value={brandFilter || "__all__"} onValueChange={(v) => setBrandFilter(v === "__all__" ? "" : v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All brands" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItemUI value="__all__">All brands</SelectItemUI>
-                  {brandOptions.map((b) => (
-                    <SelectItemUI key={b} value={b}>{b}</SelectItemUI>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Stock status</Label>
-              <Select value={stockFilter} onValueChange={(v) => setStockFilter(v as typeof stockFilter)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItemUI value="all">All stock</SelectItemUI>
-                  <SelectItemUI value="in-stock">In stock</SelectItemUI>
-                  <SelectItemUI value="low-stock">Low stock</SelectItemUI>
-                  <SelectItemUI value="out-of-stock">Out of stock</SelectItemUI>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Price range (₹)</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  placeholder="Min"
-                  className="h-8 text-sm"
-                  value={priceMin}
-                  onChange={(e) => setPriceMin(e.target.value)}
-                />
-                <span className="text-muted-foreground text-xs">–</span>
-                <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  placeholder="Max"
-                  className="h-8 text-sm"
-                  value={priceMax}
-                  onChange={(e) => setPriceMax(e.target.value)}
-                />
-              </div>
-            </div>
-          </>
-        }
+        onReset={clearAllItemFilters}
       />
 
       {selectedIds.size > 0 && (
