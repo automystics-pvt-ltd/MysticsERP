@@ -101,6 +101,7 @@ export default function Team() {
   const [newUserName, setNewUserName] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserRole, setNewUserRole] = useState<Role>("viewer");
+  const [createFieldErrors, setCreateFieldErrors] = useState<{ username?: string; email?: string }>({});
 
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
@@ -126,6 +127,7 @@ export default function Team() {
         setNewUserName("");
         setNewUserPassword("");
         setNewUserRole("viewer");
+        setCreateFieldErrors({});
         setAddUserOpen(false);
         await invalidateAll();
         toast({
@@ -133,12 +135,30 @@ export default function Team() {
           description: "They can sign in immediately with the password you set.",
         });
       },
-      onError: (err: unknown) =>
+      onError: (err: unknown) => {
+        const msg = err instanceof Error ? err.message : "";
+        // Surface username / email conflicts as inline field errors so the
+        // user knows exactly which field to change without leaving the dialog.
+        if (msg.toLowerCase().includes("username")) {
+          setCreateFieldErrors((prev) => ({
+            ...prev,
+            username: "That username is already taken. Choose a different one.",
+          }));
+          return;
+        }
+        if (msg.toLowerCase().includes("email")) {
+          setCreateFieldErrors((prev) => ({
+            ...prev,
+            email: "An account with that email already exists.",
+          }));
+          return;
+        }
         toast({
           title: "Could not create user",
-          description: err instanceof Error ? err.message : "Try again",
+          description: msg || "Try again",
           variant: "destructive",
-        }),
+        });
+      },
     },
   });
 
@@ -229,11 +249,10 @@ export default function Team() {
     const cleanName = newUserName.trim();
     if (!cleanUsername || !cleanEmail || !cleanName) return;
     if (!/^[a-zA-Z0-9_]{3,30}$/.test(cleanUsername)) {
-      toast({
-        title: "Invalid username",
-        description: "3–30 characters, letters/numbers/underscore only.",
-        variant: "destructive",
-      });
+      setCreateFieldErrors((prev) => ({
+        ...prev,
+        username: "3–30 characters, letters/numbers/underscore only.",
+      }));
       return;
     }
     if (newUserPassword.length < 8) {
@@ -244,6 +263,7 @@ export default function Team() {
       });
       return;
     }
+    setCreateFieldErrors({});
     createUser.mutate({
       data: {
         username: cleanUsername,
@@ -665,7 +685,10 @@ export default function Team() {
           </Card>
 
           {/* Add User dialog */}
-          <Dialog open={addUserOpen} onOpenChange={setAddUserOpen}>
+          <Dialog open={addUserOpen} onOpenChange={(open) => {
+            setAddUserOpen(open);
+            if (!open) setCreateFieldErrors({});
+          }}>
             <DialogContent className="sm:max-w-lg">
               <DialogHeader>
                 <DialogTitle>Create a user</DialogTitle>
@@ -688,13 +711,21 @@ export default function Team() {
                       id="new-user-username"
                       type="text"
                       value={newUserUsername}
-                      onChange={(e) => setNewUserUsername(e.target.value)}
+                      onChange={(e) => {
+                        setNewUserUsername(e.target.value);
+                        if (createFieldErrors.username) setCreateFieldErrors((p) => ({ ...p, username: undefined }));
+                      }}
                       placeholder="anita_sharma"
                       pattern="[a-zA-Z0-9_]{3,30}"
                       title="3–30 characters, letters/numbers/underscore only"
                       data-testid="input-new-user-username"
+                      aria-invalid={!!createFieldErrors.username}
+                      className={createFieldErrors.username ? "border-destructive focus-visible:ring-destructive" : ""}
                       required
                     />
+                    {createFieldErrors.username && (
+                      <p className="text-sm text-destructive">{createFieldErrors.username}</p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="new-user-name">Full name</Label>
@@ -714,11 +745,19 @@ export default function Team() {
                       id="new-user-email"
                       type="email"
                       value={newUserEmail}
-                      onChange={(e) => setNewUserEmail(e.target.value)}
+                      onChange={(e) => {
+                        setNewUserEmail(e.target.value);
+                        if (createFieldErrors.email) setCreateFieldErrors((p) => ({ ...p, email: undefined }));
+                      }}
                       placeholder="anita@example.com"
                       data-testid="input-new-user-email"
+                      aria-invalid={!!createFieldErrors.email}
+                      className={createFieldErrors.email ? "border-destructive focus-visible:ring-destructive" : ""}
                       required
                     />
+                    {createFieldErrors.email && (
+                      <p className="text-sm text-destructive">{createFieldErrors.email}</p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="new-user-password">Password</Label>
