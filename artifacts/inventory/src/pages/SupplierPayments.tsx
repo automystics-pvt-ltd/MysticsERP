@@ -174,6 +174,16 @@ export default function SupplierPayments() {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span className="flex items-center justify-end gap-1 cursor-default">
+                      Balance
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>Amount applied to purchase orders</TooltipContent>
+                </Tooltip>
+              </TableHead>
+              <TableHead className="text-right">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="flex items-center justify-end gap-1 cursor-default">
                       <Wallet className="h-3.5 w-3.5" /> Advance
                     </span>
                   </TooltipTrigger>
@@ -184,18 +194,20 @@ export default function SupplierPayments() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableSkeleton rows={5} cols={6} />
+              <TableSkeleton rows={5} cols={7} />
             ) : payments.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={7}
                   className="h-24 text-center text-muted-foreground"
                 >
                   No payments yet.
                 </TableCell>
               </TableRow>
             ) : (
-              payments.map((p) => (
+              payments.map((p) => {
+                const applied = Math.max(0, p.amount - p.unapplied);
+                return (
                 <TableRow
                   key={p.id}
                   data-testid={`row-supplier-payment-${p.id}`}
@@ -228,6 +240,15 @@ export default function SupplierPayments() {
                   </TableCell>
                   <TableCell className="text-right">
                     <Link href={`/supplier-payments/${p.id}`} className="block">
+                      {applied > 0 ? (
+                        <span className="font-medium">{formatCurrency(applied)}</span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Link href={`/supplier-payments/${p.id}`} className="block">
                       {p.unapplied > 0 ? (
                         <span className="text-amber-600 font-medium">{formatCurrency(p.unapplied)}</span>
                       ) : (
@@ -236,7 +257,8 @@ export default function SupplierPayments() {
                     </Link>
                   </TableCell>
                 </TableRow>
-              ))
+                );
+              })
             )}
           </TableBody>
         </Table>
