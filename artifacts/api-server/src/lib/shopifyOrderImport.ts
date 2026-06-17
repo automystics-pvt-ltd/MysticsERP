@@ -4,6 +4,7 @@ import {
   customersTable,
   itemsTable,
   itemWarehouseStockTable,
+  organizationsTable,
   salesOrdersTable,
   salesOrderLinesTable,
   stockMovementsTable,
@@ -58,6 +59,14 @@ export async function importShopifyOrder(
   defaultWarehouseId: number,
   o: ShopifyOrder,
 ): Promise<ImportOutcome> {
+  // Fetch org settings needed for stock behaviour.
+  const orgRows = await db
+    .select({ allowNegativeStock: organizationsTable.allowNegativeStock })
+    .from(organizationsTable) // org-scope-allow: fetch own org by primary key
+    .where(eq(organizationsTable.id, organizationId))
+    .limit(1);
+  const allowNegativeStock = orgRows[0]?.allowNegativeStock ?? false;
+
   // Pre-load the org's location→warehouse map. Cheap (one row per
   // mapped warehouse) and lets us resolve per-line warehouses
   // without an extra query inside the loop.
@@ -291,8 +300,8 @@ export async function importShopifyOrder(
         const qty = toNum(l.quantity);
         if (qty <= 0) continue;
         const stockRows = await tx
-          .select()
-          .from(itemWarehouseStockTable)
+          .select({ id: itemWarehouseStockTable.id, quantity: itemWarehouseStockTable.quantity })
+          .from(itemWarehouseStockTable) // org-scope-allow: inside Shopify import txn, org already validated
           .where(
             and(
               eq(itemWarehouseStockTable.organizationId, organizationId),
@@ -300,13 +309,17 @@ export async function importShopifyOrder(
               eq(itemWarehouseStockTable.warehouseId, l.warehouseId),
             ),
           )
+          .for("update")
           .limit(1);
         const current = stockRows[0] ? toNum(stockRows[0].quantity) : 0;
-        const newQty = current - qty;
+        // Cap at 0 when the org disallows negative stock — the sale already
+        // happened in Shopify so we record it, but we floor the local qty.
+        const rawQty = current - qty;
+        const newQty = allowNegativeStock ? rawQty : Math.max(0, rawQty);
         if (stockRows[0]) {
           await tx
             .update(itemWarehouseStockTable)
-            .set({ quantity: toStr(newQty) })
+            .set({ quantity: toStr(newQty) }) // org-scope-allow: inside Shopify import txn, org already validated
             .where(
               and(
                 eq(itemWarehouseStockTable.id, stockRows[0].id),

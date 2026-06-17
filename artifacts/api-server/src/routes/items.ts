@@ -2993,6 +2993,13 @@ router.post("/items/:id/adjust-stock", async (req, res, next) => {
       return;
     }
 
+    const orgRows = await db
+      .select({ allowNegativeStock: organizationsTable.allowNegativeStock })
+      .from(organizationsTable)
+      .where(eq(organizationsTable.id, t.organizationId))
+      .limit(1); // org-scope-allow: fetch own org by primary key
+    const allowNegativeStock = orgRows[0]?.allowNegativeStock ?? false;
+
     const qty = toNum(b.quantity);
     const stockRows = await db
       .select()
@@ -3005,10 +3012,19 @@ router.post("/items/:id/adjust-stock", async (req, res, next) => {
         ),
       )
       .limit(1);
+    const currentQty = stockRows[0] ? toNum(stockRows[0].quantity) : 0;
+    const newQty = currentQty + qty;
+    if (!allowNegativeStock && newQty < -1e-9) {
+      res.status(400).json({
+        error: `Adjustment would result in negative stock (current: ${currentQty}, adjustment: ${qty}). Enable "Allow Negative Stock" in Settings to permit this.`,
+        code: "INSUFFICIENT_STOCK",
+      });
+      return;
+    }
     if (stockRows[0]) {
       await db
         .update(itemWarehouseStockTable)
-        .set({ quantity: toStr(toNum(stockRows[0].quantity) + qty) })
+        .set({ quantity: toStr(newQty) })
         .where(
           and(
             eq(itemWarehouseStockTable.organizationId, t.organizationId),

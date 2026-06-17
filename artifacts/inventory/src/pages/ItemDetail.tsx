@@ -638,9 +638,12 @@ export default function ItemDetail() {
                 </>
               ) : (
                 <>
-                  <div className="text-3xl font-bold">
+                  <div className={`text-3xl font-bold ${item.totalStock < 0 ? "text-destructive" : ""}`}>
                     {item.totalStock} {item.unit}
                   </div>
+                  {item.totalStock < 0 && (
+                    <p className="text-xs text-destructive font-medium mt-0.5">Negative stock — adjust to correct</p>
+                  )}
                   <p className="text-sm text-muted-foreground mt-1">
                     {isBundle
                       ? "Derived from current component stock."
@@ -940,7 +943,8 @@ export default function ItemDetail() {
                     <TableCell className="text-right text-muted-foreground">
                       {stock.isVirtual ? "—" : formatCurrency(item.salePrice)}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className={`text-right ${stock.quantity < 0 ? "text-destructive font-semibold" : ""}`}>
+                      {stock.quantity < 0 && "⚠ "}
                       {stock.quantity}
                     </TableCell>
                   </TableRow>
