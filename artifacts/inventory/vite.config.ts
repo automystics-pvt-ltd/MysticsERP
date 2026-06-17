@@ -90,18 +90,13 @@ export default defineConfig({
           // TanStack — query, table, virtual
           if (id.includes("@tanstack/")) return "vendor-query";
 
-          // React + Radix UI in the same chunk.
-          // Radix accesses React.forwardRef at module-init time; keeping them
-          // in separate chunks causes a parallel-load race where vendor-radix
-          // executes before vendor-react is initialised, producing
-          // "Cannot read properties of undefined (reading 'forwardRef')".
-          if (
-            id.includes("@radix-ui/") ||
-            id.includes("/react-dom/") ||
-            id.includes("/react/") ||
-            id.match(/node_modules\/react[^-]/)
-          )
-            return "vendor-radix";
+          // Radix UI primitives (used by shadcn/ui).
+          // React itself is intentionally left out of this chunk so it falls
+          // into the catch-all "vendor" chunk below. That way vendor-radix
+          // imports React from vendor (one-way dep, no cycle). Putting React
+          // here alongside Radix creates a circular dep via @floating-ui/react
+          // (Radix→floating-ui→React→vendor-radix) which breaks module init.
+          if (id.includes("@radix-ui/")) return "vendor-radix";
 
           // Lucide icons — large icon set
           if (id.includes("lucide-react")) return "vendor-icons";
