@@ -471,18 +471,37 @@ router.post("/sales-orders/:id/shipments", async (req, res, next) => {
       );
 
       // Helper: atomically decrement a single (item, warehouse) by qty
-      // and write a matching stock movement row. Uses SQL `quantity =
-      // quantity - delta` (row-locked by Postgres for the duration of
-      // this transaction) so concurrent shipments / cancellations on
-      // the same cell can't lose updates. Returns the inserted parent
-      // stockMovementId for batch ledger fan-out.
+      // and write a matching stock movement row. SELECT FOR UPDATE locks
+      // the stock row first so concurrent shipments on the same cell are
+      // serialised and can't both pass the on-hand check. Throws an error
+      // with code INSUFFICIENT_STOCK when on-hand < qty.
       const decrementStock = async (
         itemId: number,
         warehouseId: number,
         qty: number,
         notesText: string,
       ): Promise<number> => {
-        const updated = await tx
+        const [stockRow] = await tx
+          .select({ quantity: itemWarehouseStockTable.quantity })
+          .from(itemWarehouseStockTable)
+          .where(
+            and(
+              eq(itemWarehouseStockTable.organizationId, t.organizationId),
+              eq(itemWarehouseStockTable.itemId, itemId),
+              eq(itemWarehouseStockTable.warehouseId, warehouseId),
+            ),
+          )
+          .for("update")
+          .limit(1);
+        const onHand = stockRow ? toNum(stockRow.quantity) : 0;
+        if (qty - onHand > 1e-6) {
+          const e = new Error(
+            `Insufficient stock for item #${itemId} at this warehouse: need ${qty}, on hand ${onHand}`,
+          );
+          (e as Error & { code: string }).code = "INSUFFICIENT_STOCK";
+          throw e;
+        }
+        await tx
           .update(itemWarehouseStockTable)
           .set({
             quantity: sql`${itemWarehouseStockTable.quantity} - ${toStr(qty)}::numeric`,
@@ -493,14 +512,13 @@ router.post("/sales-orders/:id/shipments", async (req, res, next) => {
               eq(itemWarehouseStockTable.itemId, itemId),
               eq(itemWarehouseStockTable.warehouseId, warehouseId),
             ),
-          )
-          .returning({ id: itemWarehouseStockTable.id });
-        if (updated.length === 0) {
+          );
+        if (!stockRow) {
           await tx.insert(itemWarehouseStockTable).values({
             organizationId: t.organizationId,
             itemId,
             warehouseId,
-            quantity: toStr(-qty),
+            quantity: toStr(0),
           });
         }
         const mvt = await tx
@@ -608,6 +626,10 @@ router.post("/sales-orders/:id/shipments", async (req, res, next) => {
     const created = shipments.find((s) => s.id === result.shipmentId);
     res.status(201).json(created ?? null);
   } catch (err) {
+    if (err && typeof err === "object" && (err as any).code === "INSUFFICIENT_STOCK") {
+      res.status(400).json({ error: (err as Error).message });
+      return;
+    }
     next(err);
   }
 });

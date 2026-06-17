@@ -123,6 +123,8 @@ export const organizationsTable = pgTable(
     // dueDate column exists (e.g. dashboard overdueReceivables, AR aging).
     // Common Indian SMB values: 7, 15, 30 (default), 45, 60, 90.
     defaultPaymentTermsDays: integer("default_payment_terms_days").notNull().default(30),
+    taxMode: text("tax_mode").notNull().default("exclusive"),
+    allowNegativeStock: boolean("allow_negative_stock").notNull().default(false),
     onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })

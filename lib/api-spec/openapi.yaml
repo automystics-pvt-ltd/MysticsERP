@@ -3239,10 +3239,17 @@ components:
         defaultPaymentTermsDays:
           type: integer
           description: Default payment terms in days (e.g. 7, 15, 30, 45, 60, 90). Used to derive due dates and compute overdue receivables on the dashboard and AR aging report.
+        taxMode:
+          type: string
+          enum: [exclusive, inclusive]
+          description: "Tax mode for orders. 'exclusive': tax is added on top of the unit price. 'inclusive': the unit price already contains the tax."
+        allowNegativeStock:
+          type: boolean
+          description: When true, transactions that would reduce warehouse stock below zero are permitted.
         maxOrderDiscountPercent: { type: ["number", "null"] }
         maxOrderDiscountAmount: { type: ["number", "null"] }
         createdAt: { type: string }
-      required: [id, name, slug, currency, timezone, plan, subscriptionStatus, createdAt, gstNumber, addressLine1, addressLine2, city, state, postalCode, country, logoUrl, invoiceFooter, currentPeriodEnd, onboardingCompletedAt, barcodePrefix, barcodeFormat, defaultPaymentTermsDays, maxOrderDiscountPercent, maxOrderDiscountAmount]
+      required: [id, name, slug, currency, timezone, plan, subscriptionStatus, createdAt, gstNumber, addressLine1, addressLine2, city, state, postalCode, country, logoUrl, invoiceFooter, currentPeriodEnd, onboardingCompletedAt, barcodePrefix, barcodeFormat, defaultPaymentTermsDays, taxMode, allowNegativeStock, maxOrderDiscountPercent, maxOrderDiscountAmount]
 
     UpdateBarcodeSettingsBody:
       type: object
@@ -3279,6 +3286,10 @@ components:
         logoUrl: { type: ["string", "null"] }
         invoiceFooter: { type: ["string", "null"] }
         defaultPaymentTermsDays: { type: integer }
+        taxMode:
+          type: string
+          enum: [exclusive, inclusive]
+        allowNegativeStock: { type: boolean }
         maxOrderDiscountPercent: { type: ["number", "null"] }
         maxOrderDiscountAmount: { type: ["number", "null"] }
 

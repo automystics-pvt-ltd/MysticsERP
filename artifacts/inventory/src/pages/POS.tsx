@@ -203,6 +203,7 @@ export default function POS() {
     };
   }, [searchValue]);
 
+  const taxMode = (org as any)?.taxMode ?? "exclusive";
   const totals = useMemo(() => {
     let itemSubtotal = 0;
     let itemDiscount = 0;
@@ -211,9 +212,15 @@ export default function POS() {
       const gross = l.quantity * l.unitPrice;
       const d = effectiveDiscount(l);
       const lineSub = gross - d;
-      itemSubtotal += lineSub;
       itemDiscount += d;
-      tax += lineSub * (l.taxRate / 100);
+      if (taxMode === "inclusive") {
+        const lineTax = l.taxRate > 0 ? (lineSub * l.taxRate) / (100 + l.taxRate) : 0;
+        itemSubtotal += lineSub - lineTax;
+        tax += lineTax;
+      } else {
+        itemSubtotal += lineSub;
+        tax += lineSub * (l.taxRate / 100);
+      }
     }
     // Bag items — included in order total, no discount
     for (const [bagId, qty] of bagQtys) {
@@ -222,8 +229,15 @@ export default function POS() {
       if (!bag) continue;
       const price = Number(bag.salePrice) || 0;
       const bagGross = qty * price;
-      itemSubtotal += bagGross;
-      tax += bagGross * ((Number(bag.taxRate) || 0) / 100);
+      const bagTaxRate = Number(bag.taxRate) || 0;
+      if (taxMode === "inclusive") {
+        const bagTax = bagTaxRate > 0 ? (bagGross * bagTaxRate) / (100 + bagTaxRate) : 0;
+        itemSubtotal += bagGross - bagTax;
+        tax += bagTax;
+      } else {
+        itemSubtotal += bagGross;
+        tax += bagGross * (bagTaxRate / 100);
+      }
     }
     // Order-level discount (applied on top of item discounts)
     let orderDiscount = 0;
@@ -239,7 +253,7 @@ export default function POS() {
     }
     const total = itemSubtotal - orderDiscount + tax;
     return { subtotal: itemSubtotal, itemDiscount, orderDiscount, taxTotal: tax, total };
-  }, [cart, bagQtys, bagItems, orderDiscountMode, orderDiscountPercent, orderDiscountAmount, maxOrderPct, maxOrderAmt, showOrderDiscount]);
+  }, [taxMode, cart, bagQtys, bagItems, orderDiscountMode, orderDiscountPercent, orderDiscountAmount, maxOrderPct, maxOrderAmt, showOrderDiscount]);
 
   function addToCart(item: PosLookupItem) {
     if (item.onHand <= 0) return;

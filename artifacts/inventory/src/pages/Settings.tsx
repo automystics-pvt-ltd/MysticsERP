@@ -53,6 +53,7 @@ const orgSchema = z.object({
     .min(1)
     .max(365)
     .default(30),
+  taxMode: z.enum(["exclusive", "inclusive"]).default("exclusive"),
 });
 
 type OrgFormValues = z.infer<typeof orgSchema>;
@@ -86,6 +87,7 @@ export default function Settings() {
       logoUrl: "",
       invoiceFooter: "",
       defaultPaymentTermsDays: 30,
+      taxMode: "exclusive" as "exclusive" | "inclusive",
     }
   });
 
@@ -104,6 +106,7 @@ export default function Settings() {
         logoUrl: org.logoUrl || "",
         invoiceFooter: org.invoiceFooter || "",
         defaultPaymentTermsDays: org.defaultPaymentTermsDays ?? 30,
+        taxMode: ((org as any).taxMode ?? "exclusive") as "exclusive" | "inclusive",
       });
     }
   }, [org, form]);
@@ -121,7 +124,8 @@ export default function Settings() {
         logoUrl: data.logoUrl || null,
         invoiceFooter: data.invoiceFooter || null,
         defaultPaymentTermsDays: data.defaultPaymentTermsDays,
-      }
+        taxMode: data.taxMode,
+      } as any
     });
   };
 
@@ -260,6 +264,31 @@ export default function Settings() {
                     </Select>
                     <FormDescription>
                       Used to calculate overdue receivables on the dashboard and in the AR aging report.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="taxMode"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Tax Mode</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-org-tax-mode">
+                          <SelectValue placeholder="Select tax mode" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="exclusive">Exclusive — tax added on top of price</SelectItem>
+                        <SelectItem value="inclusive">Inclusive — price already includes tax (MRP)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Controls how GST is calculated on sales orders, purchase orders, and POS bills. Switch to Inclusive when your prices are MRP (tax-included).
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

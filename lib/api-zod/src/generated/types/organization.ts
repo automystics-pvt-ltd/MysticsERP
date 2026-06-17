@@ -5,6 +5,7 @@
  * Mystics Inventory API — multi-tenant inventory SaaS
  * OpenAPI spec version: 0.1.0
  */
+import type { OrganizationTaxMode } from './organizationTaxMode';
 
 export interface Organization {
   id: number;
@@ -45,6 +46,10 @@ export interface Organization {
   barcodeFormat: string;
   /** Default payment terms in days (e.g. 7, 15, 30, 45, 60, 90). Used to derive due dates and compute overdue receivables on the dashboard and AR aging report. */
   defaultPaymentTermsDays: number;
+  /** Tax mode for orders. 'exclusive': tax is added on top of the unit price. 'inclusive': the unit price already contains the tax. */
+  taxMode: OrganizationTaxMode;
+  /** When true, transactions that would reduce warehouse stock below zero are permitted. */
+  allowNegativeStock: boolean;
   /** @nullable */
   maxOrderDiscountPercent: number | null;
   /** @nullable */

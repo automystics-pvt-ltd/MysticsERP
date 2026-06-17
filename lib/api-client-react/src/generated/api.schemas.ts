@@ -132,6 +132,17 @@ export interface AdminPlatformStats {
   salesOrderCount: number;
 }
 
+/**
+ * Tax mode for orders. 'exclusive': tax is added on top of the unit price. 'inclusive': the unit price already contains the tax.
+ */
+export type OrganizationTaxMode = typeof OrganizationTaxMode[keyof typeof OrganizationTaxMode];
+
+
+export const OrganizationTaxMode = {
+  exclusive: 'exclusive',
+  inclusive: 'inclusive',
+} as const;
+
 export interface Organization {
   id: number;
   name: string;
@@ -171,6 +182,10 @@ export interface Organization {
   barcodeFormat: string;
   /** Default payment terms in days (e.g. 7, 15, 30, 45, 60, 90). Used to derive due dates and compute overdue receivables on the dashboard and AR aging report. */
   defaultPaymentTermsDays: number;
+  /** Tax mode for orders. 'exclusive': tax is added on top of the unit price. 'inclusive': the unit price already contains the tax. */
+  taxMode: OrganizationTaxMode;
+  /** When true, transactions that would reduce warehouse stock below zero are permitted. */
+  allowNegativeStock: boolean;
   /** @nullable */
   maxOrderDiscountPercent: number | null;
   /** @nullable */
@@ -207,6 +222,14 @@ export interface AssignMissingBarcodesResult {
   failed: number;
 }
 
+export type UpdateOrganizationBodyTaxMode = typeof UpdateOrganizationBodyTaxMode[keyof typeof UpdateOrganizationBodyTaxMode];
+
+
+export const UpdateOrganizationBodyTaxMode = {
+  exclusive: 'exclusive',
+  inclusive: 'inclusive',
+} as const;
+
 export interface UpdateOrganizationBody {
   name?: string;
   currency?: string;
@@ -230,6 +253,8 @@ export interface UpdateOrganizationBody {
   /** @nullable */
   invoiceFooter?: string | null;
   defaultPaymentTermsDays?: number;
+  taxMode?: UpdateOrganizationBodyTaxMode;
+  allowNegativeStock?: boolean;
   /** @nullable */
   maxOrderDiscountPercent?: number | null;
   /** @nullable */

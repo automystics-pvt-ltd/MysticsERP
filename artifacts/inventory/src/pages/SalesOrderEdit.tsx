@@ -219,15 +219,24 @@ export default function SalesOrderEdit() {
     return 0;
   };
 
-  const subtotal = watchLines.reduce((acc, line) => {
-    const gross = line.quantity * line.unitPrice;
-    return acc + gross - resolveLineDiscount(gross, line.discountPercent || 0, line.discountAmount || 0);
-  }, 0);
-  const taxTotal = watchLines.reduce((acc, line) => {
-    const gross = line.quantity * line.unitPrice;
-    const lineSubtotal = gross - resolveLineDiscount(gross, line.discountPercent || 0, line.discountAmount || 0);
-    return acc + lineSubtotal * (line.taxRate / 100);
-  }, 0);
+  const taxMode = (org as any)?.taxMode ?? "exclusive";
+  const { subtotal, taxTotal } = watchLines.reduce(
+    (acc, line) => {
+      const gross = line.quantity * line.unitPrice;
+      const disc = resolveLineDiscount(gross, line.discountPercent || 0, line.discountAmount || 0);
+      if (taxMode === "inclusive") {
+        const lineTotal = gross - disc;
+        const lineTax = line.taxRate > 0 ? (lineTotal * line.taxRate) / (100 + line.taxRate) : 0;
+        return { subtotal: acc.subtotal + lineTotal - lineTax, taxTotal: acc.taxTotal + lineTax };
+      }
+      const lineSubtotal = gross - disc;
+      return {
+        subtotal: acc.subtotal + lineSubtotal,
+        taxTotal: acc.taxTotal + lineSubtotal * (line.taxRate / 100),
+      };
+    },
+    { subtotal: 0, taxTotal: 0 },
+  );
   const orderDiscountComputed = orderDiscountMode === "percent"
     ? Math.min(subtotal + taxTotal, Math.round((subtotal + taxTotal) * orderDiscountValue / 100 * 100) / 100)
     : Math.min(subtotal + taxTotal, orderDiscountValue);
@@ -605,7 +614,9 @@ export default function SalesOrderEdit() {
                           {formatCurrency((() => {
                             const gross = watchLines[index].quantity * watchLines[index].unitPrice;
                             const disc = resolveLineDiscount(gross, watchLines[index].discountPercent || 0, watchLines[index].discountAmount || 0);
-                            return (gross - disc) * (1 + watchLines[index].taxRate / 100);
+                            const netAfterDisc = gross - disc;
+                            if (taxMode === "inclusive") return netAfterDisc;
+                            return netAfterDisc * (1 + watchLines[index].taxRate / 100);
                           })())}
                         </span>
                       </div>

@@ -44,6 +44,23 @@ function resolveDiscount(
   return { discountPercent, discountAmount };
 }
 
+/**
+ * Compute order totals for a list of lines.
+ *
+ * taxMode:
+ *   "exclusive" (default) — unit price is pre-tax; tax is added on top.
+ *     lineSubtotal = gross - discount
+ *     lineTax      = lineSubtotal × rate / 100
+ *     lineTotal    = lineSubtotal + lineTax
+ *
+ *   "inclusive" — unit price already contains tax; tax is extracted.
+ *     lineTotal    = gross - discount   (the tax-inclusive amount)
+ *     lineTax      = lineTotal × rate / (100 + rate)
+ *     lineSubtotal = lineTotal - lineTax
+ *
+ * In both modes, `subtotal` = Σ lineSubtotal (always pre-tax),
+ * `taxTotal` = Σ lineTax, `total` = subtotal + taxTotal.
+ */
 export function computeOrderTotals(
   rawLines: Array<{
     itemId: number;
@@ -54,6 +71,7 @@ export function computeOrderTotals(
     discountAmount?: number | string | null;
     description?: string | null;
   }>,
+  taxMode: "inclusive" | "exclusive" = "exclusive",
 ): ComputedTotals {
   let subtotal = 0;
   let taxTotal = 0;
@@ -67,9 +85,23 @@ export function computeOrderTotals(
       toNum(l.discountPercent ?? 0),
       toNum(l.discountAmount ?? 0),
     );
-    const lineSubtotal = gross - discountAmount;
-    const lineTax = (lineSubtotal * tax) / 100;
-    const lineTotal = lineSubtotal + lineTax;
+
+    let lineSubtotal: number;
+    let lineTax: number;
+    let lineTotal: number;
+
+    if (taxMode === "inclusive") {
+      // unitPrice is tax-inclusive; extract the tax portion
+      lineTotal = gross - discountAmount;
+      lineTax = tax > 0 ? (lineTotal * tax) / (100 + tax) : 0;
+      lineSubtotal = lineTotal - lineTax;
+    } else {
+      // default: exclusive — tax is added on top
+      lineSubtotal = gross - discountAmount;
+      lineTax = (lineSubtotal * tax) / 100;
+      lineTotal = lineSubtotal + lineTax;
+    }
+
     subtotal += lineSubtotal;
     taxTotal += lineTax;
     return {
@@ -98,8 +130,6 @@ export function nextOrderNumber(prefix: string): string {
   const yy = String(now.getFullYear()).slice(-2);
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   const dd = String(now.getDate()).padStart(2, "0");
-  const rand = Math.floor(Math.random() * 10000)
-    .toString()
-    .padStart(4, "0");
+  const rand = Math.floor(Math.random() * 9000) + 1000;
   return `${prefix}-${yy}${mm}${dd}-${rand}`;
 }

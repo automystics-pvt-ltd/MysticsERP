@@ -13,7 +13,7 @@ import {
 } from "@workspace/db";
 import { tenantMiddleware, assertOwnership } from "../lib/tenant";
 import { submitForApproval } from "../lib/approvalEngine";
-import { toStr } from "../lib/numeric";
+import { toNum, toStr } from "../lib/numeric";
 import { serializeStockMovement } from "../lib/serializers";
 
 const router: IRouter = Router();
@@ -319,7 +319,28 @@ router.post("/stock-movements", async (req, res, next) => {
           );
       }
 
-      // No workflow — apply immediately
+      // No workflow — check on-hand first, then apply
+      const [stockRow] = await tx
+        .select({ quantity: itemWarehouseStockTable.quantity })
+        .from(itemWarehouseStockTable)
+        .where(
+          and(
+            eq(itemWarehouseStockTable.organizationId, orgId),
+            eq(itemWarehouseStockTable.itemId, itemId),
+            eq(itemWarehouseStockTable.warehouseId, warehouseId),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      const onHand = stockRow ? toNum(stockRow.quantity) : 0;
+      if (quantity - onHand > 1e-6) {
+        return {
+          kind: "insufficient_stock" as const,
+          onHand,
+          needed: quantity,
+        };
+      }
+
       const updated = await tx
         .update(itemWarehouseStockTable)
         .set({
@@ -335,14 +356,12 @@ router.post("/stock-movements", async (req, res, next) => {
         .returning({ id: itemWarehouseStockTable.id });
 
       if (updated.length === 0) {
-        // No stock row — treat on-hand as zero; a negative adjustment would
-        // be a data issue, but for a write-off of 0 existing stock we can
-        // just insert a zero row so callers get a consistent response.
+        // Defensive: row vanished between SELECT FOR UPDATE and UPDATE.
         await tx.insert(itemWarehouseStockTable).values({
           organizationId: orgId,
           itemId,
           warehouseId,
-          quantity: toStr(-quantity),
+          quantity: toStr(0),
         });
       }
 
@@ -363,6 +382,12 @@ router.post("/stock-movements", async (req, res, next) => {
 
     if (result.kind === "pending_approval") {
       res.status(202).json({ ok: true, status: "pending_approval", stageId: result.stageId });
+      return;
+    }
+    if (result.kind === "insufficient_stock") {
+      res.status(400).json({
+        error: `Insufficient stock: need ${result.needed}, on hand ${result.onHand}`,
+      });
       return;
     }
 

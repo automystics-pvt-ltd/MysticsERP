@@ -5,6 +5,7 @@ import {
   useListWarehouses,
   useListItems,
   getListPurchaseOrdersQueryKey,
+  useGetCurrentOrganization,
 } from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,6 +69,7 @@ export default function PurchaseOrderNew() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  const { data: org } = useGetCurrentOrganization();
   const { data: suppliers } = useListSuppliers();
   const { data: warehouses } = useListWarehouses();
   const { data: items } = useListItems();
@@ -112,15 +114,22 @@ export default function PurchaseOrderNew() {
     [suppliers, watchSupplierId],
   );
 
-  const subtotal = watchLines.reduce((acc, line) => {
-    const gross = line.quantity * line.unitPrice;
-    return acc + gross * (1 - (line.discountPercent || 0) / 100);
-  }, 0);
-  const taxTotal = watchLines.reduce((acc, line) => {
-    const gross = line.quantity * line.unitPrice;
-    const lineSubtotal = gross * (1 - (line.discountPercent || 0) / 100);
-    return acc + lineSubtotal * (line.taxRate / 100);
-  }, 0);
+  const taxMode = (org as any)?.taxMode ?? "exclusive";
+  const { subtotal, taxTotal } = watchLines.reduce(
+    (acc, line) => {
+      const gross = line.quantity * line.unitPrice;
+      const lineAfterDisc = gross * (1 - (line.discountPercent || 0) / 100);
+      if (taxMode === "inclusive") {
+        const lineTax = line.taxRate > 0 ? (lineAfterDisc * line.taxRate) / (100 + line.taxRate) : 0;
+        return { subtotal: acc.subtotal + lineAfterDisc - lineTax, taxTotal: acc.taxTotal + lineTax };
+      }
+      return {
+        subtotal: acc.subtotal + lineAfterDisc,
+        taxTotal: acc.taxTotal + lineAfterDisc * (line.taxRate / 100),
+      };
+    },
+    { subtotal: 0, taxTotal: 0 },
+  );
   const total = subtotal + taxTotal;
 
   const onSubmit = (data: PurchaseOrderFormValues) => {
@@ -451,12 +460,12 @@ export default function PurchaseOrderNew() {
                         <div className="col-span-6 md:col-span-2 flex flex-col justify-end pb-2 text-right">
                           <span className="text-xs text-muted-foreground">Line Total</span>
                           <span className="font-medium">
-                            {formatCurrency(
-                              watchLines[index].quantity *
-                                watchLines[index].unitPrice *
-                                (1 - (watchLines[index].discountPercent || 0) / 100) *
-                                (1 + watchLines[index].taxRate / 100),
-                            )}
+                            {formatCurrency((() => {
+                              const gross = watchLines[index].quantity * watchLines[index].unitPrice;
+                              const netAfterDisc = gross * (1 - (watchLines[index].discountPercent || 0) / 100);
+                              if (taxMode === "inclusive") return netAfterDisc;
+                              return netAfterDisc * (1 + watchLines[index].taxRate / 100);
+                            })())}
                           </span>
                         </div>
                       </div>

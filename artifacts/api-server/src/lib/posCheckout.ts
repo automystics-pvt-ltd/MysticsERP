@@ -358,6 +358,13 @@ export async function executePosCheckout(
 
   // Resolve effective line prices/tax from item defaults when caller
   // didn't override.
+  const [orgTaxRow] = await db
+    .select({ taxMode: organizationsTable.taxMode })
+    .from(organizationsTable) // org-scope-allow: single-org fetch by tenant id
+    .where(eq(organizationsTable.id, organizationId))
+    .limit(1);
+  const taxMode = ((orgTaxRow?.taxMode ?? "exclusive") as "inclusive" | "exclusive");
+
   const totals = computeOrderTotals(
     lines.map((l) => {
       const it = byId.get(l.itemId)!;
@@ -371,6 +378,7 @@ export async function executePosCheckout(
         description: l.description ?? null,
       };
     }),
+    taxMode,
   );
 
   // Bundle expansion: load components once.
@@ -512,15 +520,12 @@ export async function executePosCheckout(
         });
       for (const [itemId, need] of componentDelta) {
         const have = onHand.get(itemId) ?? 0;
-        // Block checkout only when the item has literally zero stock.
-        // If stock >= 1, allow selling any quantity (no insufficient-stock
-        // error) — the cashier controls what they sell at the counter.
-        if (have <= 0 && need > 1e-6) {
+        if (have - need < -1e-6) {
           const meta = itemFlags.get(itemId);
           if (meta?.allowBackorder) continue;
           const sku = meta?.sku ?? `#${itemId}`;
           throw new PosValidationError(
-            `${sku} is out of stock`,
+            `${sku} has insufficient stock (need ${need}, on hand ${have})`,
             409,
           );
         }

@@ -89,8 +89,17 @@ router.patch("/organizations/current", async (req, res, next) => {
       "showOrderDiscount",
       "skuMode",
       "defaultPaymentTermsDays",
+      "allowNegativeStock",
     ]) {
       if (k in body) updates[k] = body[k];
+    }
+    if ("taxMode" in body) {
+      const tm = String(body.taxMode ?? "exclusive");
+      if (tm !== "exclusive" && tm !== "inclusive") {
+        res.status(400).json({ error: "taxMode must be 'exclusive' or 'inclusive'" });
+        return;
+      }
+      updates.taxMode = tm;
     }
     if ("skuPrefix" in body) {
       const raw = body.skuPrefix;

@@ -378,7 +378,13 @@ router.post("/sales-orders", async (req, res, next) => {
       });
       return;
     }
-    const totals = computeOrderTotals(b.lines);
+    const [orgTaxRow] = await db
+      .select({ taxMode: organizationsTable.taxMode })
+      .from(organizationsTable) // org-scope-allow: single-org fetch by tenant id
+      .where(eq(organizationsTable.id, t.organizationId))
+      .limit(1);
+    const taxMode = ((orgTaxRow?.taxMode ?? "exclusive") as "inclusive" | "exclusive");
+    const totals = computeOrderTotals(b.lines, taxMode);
     const rawOrderDisc =
       b.orderDiscountAmount != null && Number.isFinite(Number(b.orderDiscountAmount))
         ? Math.max(0, Number(b.orderDiscountAmount))
@@ -519,7 +525,13 @@ router.patch("/sales-orders/:id", async (req, res, next) => {
         res.status(400).json({ error: "Every line must have quantity > 0 and unitPrice >= 0" });
         return;
       }
-      const totals = computeOrderTotals(b.lines);
+      const [orgTaxRow2] = await db
+        .select({ taxMode: organizationsTable.taxMode })
+        .from(organizationsTable) // org-scope-allow: single-org fetch by tenant id
+        .where(eq(organizationsTable.id, t.organizationId))
+        .limit(1);
+      const taxMode2 = ((orgTaxRow2?.taxMode ?? "exclusive") as "inclusive" | "exclusive");
+      const totals = computeOrderTotals(b.lines, taxMode2);
       // Apply an optional order-level discount (e.g. preserved from a POS
       // checkout where an order-level discount was applied on top of line
       // discounts). Clamp to [0, lineTotal].

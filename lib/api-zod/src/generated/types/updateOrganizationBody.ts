@@ -5,6 +5,7 @@
  * Mystics Inventory API — multi-tenant inventory SaaS
  * OpenAPI spec version: 0.1.0
  */
+import type { UpdateOrganizationBodyTaxMode } from './updateOrganizationBodyTaxMode';
 
 export interface UpdateOrganizationBody {
   name?: string;
@@ -29,6 +30,8 @@ export interface UpdateOrganizationBody {
   /** @nullable */
   invoiceFooter?: string | null;
   defaultPaymentTermsDays?: number;
+  taxMode?: UpdateOrganizationBodyTaxMode;
+  allowNegativeStock?: boolean;
   /** @nullable */
   maxOrderDiscountPercent?: number | null;
   /** @nullable */
