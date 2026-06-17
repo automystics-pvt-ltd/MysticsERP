@@ -69,16 +69,28 @@ export default defineConfig({
         defaultHandler(warning);
       },
       output: {
-        // Split large vendor libraries into stable, cacheable chunks so that a
-        // deploy that only changes application code doesn't bust the browser
-        // cache for react/tanstack-query/recharts/etc.
+        // manualChunks strategy:
+        //
+        // Rule: only split a library into its own chunk when it has NO
+        // React-dependency cycle risk — i.e. it is either pure JS (no React
+        // import at all) or its React imports are strictly one-way
+        // (it imports React from "vendor"; "vendor" never imports back from it).
+        //
+        // React, Radix, TanStack, Lucide, and the rest of the React ecosystem
+        // all stay in the single "vendor" chunk.  Fine-grained splitting of
+        // these packages creates circular initialisation races that cause
+        // "Cannot read/set properties of undefined" crashes in production.
         manualChunks(id) {
           if (!id.includes("node_modules")) return undefined;
 
-          // Clerk — auth SDK is large and changes rarely
-          if (id.includes("@clerk/")) return "vendor-clerk";
+          // Pure-JS / WebAssembly libs with no React dependency — safe to split
+          if (id.includes("@zxing/")) return "vendor-scanner";
+          if (id.includes("/xlsx/") || id.includes("node_modules/xlsx")) return "vendor-xlsx";
+          if (id.includes("jspdf")) return "vendor-pdf";
+          if (id.includes("papaparse")) return "vendor-csv";
 
-          // Charting — recharts + d3 helpers are heavy
+          // Heavy libs that import React but have no reverse dep from "vendor"
+          // (one-way dep: vendor-charts → vendor, never the other way round)
           if (
             id.includes("recharts") ||
             id.includes("/d3-") ||
@@ -87,34 +99,8 @@ export default defineConfig({
           )
             return "vendor-charts";
 
-          // TanStack — query, table, virtual
-          if (id.includes("@tanstack/")) return "vendor-query";
-
-          // Radix UI primitives (used by shadcn/ui).
-          // React itself is intentionally left out of this chunk so it falls
-          // into the catch-all "vendor" chunk below. That way vendor-radix
-          // imports React from vendor (one-way dep, no cycle). Putting React
-          // here alongside Radix creates a circular dep via @floating-ui/react
-          // (Radix→floating-ui→React→vendor-radix) which breaks module init.
-          if (id.includes("@radix-ui/")) return "vendor-radix";
-
-          // Lucide icons — large icon set
-          if (id.includes("lucide-react")) return "vendor-icons";
-
-          // Heavy on-demand libs — split so they're only downloaded when
-          // the user first visits a page / opens a dialog that needs them.
-          // @zxing: barcode scanner (WebAssembly, ~600 KB)
-          if (id.includes("@zxing/")) return "vendor-scanner";
-          // xlsx: spreadsheet import/export (~800 KB)
-          if (id.includes("/xlsx/") || id.includes("node_modules/xlsx")) return "vendor-xlsx";
-          // jspdf + jspdf-autotable: PDF export (~300 KB)
-          if (id.includes("jspdf")) return "vendor-pdf";
-          // Uppy: file-upload suite (dashboard + S3 + core, ~400 KB)
-          if (id.includes("@uppy/") || id.includes("/uppy/")) return "vendor-uppy";
-          // papaparse: CSV parsing (~50 KB — small, but keeps vendor clean)
-          if (id.includes("papaparse")) return "vendor-csv";
-
-          // Everything else in node_modules (wouter, clsx, cmdk, vaul, …)
+          // Everything else — React, react-dom, Radix, TanStack, Lucide,
+          // Clerk, Uppy, wouter, cmdk, vaul, clsx, … — in one stable chunk.
           return "vendor";
         },
       },
