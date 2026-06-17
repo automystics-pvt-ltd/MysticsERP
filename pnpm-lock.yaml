@@ -172,9 +172,6 @@ importers:
       '@swc/helpers':
         specifier: ^0.5.21
         version: 0.5.23
-      '@types/compression':
-        specifier: ^1.8.1
-        version: 1.8.1
       '@types/connect-pg-simple':
         specifier: ^7.0.3
         version: 7.0.3
@@ -245,6 +242,9 @@ importers:
         specifier: 'catalog:'
         version: 3.25.76
     devDependencies:
+      '@types/compression':
+        specifier: ^1.7.5
+        version: 1.8.1
       '@types/cookie-parser':
         specifier: ^1.4.10
         version: 1.4.10(@types/express@5.0.6)
