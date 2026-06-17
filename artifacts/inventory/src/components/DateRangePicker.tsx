@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
@@ -135,6 +135,15 @@ export function DateRangePicker({
   const [customRange, setCustomRange] = useState<DayPickerRange | undefined>(() =>
     from && to ? { from: parseISO(from), to: parseISO(to) } : undefined,
   );
+
+  // Keep calendar selection in sync when the parent clears or resets from/to.
+  useEffect(() => {
+    if (from && to) {
+      setCustomRange({ from: parseISO(from), to: parseISO(to) });
+    } else {
+      setCustomRange(undefined);
+    }
+  }, [from, to]);
 
   const hasValue = !!from && !!to;
   const activePreset = hasValue ? detectPreset(from, to) : undefined;

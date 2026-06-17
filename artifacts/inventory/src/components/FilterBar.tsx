@@ -49,6 +49,8 @@ export interface FilterBarProps {
   sortDefs?: SortDef[];
   sortValues?: { sortBy: string; sortDir: "asc" | "desc" };
   onSortChange?: (sortBy: string, sortDir: "asc" | "desc") => void;
+  /** Default sort direction for this page — used to determine whether sort is "active". Defaults to "desc". */
+  sortDefaultDir?: "asc" | "desc";
 
   // ── Legacy / supplemental props ─────────────────────────────────────────────
   /** Custom JSX rendered at the bottom of the filter popover, below filterDefs. */
@@ -125,6 +127,7 @@ export function FilterBar({
   sortDefs,
   sortValues,
   onSortChange,
+  sortDefaultDir = "desc",
   filterContent,
   filterCount = 0,
   onReset,
@@ -146,14 +149,14 @@ export function FilterBar({
   const sortIsActive =
     sortDefs &&
     sortValues &&
-    (sortValues.sortBy !== defaultSortKey || sortValues.sortDir !== "desc");
+    (sortValues.sortBy !== defaultSortKey || sortValues.sortDir !== sortDefaultDir);
 
   const sortChip: FilterChip | null =
     sortIsActive && onSortChange
       ? {
           key: "__sort__",
           label: `Sort: ${sortDefs!.find((s) => s.key === sortValues!.sortBy)?.label ?? sortValues!.sortBy} (${sortValues!.sortDir})`,
-          onRemove: () => onSortChange(defaultSortKey!, "desc"),
+          onRemove: () => onSortChange(defaultSortKey!, sortDefaultDir),
         }
       : null;
 

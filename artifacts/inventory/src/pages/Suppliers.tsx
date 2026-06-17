@@ -278,6 +278,7 @@ export default function Suppliers() {
         ]}
         sortValues={{ sortBy: values.sort, sortDir: values.sortDir as "asc" | "desc" }}
         onSortChange={(s, d) => { setMany({ sort: s, sortDir: d }); setPage(1); }}
+        sortDefaultDir="asc"
         onReset={() => { reset(); setPage(1); }}
       />
 

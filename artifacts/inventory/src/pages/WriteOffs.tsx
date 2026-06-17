@@ -762,7 +762,7 @@ export default function WriteOffs() {
                         </Can>
                       )}
                       {hasFilters && (
-                        <Button variant="ghost" size="sm" onClick={reset} className="gap-1 text-xs">
+                        <Button variant="ghost" size="sm" onClick={() => { reset(); setPage(1); }} className="gap-1 text-xs">
                           <X className="h-3.5 w-3.5" /> Clear filters
                         </Button>
                       )}
