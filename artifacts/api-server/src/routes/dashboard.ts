@@ -214,8 +214,12 @@ router.get("/dashboard/summary", async (req, res, next) => {
           sql`${itemsTable.archivedAt} IS NULL`,
         ),
       );
+    // Only flag an item as low-stock when it has an explicit reorder level and
+    // on-hand stock has dropped to or below that level.  The previous condition
+    // also triggered on items with onHand <= 0 regardless of reorder level,
+    // which inflated the count with every unstocked catalog item.
     const lowStockCount = lowStockRows.filter(
-      (r) => toNum(r.onHand) <= 0 || (toNum(r.reorder) > 0 && toNum(r.onHand) <= toNum(r.reorder)),
+      (r) => toNum(r.reorder) > 0 && toNum(r.onHand) <= toNum(r.reorder),
     ).length;
 
     const openSO = await db
@@ -388,7 +392,7 @@ router.get("/dashboard/summary", async (req, res, next) => {
       const currentOnHand = toNum(r.onHand);
       const delta = movementDeltaByItem.get(r.itemId) ?? 0;
       const prevOnHand = currentOnHand - delta;
-      return prevOnHand <= 0 || (toNum(r.reorder) > 0 && prevOnHand <= toNum(r.reorder));
+      return toNum(r.reorder) > 0 && prevOnHand <= toNum(r.reorder);
     }).length;
 
     // Derive receivables from open sales orders' balance_due rather

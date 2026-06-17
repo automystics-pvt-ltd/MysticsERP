@@ -389,8 +389,13 @@ router.get("/reports/low-stock", async (req, res, next) => {
     const t = req.tenant!;
     const filterWarehouseId = req.query.warehouseId ? Number(req.query.warehouseId) : undefined;
     const filterSearch = typeof req.query.search === "string" ? req.query.search.trim().toLowerCase() : undefined;
-    // Cross-join items × non-virtual warehouses so items with zero stock
-    // (no row in item_warehouse_stock) still appear per warehouse.
+    // Only include item×warehouse pairs that have an actual stock row.
+    // A CROSS JOIN would create phantom combinations for every item in every
+    // warehouse even if the item was never received there — that inflates the
+    // alert with hundreds of zero-stock rows that don't represent real gaps.
+    // INNER JOIN ensures we only surface warehouse slots where inventory has
+    // genuinely been tracked, and we still catch rows where quantity has
+    // dropped to or below zero / the reorder level.
     const rawRows = await db.execute(sql`
       SELECT
         i.id                                        AS "itemId",
@@ -400,22 +405,22 @@ router.get("/reports/low-stock", async (req, res, next) => {
         i.reorder_level                             AS "reorderLevel",
         w.id                                        AS "warehouseId",
         w.name                                      AS "warehouseName",
-        COALESCE(iws.quantity, 0)                   AS "quantityOnHand"
-      FROM items i
-      CROSS JOIN warehouses w
-      LEFT JOIN item_warehouse_stock iws
-        ON  iws.item_id         = i.id
-        AND iws.warehouse_id    = w.id
-        AND iws.organization_id = ${t.organizationId}
-      WHERE i.organization_id = ${t.organizationId}
+        iws.quantity                                AS "quantityOnHand"
+      FROM item_warehouse_stock iws
+      INNER JOIN items i
+        ON  i.id              = iws.item_id
+        AND i.organization_id = ${t.organizationId}
         AND i.archived_at IS NULL
+      INNER JOIN warehouses w
+        ON  w.id              = iws.warehouse_id
         AND w.organization_id = ${t.organizationId}
-        AND w.is_virtual = false
+        AND w.is_virtual      = false
+      WHERE iws.organization_id = ${t.organizationId}
         ${filterWarehouseId ? sql`AND w.id = ${filterWarehouseId}` : sql``}
         ${filterSearch ? sql`AND (LOWER(i.name) LIKE ${`%${filterSearch}%`} OR LOWER(i.sku) LIKE ${`%${filterSearch}%`})` : sql``}
         AND (
-          COALESCE(iws.quantity::numeric, 0) <= 0
-          OR (i.reorder_level IS NOT NULL AND i.reorder_level::numeric > 0 AND COALESCE(iws.quantity::numeric, 0) <= i.reorder_level::numeric)
+          iws.quantity::numeric <= 0
+          OR (i.reorder_level IS NOT NULL AND i.reorder_level::numeric > 0 AND iws.quantity::numeric <= i.reorder_level::numeric)
         )
       ORDER BY i.name, w.name
     `); // org-scope-allow: items, warehouses, item_warehouse_stock all constrained by organization_id
