@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, CheckCircle2, PackagePlus, XCircle, Undo2, IndianRupee, FileDown, Building2, Scissors, AlertTriangle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, PackagePlus, XCircle, Undo2, IndianRupee, FileDown, Building2, Scissors, AlertTriangle, Printer } from "lucide-react";
 import { useState, type ReactElement } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { RecordSupplierPaymentDialog } from "@/components/RecordSupplierPaymentDialog";
@@ -87,6 +87,7 @@ export default function PurchaseOrderDetail() {
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [downloadingGrnId, setDownloadingGrnId] = useState<number | null>(null);
 
   const handleDownloadPdf = async () => {
     if (!orderDetail) return;
@@ -116,6 +117,31 @@ export default function PurchaseOrderDetail() {
     }
   };
   
+  const handleDownloadGrnPdf = async (receiptId: number, receiptNumber: string) => {
+    setDownloadingGrnId(receiptId);
+    try {
+      const resp = await fetch(`/api/goods-receipts/${receiptId}/pdf`);
+      if (!resp.ok) throw new Error("Failed");
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `grn-${receiptNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch {
+      toast({
+        title: "Could not download GRN",
+        description: "Please try again in a moment.",
+        variant: "destructive",
+      });
+    } finally {
+      setDownloadingGrnId(null);
+    }
+  };
+
   const movementsQuery = useListStockMovements(
     { purchaseOrderId: orderId },
     {
@@ -631,6 +657,17 @@ export default function PurchaseOrderDetail() {
                         </div>
                       )}
                     </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDownloadGrnPdf(receipt.id, receipt.receiptNumber)}
+                        disabled={downloadingGrnId === receipt.id}
+                        data-testid={`btn-print-grn-${receipt.id}`}
+                      >
+                        <Printer className="mr-2 h-4 w-4" />
+                        {downloadingGrnId === receipt.id ? "Preparing..." : "Print GRN"}
+                      </Button>
                     {!isCancelled && (
                       <Can module="purchase_orders" action="approve">
                         {stockConsumed ? (
@@ -689,6 +726,7 @@ export default function PurchaseOrderDetail() {
                         )}
                       </Can>
                     )}
+                    </div>
                   </div>
                   {receipt.status === "pending_approval" && (
                     <ApprovalActions

@@ -977,5 +977,32 @@ router.post(
   },
 );
 
+router.get("/goods-receipts/:id/pdf", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      res.status(400).json({ error: "Invalid goods receipt id" });
+      return;
+    }
+    const { loadGoodsReceiptPdf } = await import("../lib/goodsReceiptPdfData");
+    const result = await loadGoodsReceiptPdf(t.organizationId, id);
+    if ("notFound" in result) {
+      res.status(404).json({ error: "Goods receipt not found" });
+      return;
+    }
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="grn-${result.receiptNumber}.pdf"`,
+    );
+    res.setHeader("Cache-Control", "private, max-age=0, no-store");
+    res.setHeader("Content-Length", String(result.pdf.length));
+    res.send(result.pdf);
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;
 export { loadGoodsReceiptsForOrder, deriveAndUpdatePurchaseOrderStatus };
