@@ -1,0 +1,37 @@
+You have new mail.
+Last login: Wed Jun 17 10:32:56 2026 from 169.254.0.1
+root@srv1609330:~# cd /home/mmwearerp/htdocs/erp.mmwear.in
+
+# 1. What port is the API server configured to use?
+grep "^PORT" .env
+
+# 2. Is the PM2 process actually running?
+pm2 list
+
+# 3. Is something listening on 7501?
+ss -tlnp | grep 7501
+
+# 4. Is the API responding?
+curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:7501/api/health || echo "not reachable"
+PORT=7501
+┌────┬───────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name                  │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+├────┼───────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
+│ 2  │ automystics-api       │ default     │ 0.0.0   │ fork    │ 2386364  │ 7h     │ 30   │ online    │ 0%       │ 94.4mb   │ root     │ disabled │
+│ 37 │ erp-automystics       │ default     │ N/A     │ fork    │ 3366958  │ 7D     │ 10   │ online    │ 0%       │ 115.1mb  │ root     │ disabled │
+│ 0  │ fitro360              │ default     │ 1.0.0   │ fork    │ 2386343  │ 7h     │ 30   │ online    │ 0%       │ 111.0mb  │ root     │ disabled │
+│ 1  │ kalvicore-api         │ default     │ 0.0.0   │ fork    │ 2386342  │ 7h     │ 30   │ online    │ 0%       │ 115.3mb  │ root     │ disabled │
+│ 54 │ mmwear-erp            │ default     │ 0.0.0   │ fork    │ 2398504  │ 6h     │ 7    │ online    │ 0%       │ 271.7mb  │ root     │ disabled │
+│ 18 │ mysticscivil-api      │ default     │ N/A     │ fork    │ 2386369  │ 7h     │ 14   │ online    │ 0%       │ 212.2mb  │ root     │ disabled │
+│ 11 │ mysticshr-api         │ default     │ 0.0.0   │ fork    │ 2386408  │ 7h     │ 1193 │ online    │ 0%       │ 254.4mb  │ root     │ disabled │
+│ 39 │ mysticsinventory      │ default     │ N/A     │ fork    │ 0        │ 0      │ 54   │ errored   │ 0%       │ 0b       │ root     │ disabled │
+│ 4  │ people-connect-api    │ default     │ 0.0.0   │ fork    │ 2386366  │ 7h     │ 31   │ online    │ 0%       │ 201.4mb  │ root     │ disabled │
+│ 23 │ solarnexus-api        │ default     │ 0.0.0   │ fork    │ 2386405  │ 7h     │ 14   │ online    │ 0%       │ 132.4mb  │ root     │ disabled │
+│ 6  │ tkprabhu-api          │ default     │ 0.0.0   │ fork    │ 2386365  │ 7h     │ 52   │ online    │ 0%       │ 202.0mb  │ root     │ disabled │
+│ 32 │ ungalrajeev-api       │ default     │ N/A     │ fork    │ 2469136  │ 31s    │ 312  │ online    │ 0%       │ 138.8mb  │ root     │ disabled │
+│ 25 │ ungaludan-sarath      │ default     │ 0.0.0   │ fork    │ 0        │ 0      │ 13   │ errored   │ 0%       │ 0b       │ root     │ disabled │
+│ 33 │ ungalvignesh-api      │ default     │ N/A     │ fork    │ 2469181  │ 18s    │ 531… │ online    │ 0%       │ 135.7mb  │ root     │ disabled │
+│ 34 │ ungalvignesh-api      │ default     │ N/A     │ fork    │ 3366905  │ 7D     │ 228… │ online    │ 0%       │ 115.5mb  │ root     │ disabled │
+└────┴───────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+LISTEN 0      511                *:7501             *:*    users:(("MainThread",pid=2398504,fd=23))                                                                                                          
+401root@srv1609330:/home/mmwearerp/htdocs/erp.mmwear.in# 
