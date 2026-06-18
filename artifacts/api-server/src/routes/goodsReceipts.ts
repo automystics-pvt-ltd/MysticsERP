@@ -19,6 +19,7 @@ import { nextOrderNumber } from "../lib/orderHelpers";
 import { toNum, toStr } from "../lib/numeric";
 import { pushStockToShopify } from "../lib/shopifyOutbound";
 import { submitForApproval } from "../lib/approvalEngine";
+import { createApprovalNotification } from "../lib/approvalNotify";
 import {
   applyBatchStockChange,
   insertBatchMovement,
@@ -539,6 +540,8 @@ router.post("/purchase-orders/:id/goods-receipts", async (req, res, next) => {
         return {
           kind: "pending_approval" as const,
           receiptId: receipt.id,
+          approvalRequestId: approvalResult.requestId,
+          receiptRef: receipt.receiptNumber,
         };
       }
 
@@ -701,6 +704,13 @@ router.post("/purchase-orders/:id/goods-receipts", async (req, res, next) => {
       return;
     }
     if (result.kind === "pending_approval") {
+      createApprovalNotification(
+        t.organizationId,
+        result.approvalRequestId,
+        "new_request",
+        `New goods receipt approval request: ${result.receiptRef}`,
+        { submittedById: t.userId },
+      );
       const receipts = await loadGoodsReceiptsForOrder(
         t.organizationId,
         orderId,

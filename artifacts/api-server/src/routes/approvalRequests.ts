@@ -21,6 +21,7 @@ import {
 } from "../lib/approvalCallbacks";
 import { pushStockToShopify } from "../lib/shopifyOutbound";
 import { writeAuditLog, getClientIp } from "../lib/audit";
+import { createApprovalNotification } from "../lib/approvalNotify";
 
 const router: IRouter = Router();
 router.use(tenantMiddleware);
@@ -216,12 +217,14 @@ router.post("/approval-requests/:id/approve", async (req, res, next) => {
     const comment = req.body?.comment ?? undefined;
     const actorRole = normalizeRole(t.role);
 
-    const { result, touchedItemIds } = await db.transaction(async (tx) => {
+    const { result, touchedItemIds, reqInfo } = await db.transaction(async (tx) => {
       // Load module + recordId so we can call the business callback after action
       const [reqInfo] = await tx
         .select({
           module: approvalRequestsTable.module,
           recordId: approvalRequestsTable.recordId,
+          submittedById: approvalRequestsTable.submittedById,
+          recordRef: approvalRequestsTable.recordRef,
         })
         .from(approvalRequestsTable)
         .where(
@@ -258,7 +261,7 @@ router.post("/approval-requests/:id/approve", async (req, res, next) => {
         touchedItemIds = cb.touchedItemIds;
       }
 
-      return { result: actionResult, touchedItemIds };
+      return { result: actionResult, touchedItemIds, reqInfo };
     });
 
     for (const itemId of touchedItemIds) {
@@ -275,6 +278,14 @@ router.post("/approval-requests/:id/approve", async (req, res, next) => {
       description: `Approved request #${requestId}`,
       ipAddress: getClientIp(req),
     });
+
+    createApprovalNotification(
+      t.organizationId,
+      requestId,
+      "approved",
+      `Your request for ${reqInfo.recordRef} was approved`,
+      { submittedById: reqInfo.submittedById },
+    );
 
     res.json({ ok: true, ...result });
   } catch (err) {
@@ -300,11 +311,13 @@ router.post("/approval-requests/:id/reject", async (req, res, next) => {
     }
 
     const actorRole = normalizeRole(t.role);
-    const result = await db.transaction(async (tx) => {
+    const { actionResult: result, reqInfo } = await db.transaction(async (tx) => {
       const [reqInfo] = await tx
         .select({
           module: approvalRequestsTable.module,
           recordId: approvalRequestsTable.recordId,
+          submittedById: approvalRequestsTable.submittedById,
+          recordRef: approvalRequestsTable.recordRef,
         })
         .from(approvalRequestsTable)
         .where(
@@ -334,7 +347,7 @@ router.post("/approval-requests/:id/reject", async (req, res, next) => {
         reqInfo.module,
         reqInfo.recordId,
       );
-      return actionResult;
+      return { actionResult, reqInfo };
     });
 
     await writeAuditLog({
@@ -347,6 +360,14 @@ router.post("/approval-requests/:id/reject", async (req, res, next) => {
       description: `Rejected request #${requestId}: ${comment}`,
       ipAddress: getClientIp(req),
     });
+
+    createApprovalNotification(
+      t.organizationId,
+      requestId,
+      "rejected",
+      `Your request for ${reqInfo.recordRef} was rejected`,
+      { submittedById: reqInfo.submittedById },
+    );
 
     res.json({ ok: true, ...result });
   } catch (err) {
@@ -372,11 +393,13 @@ router.post("/approval-requests/:id/send-back", async (req, res, next) => {
     }
 
     const actorRole = normalizeRole(t.role);
-    const result = await db.transaction(async (tx) => {
+    const { actionResult: result, reqInfo } = await db.transaction(async (tx) => {
       const [reqInfo] = await tx
         .select({
           module: approvalRequestsTable.module,
           recordId: approvalRequestsTable.recordId,
+          submittedById: approvalRequestsTable.submittedById,
+          recordRef: approvalRequestsTable.recordRef,
         })
         .from(approvalRequestsTable)
         .where(
@@ -406,7 +429,7 @@ router.post("/approval-requests/:id/send-back", async (req, res, next) => {
         reqInfo.module,
         reqInfo.recordId,
       );
-      return actionResult;
+      return { actionResult, reqInfo };
     });
 
     await writeAuditLog({
@@ -419,6 +442,14 @@ router.post("/approval-requests/:id/send-back", async (req, res, next) => {
       description: `Sent back request #${requestId}: ${comment}`,
       ipAddress: getClientIp(req),
     });
+
+    createApprovalNotification(
+      t.organizationId,
+      requestId,
+      "sent_back",
+      `Your request for ${reqInfo.recordRef} was sent back for revision`,
+      { submittedById: reqInfo.submittedById },
+    );
 
     res.json({ ok: true, ...result });
   } catch (err) {

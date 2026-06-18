@@ -6,6 +6,7 @@ import {
   approvalRequestsTable,
   approvalActionsTable,
   organizationMembersTable,
+  usersTable,
 } from "@workspace/db";
 
 export type ApprovalModule =
@@ -380,16 +381,11 @@ export async function loadApprovalRequestDetail(
     actorIds.length > 0
       ? await db
           .select({
-            userId: organizationMembersTable.userId,
-            name: organizationMembersTable.userId,
+            userId: usersTable.id,
+            name: usersTable.name,
           })
-          .from(organizationMembersTable)
-          .where(
-            and(
-              eq(organizationMembersTable.organizationId, orgId),
-              inArray(organizationMembersTable.userId, actorIds),
-            ),
-          )
+          .from(usersTable)
+          .where(inArray(usersTable.id, actorIds))
       : [];
   const memberMap = new Map(memberRows.map((m) => [m.userId, m.name]));
 

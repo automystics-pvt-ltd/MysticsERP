@@ -10,6 +10,7 @@ import {
 } from "@workspace/db";
 import { tenantMiddleware } from "../lib/tenant";
 import { submitForApproval } from "../lib/approvalEngine";
+import { createApprovalNotification } from "../lib/approvalNotify";
 import {
   serializeSupplierPayment,
   serializeSupplierPaymentAllocation,
@@ -360,7 +361,7 @@ router.post("/supplier-payments", async (req, res, next) => {
             t.userId,
           );
           if (approvalReq) {
-            return { pendingApproval: true as const, paymentId };
+            return { pendingApproval: true as const, paymentId, approvalRequestId: approvalReq.requestId };
           }
           // Workflow exists but has no rules configured yet — revert staging
           // and fall through to the immediate apply path below.
@@ -451,6 +452,13 @@ router.post("/supplier-payments", async (req, res, next) => {
 
       const detail = await loadPaymentDetail(orgId, txResult.paymentId);
       if (txResult.pendingApproval) {
+        createApprovalNotification(
+          t.organizationId,
+          txResult.approvalRequestId,
+          "new_request",
+          `New supplier payment approval request`,
+          { submittedById: t.userId },
+        );
         res.status(202).json({ ...(detail ?? {}), approvalRequired: true });
       } else {
         res.status(201).json(detail);

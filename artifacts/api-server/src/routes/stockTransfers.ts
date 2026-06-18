@@ -25,6 +25,7 @@ import { nextOrderNumber } from "../lib/orderHelpers";
 import { toNum, toStr } from "../lib/numeric";
 import { pushStockToShopify } from "../lib/shopifyOutbound";
 import { submitForApproval } from "../lib/approvalEngine";
+import { createApprovalNotification } from "../lib/approvalNotify";
 import {
   applyBatchStockChange,
   insertBatchMovement,
@@ -955,7 +956,11 @@ router.post("/stock-transfers/:id/dispatch", async (req, res, next) => {
               eq(stockTransfersTable.organizationId, t.organizationId),
             ),
           );
-        return { kind: "pending_approval" as const };
+        return {
+          kind: "pending_approval" as const,
+          approvalRequestId: approvalResult.requestId,
+          transferRef: transfer.transferNumber,
+        };
       }
 
       await tx
@@ -1031,6 +1036,13 @@ router.post("/stock-transfers/:id/dispatch", async (req, res, next) => {
       return;
     }
     if (result.kind === "pending_approval") {
+      createApprovalNotification(
+        t.organizationId,
+        result.approvalRequestId,
+        "new_request",
+        `New stock transfer approval request: ${result.transferRef}`,
+        { submittedById: t.userId },
+      );
       const detail = await loadDetail(t.organizationId, id);
       res.status(202).json({ ...detail, approvalRequired: true });
       return;

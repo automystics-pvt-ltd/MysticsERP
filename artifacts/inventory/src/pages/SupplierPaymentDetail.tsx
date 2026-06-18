@@ -50,6 +50,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { ApprovalActions } from "@/components/ApprovalActions";
+import { useCanI } from "@/hooks/usePermissions";
 
 export default function SupplierPaymentDetail() {
   const { id } = useParams();
@@ -64,6 +66,8 @@ export default function SupplierPaymentDetail() {
       queryKey: getGetSupplierPaymentQueryKey(paymentId),
     },
   });
+
+  const canApprovePayment = useCanI("supplier_payments", "approve");
 
   const [downloading, setDownloading] = useState(false);
 
@@ -288,6 +292,16 @@ export default function SupplierPaymentDetail() {
             </div>
           }
         />
+
+      {(payment as { status?: string }).status === "pending_approval" && (
+        <ApprovalActions
+          module="supplier_payments"
+          recordId={paymentId}
+          canApprove={canApprovePayment}
+          onApproved={() => queryClient.invalidateQueries({ queryKey: getGetSupplierPaymentQueryKey(paymentId) })}
+          onRejected={() => queryClient.invalidateQueries({ queryKey: getGetSupplierPaymentQueryKey(paymentId) })}
+        />
+      )}
 
       <div className="grid md:grid-cols-2 gap-6">
         <Card>

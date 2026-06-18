@@ -122,6 +122,8 @@ export function ApprovalActions({
       refetch();
       queryClient.invalidateQueries({ queryKey: ["approval-status", module, recordId] });
       queryClient.invalidateQueries({ queryKey: ["approval-history", module, recordId] });
+      queryClient.invalidateQueries({ queryKey: ["approval-notifications"] });
+      queryClient.invalidateQueries({ queryKey: ["approval-requests"] });
       toast({
         title:
           action === "approve"
@@ -131,7 +133,7 @@ export function ApprovalActions({
             : "Request sent back",
       });
       if (action === "approve") onApproved?.();
-      if (action === "reject") onRejected?.();
+      if (action === "reject" || action === "send_back") onRejected?.();
     },
     onError: (e) => {
       const msg =

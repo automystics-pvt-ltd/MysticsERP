@@ -29,6 +29,7 @@ import { toNum, toStr } from "../lib/numeric";
 import { pushStockToShopify } from "../lib/shopifyOutbound";
 import { loadGoodsReceiptsForOrder } from "./goodsReceipts";
 import { submitForApproval } from "../lib/approvalEngine";
+import { createApprovalNotification } from "../lib/approvalNotify";
 
 // `received` and `partially_received` are derived server-side from
 // recorded goods receipts — clients cannot set them directly via PATCH /status.
@@ -708,7 +709,7 @@ router.patch("/purchase-orders/:id/status", async (req, res, next) => {
                 eq(purchaseOrdersTable.id, id),
               ),
             );
-          return { pendingApproval: true };
+          return { pendingApproval: true as const, approvalRequestId: wf.requestId };
         }
         await tx
           .update(purchaseOrdersTable)
@@ -719,10 +720,17 @@ router.patch("/purchase-orders/:id/status", async (req, res, next) => {
               eq(purchaseOrdersTable.id, id),
             ),
           );
-        return { pendingApproval: false };
+        return { pendingApproval: false as const };
       });
       const detail = await loadDetail(t.organizationId, id);
       if (approvalResult.pendingApproval) {
+        createApprovalNotification(
+          t.organizationId,
+          approvalResult.approvalRequestId,
+          "new_request",
+          `New purchase order approval request: ${order.orderNumber}`,
+          { submittedById: t.userId },
+        );
         res.status(202).json({ ...detail, approvalRequired: true });
       } else {
         res.json(detail);

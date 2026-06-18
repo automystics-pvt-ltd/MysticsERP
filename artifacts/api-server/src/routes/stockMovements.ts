@@ -13,6 +13,7 @@ import {
 } from "@workspace/db";
 import { tenantMiddleware, assertOwnership } from "../lib/tenant";
 import { submitForApproval } from "../lib/approvalEngine";
+import { createApprovalNotification } from "../lib/approvalNotify";
 import { toNum, toStr } from "../lib/numeric";
 import { serializeStockMovement } from "../lib/serializers";
 
@@ -305,7 +306,7 @@ router.post("/stock-movements", async (req, res, next) => {
           t.userId,
         );
         if (approvalReq) {
-          return { kind: "pending_approval" as const, stageId };
+          return { kind: "pending_approval" as const, stageId, approvalRequestId: approvalReq.requestId };
         }
         // Workflow exists but has no rules configured yet — revert staging
         // and fall through to the immediate apply path below.
@@ -381,6 +382,13 @@ router.post("/stock-movements", async (req, res, next) => {
     });
 
     if (result.kind === "pending_approval") {
+      createApprovalNotification(
+        t.organizationId,
+        result.approvalRequestId,
+        "new_request",
+        `New write-off approval request`,
+        { submittedById: t.userId },
+      );
       res.status(202).json({ ok: true, status: "pending_approval", stageId: result.stageId });
       return;
     }
