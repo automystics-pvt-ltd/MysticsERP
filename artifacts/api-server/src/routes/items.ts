@@ -90,11 +90,60 @@ async function variantCountsFor(
       and(
         eq(itemsTable.organizationId, orgId),
         inArray(itemsTable.parentItemId, parentIds),
+        // Only count active (non-archived) variants so deleted variants
+        // don't inflate the parent's displayed variant count.
+        sql`${itemsTable.archivedAt} IS NULL`,
       ),
     )
     .groupBy(itemsTable.parentItemId);
   for (const r of rows) {
     if (r.parentItemId != null) map.set(r.parentItemId, Number(r.c));
+  }
+  return map;
+}
+
+/**
+ * For each variant-parent id, return the sum of stock across all
+ * active (non-archived) variant children at non-virtual warehouses.
+ * Used to surface a meaningful "Total Stock" for parent rows in both
+ * the list and detail endpoints.
+ */
+async function variantParentTotalStockFor(
+  orgId: number,
+  parentIds: number[],
+): Promise<Map<number, number>> {
+  const map = new Map<number, number>();
+  if (parentIds.length === 0) return map;
+  const rows = await db
+    .select({
+      parentItemId: itemsTable.parentItemId,
+      qty: sql<string>`COALESCE(SUM(${itemWarehouseStockTable.quantity}), 0)`,
+    })
+    .from(itemsTable)
+    .innerJoin(
+      itemWarehouseStockTable,
+      and(
+        eq(itemWarehouseStockTable.itemId, itemsTable.id),
+        eq(itemWarehouseStockTable.organizationId, orgId),
+      ),
+    )
+    .innerJoin(
+      warehousesTable,
+      and(
+        eq(warehousesTable.id, itemWarehouseStockTable.warehouseId),
+        eq(warehousesTable.isVirtual, false),
+      ),
+    )
+    .where(
+      and(
+        eq(itemsTable.organizationId, orgId),
+        inArray(itemsTable.parentItemId, parentIds),
+        sql`${itemsTable.archivedAt} IS NULL`,
+      ),
+    )
+    .groupBy(itemsTable.parentItemId);
+  for (const r of rows) {
+    if (r.parentItemId != null) map.set(r.parentItemId, toNum(r.qty));
   }
   return map;
 }
@@ -218,6 +267,15 @@ router.get("/items", async (req, res, next) => {
       .filter((r) => r.hasVariants)
       .map((r) => r.id);
     const vcountMap = await variantCountsFor(t.organizationId, parentIds);
+    // Roll up active variant children's stock into each parent's total.
+    // Parents have no item_warehouse_stock rows of their own, so without
+    // this step they always show 0 in the list.
+    if (parentIds.length > 0) {
+      const variantStocks = await variantParentTotalStockFor(t.organizationId, parentIds);
+      for (const pid of parentIds) {
+        stockMap.set(pid, variantStocks.get(pid) ?? 0);
+      }
+    }
     // Bundles have no physical stock — replace their totals with the
     // derived "how many bundles can I assemble" figure.
     const bundleIds = rows.filter((r) => r.isBundle).map((r) => r.id);
@@ -1855,6 +1913,11 @@ router.get("/items/:id", async (req, res, next) => {
         stockByWarehouse: perWh.get(c.id) ?? [],
       }));
       variantCount = childRows.length;
+      // For a parent item, totalStock = sum of all active variant stocks.
+      // The parent has no item_warehouse_stock rows of its own, so the
+      // earlier reduce() over stockRows already yielded 0; override it here
+      // with the real aggregate so the detail page header shows a useful number.
+      total = Array.from(stockTotals.values()).reduce((s, v) => s + v, 0);
     }
 
     const stockByWarehouse = item.isBundle
@@ -2786,21 +2849,28 @@ router.post("/items/:id/variants", async (req, res, next) => {
           .returning();
         created.push(row!);
         const wh = p.openingWarehouseId ?? defaultWh;
-        await tx.insert(itemWarehouseStockTable).values({
-          organizationId: t.organizationId,
-          itemId: row!.id,
-          warehouseId: wh,
-          quantity: toStr(p.openingStock),
-        });
-        if (p.openingStock > 0) {
-          await tx.insert(stockMovementsTable).values({
+        // Only write a stock row when a warehouse is available. If no
+        // warehouse id can be resolved (no default warehouse and none
+        // explicitly supplied) we skip the insertion rather than crashing
+        // on a NOT NULL constraint violation. The variant is still created
+        // and stock can be adjusted later via POST /items/:id/adjust-stock.
+        if (wh != null) {
+          await tx.insert(itemWarehouseStockTable).values({
             organizationId: t.organizationId,
             itemId: row!.id,
             warehouseId: wh,
-            movementType: "opening",
             quantity: toStr(p.openingStock),
-            notes: "Opening stock (variant)",
           });
+          if (p.openingStock > 0) {
+            await tx.insert(stockMovementsTable).values({
+              organizationId: t.organizationId,
+              itemId: row!.id,
+              warehouseId: wh,
+              movementType: "opening",
+              quantity: toStr(p.openingStock),
+              notes: "Opening stock (variant)",
+            });
+          }
         }
       }
       return created;
