@@ -264,18 +264,68 @@ export async function ensureTenant(
 
   const orgName = userRow.name ? `${userRow.name}'s Workspace` : "My Workspace";
   const slugSeed = slugify(userRow.name ?? userRow.email.split("@")[0]!, "workspace");
-  const slug = await uniqueSlug(slugSeed);
   const trialEnds = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
 
-  const orgInserted = await db
-    .insert(organizationsTable)
-    .values({
-      name: orgName,
-      slug,
-      trialEndsAt: trialEnds,
-    })
-    .returning();
-  const org = orgInserted[0]!;
+  // Guard against the race condition where two concurrent requests both see
+  // "no memberships" at the same time and both try to bootstrap. The second
+  // one hits the unique index on organizations.slug and would otherwise 500.
+  // We retry up to 5 times; on each collision we first check whether THIS
+  // user's org was already created by the winning concurrent request and, if
+  // so, adopt it rather than retrying the slug.
+  let org: typeof organizationsTable.$inferSelect | undefined;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const slug = await uniqueSlug(slugSeed);
+    try {
+      const orgInserted = await db
+        .insert(organizationsTable)
+        .values({
+          name: orgName,
+          slug,
+          trialEndsAt: trialEnds,
+        })
+        .returning();
+      org = orgInserted[0]!;
+      break;
+    } catch (err) {
+      // Check for Postgres unique-violation (23505) — the slug was taken
+      // between the SELECT in uniqueSlug and our INSERT.
+      const pgCode =
+        (err as { code?: string })?.code ??
+        (err as { cause?: { code?: string } })?.cause?.code;
+      if (pgCode !== "23505") throw err;
+
+      // A concurrent request may have already bootstrapped THIS user's org.
+      // If so, re-use it instead of spinning on a new slug.
+      const raceMembers = await db
+        .select()
+        // org-scope-allow: auth bootstrap re-check after concurrent-insert race.
+        .from(organizationMembersTable)
+        .where(eq(organizationMembersTable.userId, userRow.id))
+        .orderBy(organizationMembersTable.id);
+      if (raceMembers.length > 0) {
+        const chosen = raceMembers[0]!;
+        const racePerms = await resolvePermissions(
+          chosen.organizationId,
+          normalizeRole(chosen.role),
+        );
+        return {
+          userId: userRow.id,
+          organizationId: chosen.organizationId,
+          role: chosen.role,
+          isSuperAdmin: userRow.isSuperAdmin ?? false,
+          canEditBills: chosen.canEditBills,
+          canEditStocks: chosen.canEditStocks,
+          permissions: racePerms,
+          can: (m, a) => can(racePerms, m, a),
+        };
+      }
+      // Genuine slug collision with a different org — loop and try a new slug.
+    }
+  }
+
+  if (!org) {
+    throw new Error("Failed to create organization after 5 attempts (slug collision)");
+  }
 
   await db.insert(organizationMembersTable).values({
     userId: userRow.id,
