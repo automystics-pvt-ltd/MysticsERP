@@ -414,12 +414,12 @@ export default function Items() {
 
   const { values: filterValues, set: setFilter, reset: resetItemFilters, debouncedSearch } = useListFilters({
     search: "",
-    cat: "",
+    cat: "all",
     brand: "all",
     stock: "all",
   });
   const search = filterValues.search;
-  const categoryFilter = filterValues.cat;
+  const categoryFilter = filterValues.cat === "all" ? "" : filterValues.cat;
   const brandFilter = filterValues.brand === "all" ? "" : filterValues.brand;
   const stockFilter = filterValues.stock as "all" | "in-stock" | "low-stock" | "out-of-stock";
   // Warehouse filter — last selection remembered in localStorage.
@@ -594,13 +594,11 @@ export default function Items() {
   }
 
   const itemExtraFilterCount = [
-    !!categoryFilter,
     warehouseFilter !== "all",
     priceMin !== "" || priceMax !== "",
   ].filter(Boolean).length;
 
   const itemActiveChips: FilterChip[] = [
-    ...(categoryFilter ? [{ key: "cat", label: `Category: ${categoryFilter}`, onRemove: () => { setFilter("cat", ""); setPage(1); } }] : []),
     ...(warehouseFilter !== "all" && scopedWarehouseName ? [{ key: "wh", label: `Warehouse: ${scopedWarehouseName}`, onRemove: () => setWarehouseFilterState("all") }] : []),
     ...((priceMin || priceMax) ? [{ key: "price", label: `Price: ${priceMin ? `₹${priceMin}` : "any"} – ${priceMax ? `₹${priceMax}` : "any"}`, onRemove: () => { setPriceMin(""); setPriceMax(""); } }] : []),
   ];
@@ -1145,16 +1143,23 @@ export default function Items() {
             <Can module="items" action="import">
               <Button
                 variant="outline"
+                size="sm"
                 onClick={() => setBulkImportOpen(true)}
                 data-testid="btn-bulk-import-items"
               >
-                <Upload className="mr-2 h-4 w-4" />
+                <Upload className="h-4 w-4 mr-1.5" />
                 Import
               </Button>
             </Can>
+            <ReportExportButton
+              filename="items"
+              columns={exportColumns}
+              rows={exportRows}
+              hidePdf
+            />
             <Can module="items" action="create">
               <Button onClick={handleCreate} data-testid="btn-create-item">
-                <Plus className="mr-2 h-4 w-4" />
+                <Plus className="h-4 w-4 mr-1.5" />
                 Add Item
               </Button>
             </Can>
@@ -1214,6 +1219,10 @@ export default function Items() {
         searchPlaceholder="Search items by name or SKU..."
         filterDefs={[
           {
+            key: "cat", label: "Category", type: "select",
+            options: categoryOptions.map((c) => ({ value: c, label: c })),
+          },
+          {
             key: "brand", label: "Brand", type: "select",
             options: brandOptions.map((b) => ({ value: b, label: b })),
           },
@@ -1268,26 +1277,12 @@ export default function Items() {
             >
               <ScanLine className="h-4 w-4" />
             </Button>
-            <Select
-              value={categoryFilter || "__all__"}
-              onValueChange={(v) => { setFilter("cat", v === "__all__" ? "" : v); setPage(1); }}
-            >
-              <SelectTrigger className="w-36 h-9 text-sm" data-testid="select-items-category">
-                <SelectValue placeholder="All categories" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItemUI value="__all__">All categories</SelectItemUI>
-                {categoryOptions.map((c) => (
-                  <SelectItemUI key={c} value={c}>{c}</SelectItemUI>
-                ))}
-              </SelectContent>
-            </Select>
             {visibleWarehouses.length > 1 && (
               <Select
                 value={warehouseFilter === "all" ? "all" : String(warehouseFilter)}
                 onValueChange={(v) => setWarehouseFilter(v === "all" ? "all" : Number(v))}
               >
-                <SelectTrigger className="w-36 h-9 text-sm" data-testid="select-items-warehouse">
+                <SelectTrigger className="w-40 h-9 text-sm" data-testid="select-items-warehouse">
                   <Store className="h-4 w-4 mr-1 text-muted-foreground shrink-0" />
                   <SelectValue placeholder="All warehouses" />
                 </SelectTrigger>
@@ -1305,7 +1300,10 @@ export default function Items() {
       />
 
       {selectedIds.size > 0 && (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
+          <span className="text-sm text-muted-foreground mr-1">
+            {selectedIds.size} selected
+          </span>
           <Can module="items" action="edit">
             <Button
               variant="outline"
@@ -1313,19 +1311,20 @@ export default function Items() {
               onClick={() => setBulkEditOpen(true)}
               data-testid="btn-bulk-edit-items"
             >
-              <Edit className="mr-2 h-4 w-4" />
-              Edit ({selectedIds.size})
+              <Edit className="mr-1.5 h-3.5 w-3.5" />
+              Edit
             </Button>
           </Can>
           {canBulkDelete && (
             <Button
-              variant="destructive"
+              variant="outline"
               size="sm"
+              className="text-destructive hover:text-destructive border-destructive/30 hover:bg-destructive/10"
               onClick={() => setBulkDeleteConfirmOpen(true)}
               data-testid="btn-bulk-delete-items"
             >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete ({selectedIds.size})
+              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+              Delete
             </Button>
           )}
           <ReportExportButton
@@ -1333,16 +1332,6 @@ export default function Items() {
             columns={exportColumns}
             rows={exportRows}
             selectedRows={selectedExportRows}
-            hidePdf
-          />
-        </div>
-      )}
-      {selectedIds.size === 0 && (
-        <div className="flex justify-end">
-          <ReportExportButton
-            filename="items"
-            columns={exportColumns}
-            rows={exportRows}
             hidePdf
           />
         </div>
@@ -1394,8 +1383,10 @@ export default function Items() {
               ))
             ) : (itemsPage?.total ?? 0) === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="h-24 text-center">
-                  No items found.
+                <TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
+                  {search || categoryFilter || brandFilter || stockFilter !== "all" || warehouseFilter !== "all" || priceMin || priceMax
+                    ? "No items match the current filters."
+                    : "No items yet. Click \"Add Item\" to create your first product."}
                 </TableCell>
               </TableRow>
             ) : (

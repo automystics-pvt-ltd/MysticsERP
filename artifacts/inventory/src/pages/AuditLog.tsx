@@ -10,20 +10,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { ClipboardList, Search } from "lucide-react";
 import { TableSkeleton } from "@/components/TableSkeleton";
 import { TablePagination } from "@/components/TablePagination";
 import { AccessDenied } from "@/components/AccessDenied";
 import { useMyPermissions } from "@/hooks/usePermissions";
 import { format } from "date-fns";
+import { PageHeader } from "@/components/PageHeader";
+import { FilterBar } from "@/components/FilterBar";
+import { useListFilters } from "@/hooks/use-list-filters";
 
 const MODULE_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
@@ -99,11 +93,18 @@ export default function AuditLog() {
   const orgId = (org as { id?: number } | undefined)?.id;
   const { data: myPerms, isLoading: permsLoading } = useMyPermissions();
   const [page, setPage] = useState(1);
-  const [search, setSearch] = useState("");
-  const [moduleFilter, setModuleFilter] = useState<string>("all");
-  const [actorFilter, setActorFilter] = useState<string>("all");
-  const [fromDate, setFromDate] = useState<string>("");
-  const [toDate, setToDate] = useState<string>("");
+
+  const { values, set, reset, debouncedSearch } = useListFilters({
+    search: "",
+    module: "all",
+    actor: "all",
+    from: "",
+    to: "",
+  });
+  const moduleFilter = values.module;
+  const actorFilter = values.actor;
+  const fromDate = values.from;
+  const toDate = values.to;
 
   const canView =
     myPerms?.isSuperAdmin || myPerms?.permissions["settings"]?.includes("view");
@@ -122,10 +123,10 @@ export default function AuditLog() {
   });
 
   const { data, isLoading } = useQuery<AuditResponse>({
-    queryKey: ["audit-logs", orgId, page, search, moduleFilter, actorFilter, fromDate, toDate],
+    queryKey: ["audit-logs", orgId, page, debouncedSearch, moduleFilter, actorFilter, fromDate, toDate],
     queryFn: async () => {
       const params = new URLSearchParams({ page: String(page), limit: "50" });
-      if (search.trim()) params.set("search", search.trim());
+      if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
       if (moduleFilter !== "all") params.set("module", moduleFilter);
       if (actorFilter !== "all") params.set("userId", actorFilter);
       if (fromDate) params.set("from", fromDate);
@@ -140,10 +141,6 @@ export default function AuditLog() {
     enabled: !!orgId && !!canView,
   });
 
-  function handleFilterChange(setter: (v: string) => void) {
-    return (v: string) => { setter(v); setPage(1); };
-  }
-
   if (permsLoading || !myPerms) {
     return <TableSkeleton />;
   }
@@ -155,76 +152,33 @@ export default function AuditLog() {
   const members = membersData?.data ?? [];
 
   return (
-    <div className="flex flex-col gap-6 p-6">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-2">
-            <ClipboardList className="h-5 w-5 text-primary" />
-            <h1 className="text-page-title text-xl font-semibold">Audit Log</h1>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Track all administrative actions across your workspace.
-          </p>
-        </div>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Audit Log"
+        description="Track all administrative actions across your workspace."
+      />
 
-      <div className="flex flex-wrap gap-3">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
-          <Input
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Search description..."
-            className="pl-8 w-52"
-            data-testid="input-audit-search"
-          />
-        </div>
-        <Select value={moduleFilter} onValueChange={handleFilterChange(setModuleFilter)}>
-          <SelectTrigger className="w-44">
-            <SelectValue placeholder="All modules" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All modules</SelectItem>
-            {Object.entries(MODULE_LABELS).map(([k, v]) => (
-              <SelectItem key={k} value={k}>{v}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <FilterBar
+        search={values.search}
+        onSearchChange={(v) => { set("search", v); setPage(1); }}
+        searchPlaceholder="Search descriptions…"
+        filterDefs={[
+          {
+            key: "module", label: "Module", type: "select",
+            options: Object.entries(MODULE_LABELS).map(([k, v]) => ({ value: k, label: v })),
+          },
+          {
+            key: "actor", label: "Actor", type: "select",
+            options: members.map((m) => ({ value: String(m.userId), label: m.name ?? m.email })),
+          },
+          { key: "date", label: "Date range", type: "daterange", fromKey: "from", toKey: "to" },
+        ]}
+        filterValues={values}
+        onFilterChange={(k, v) => { set(k, v); setPage(1); }}
+        onReset={() => { reset(); setPage(1); }}
+      />
 
-        <Select value={actorFilter} onValueChange={handleFilterChange(setActorFilter)}>
-          <SelectTrigger className="w-52">
-            <SelectValue placeholder="All actors" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All actors</SelectItem>
-            {members.map((m) => (
-              <SelectItem key={m.userId} value={String(m.userId)}>
-                {m.name ?? m.email}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <div className="flex items-center gap-2">
-          <Input
-            type="date"
-            className="w-40"
-            value={fromDate}
-            onChange={(e) => { setFromDate(e.target.value); setPage(1); }}
-            placeholder="From date"
-          />
-          <span className="text-sm text-muted-foreground">to</span>
-          <Input
-            type="date"
-            className="w-40"
-            value={toDate}
-            onChange={(e) => { setToDate(e.target.value); setPage(1); }}
-            placeholder="To date"
-          />
-        </div>
-      </div>
-
-      <div className="rounded-lg border">
+      <div className="rounded-md border bg-card">
         <Table>
           <TableHeader>
             <TableRow>
