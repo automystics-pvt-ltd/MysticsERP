@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
 import {
   db,
   supplierPaymentsTable,
@@ -60,6 +60,15 @@ router.get("/supplier-payments", async (req, res, next) => {
     }
     if (req.query.to && typeof req.query.to === "string") {
       conds.push(lte(supplierPaymentsTable.paymentDate, req.query.to));
+    }
+    if (req.query.search && typeof req.query.search === "string") {
+      const term = `%${req.query.search}%`;
+      conds.push(
+        or(
+          ilike(suppliersTable.name, term),
+          ilike(supplierPaymentsTable.referenceNumber, term),
+        )!,
+      );
     }
 
     const basePaymentsQuery = db

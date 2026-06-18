@@ -1,17 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { TableSkeleton } from "@/components/TableSkeleton";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -27,11 +19,12 @@ import {
   Clock,
   CheckCircle2,
   AlertCircle,
-  Filter,
 } from "lucide-react";
 import { TablePagination } from "@/components/TablePagination";
 import { useListWarehouses } from "@/lib/queryKeys";
 import { listSessions, listCounters, type PosSession } from "@/lib/posSessionApi";
+import { useListFilters } from "@/hooks/use-list-filters";
+import { FilterBar } from "@/components/FilterBar";
 
 const STATUS_LABELS: Record<string, string> = {
   open: "Open",
@@ -49,6 +42,14 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
   rejected: "destructive",
 };
 
+const STATUS_OPTIONS = [
+  { value: "open", label: "Open" },
+  { value: "closed", label: "Closed" },
+  { value: "pending_approval", label: "Pending Approval" },
+  { value: "approved", label: "Approved" },
+  { value: "rejected", label: "Rejected" },
+];
+
 function fmt(iso: string | null | undefined) {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("en-IN", {
@@ -63,11 +64,6 @@ function fmt(iso: string | null | undefined) {
 function fmtCash(v: string | null | undefined) {
   if (v === null || v === undefined) return "—";
   return `₹${Number(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function todayISO() {
-  const d = new Date();
-  return d.toISOString().slice(0, 10);
 }
 
 function StatCard({
@@ -95,14 +91,19 @@ function StatCard({
 const PAGE_SIZE_OPTIONS = [15, 25, 50, 100];
 
 export default function PosSessionList() {
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [warehouseFilter, setWarehouseFilter] = useState<string>("all");
-  const [counterFilter, setCounterFilter] = useState<string>("all");
-  const [from, setFrom] = useState<string>("");
-  const [to, setTo] = useState<string>("");
-  const [showFilters, setShowFilters] = useState(false);
+  const { values, set, reset, debouncedSearch } = useListFilters({
+    search: "",
+    status: "all",
+    warehouseId: "all",
+    counterId: "all",
+    from: "",
+    to: "",
+  });
+
   const [pageSize, setPageSize] = useState(50);
   const [page, setPage] = useState(1);
+
+  useEffect(() => { setPage(1); }, [debouncedSearch, values.status, values.warehouseId, values.counterId, values.from, values.to]);
 
   const { data: warehouses = [] } = useListWarehouses();
   const { data: counters = [] } = useQuery({
@@ -110,15 +111,20 @@ export default function PosSessionList() {
     queryFn: () => listCounters(),
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const warehouseOptions = (warehouses as any[]).map((w: any) => ({ value: String(w.id), label: w.name }));
+  const counterOptions = counters.map((c) => ({ value: String(c.id), label: c.name }));
+
   const params: Parameters<typeof listSessions>[0] = { page, pageSize };
-  if (statusFilter !== "all") params.status = statusFilter;
-  if (warehouseFilter !== "all") params.warehouseId = Number(warehouseFilter);
-  if (counterFilter !== "all") params.counterId = Number(counterFilter);
-  if (from) params.from = from;
-  if (to) params.to = to + "T23:59:59";
+  if (values.status !== "all") params.status = values.status;
+  if (values.warehouseId !== "all") params.warehouseId = Number(values.warehouseId);
+  if (values.counterId !== "all") params.counterId = Number(values.counterId);
+  if (values.from) params.from = values.from;
+  if (values.to) params.to = values.to + "T23:59:59";
+  if (debouncedSearch) params.search = debouncedSearch;
 
   const { data, isLoading } = useQuery({
-    queryKey: ["pos-sessions", statusFilter, warehouseFilter, counterFilter, from, to, page, pageSize],
+    queryKey: ["pos-sessions", { ...params }],
     queryFn: () => listSessions(params),
   });
 
@@ -128,25 +134,6 @@ export default function PosSessionList() {
   const openCount = sessions.filter((s) => s.status === "open").length;
   const pendingCount = sessions.filter((s) => s.status === "pending_approval").length;
   const approvedCount = sessions.filter((s) => s.status === "approved").length;
-  const activeFilterCount = [
-    statusFilter !== "all",
-    warehouseFilter !== "all",
-    counterFilter !== "all",
-    !!from,
-    !!to,
-  ].filter(Boolean).length;
-  const hasActiveFilters = activeFilterCount > 0;
-
-  function resetPage() { setPage(1); }
-
-  function clearFilters() {
-    setStatusFilter("all");
-    setWarehouseFilter("all");
-    setCounterFilter("all");
-    setFrom("");
-    setTo("");
-    setPage(1);
-  }
 
   return (
     <div className="space-y-6">
@@ -157,28 +144,12 @@ export default function PosSessionList() {
             Manage cashier sessions and end-of-day cash reconciliation
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowFilters((v) => !v)}
-            className={hasActiveFilters ? "border-primary text-primary" : ""}
-          >
-            <Filter className="h-4 w-4 mr-2" />
-            Filters
-            {hasActiveFilters && (
-              <span className="ml-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] text-primary-foreground font-bold">
-                {activeFilterCount}
-              </span>
-            )}
+        <Link href="/pos/sessions/new">
+          <Button>
+            <Plus className="h-4 w-4 mr-2" />
+            Open Session
           </Button>
-          <Link href="/pos/sessions/new">
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Open Session
-            </Button>
-          </Link>
-        </div>
+        </Link>
       </div>
 
       {/* Summary stats */}
@@ -189,88 +160,48 @@ export default function PosSessionList() {
         <StatCard icon={CalendarDays} label="Total Shown" value={total} />
       </div>
 
-      {/* Filters */}
-      {showFilters && (
-        <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-muted/30 px-4 py-3">
-          <div className="space-y-1">
-            <div className="text-xs font-medium text-muted-foreground">Status</div>
-            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); resetPage(); }}>
-              <SelectTrigger className="w-44 bg-background">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="open">Open</SelectItem>
-                <SelectItem value="closed">Closed</SelectItem>
-                <SelectItem value="pending_approval">Pending Approval</SelectItem>
-                <SelectItem value="approved">Approved</SelectItem>
-                <SelectItem value="rejected">Rejected</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <div className="text-xs font-medium text-muted-foreground">Warehouse</div>
-            <Select value={warehouseFilter} onValueChange={(v) => { setWarehouseFilter(v); resetPage(); }}>
-              <SelectTrigger className="w-44 bg-background">
-                <SelectValue placeholder="All Warehouses" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Warehouses</SelectItem>
-                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                {(warehouses as any[]).map((w: any) => (
-                  <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <div className="text-xs font-medium text-muted-foreground">Counter</div>
-            <Select value={counterFilter} onValueChange={(v) => { setCounterFilter(v); resetPage(); }}>
-              <SelectTrigger className="w-44 bg-background">
-                <SelectValue placeholder="All Counters" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Counters</SelectItem>
-                {counters.map((c) => (
-                  <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <div className="text-xs font-medium text-muted-foreground">From</div>
-            <Input
-              type="date"
-              value={from}
-              onChange={(e) => { setFrom(e.target.value); resetPage(); }}
-              className="w-36 bg-background"
-              max={to || todayISO()}
-            />
-          </div>
-          <div className="space-y-1">
-            <div className="text-xs font-medium text-muted-foreground">To</div>
-            <Input
-              type="date"
-              value={to}
-              onChange={(e) => { setTo(e.target.value); resetPage(); }}
-              className="w-36 bg-background"
-              min={from}
-              max={todayISO()}
-            />
-          </div>
-          {hasActiveFilters && (
-            <Button variant="ghost" size="sm" onClick={clearFilters}>
-              Clear
-            </Button>
-          )}
-        </div>
-      )}
+      <FilterBar
+        search={values.search}
+        onSearchChange={(v) => set("search", v)}
+        searchPlaceholder="Search session number…"
+        filterDefs={[
+          {
+            key: "status",
+            label: "Status",
+            type: "select",
+            options: STATUS_OPTIONS,
+          },
+          {
+            key: "warehouseId",
+            label: "Warehouse",
+            type: "select",
+            options: warehouseOptions,
+          },
+          {
+            key: "counterId",
+            label: "Counter",
+            type: "select",
+            options: counterOptions,
+          },
+          {
+            key: "sessionDate",
+            label: "Opened Date",
+            type: "daterange",
+            fromKey: "from",
+            toKey: "to",
+          },
+        ]}
+        filterValues={values}
+        onFilterChange={set}
+        onReset={reset}
+        data-testid="filter-bar-pos-sessions"
+      />
 
       {/* Pending approval banner */}
-      {pendingCount > 0 && statusFilter === "all" && (
+      {pendingCount > 0 && values.status === "all" && (
         <div
           className="flex items-center gap-2 rounded-md border border-amber-300/60 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 dark:border-amber-600/30 dark:bg-amber-950/20 dark:text-amber-200 cursor-pointer"
-          onClick={() => { setStatusFilter("pending_approval"); resetPage(); }}
+          onClick={() => { set("status", "pending_approval"); setPage(1); }}
         >
           <AlertCircle className="h-4 w-4 flex-shrink-0 text-amber-500" />
           <span>
@@ -301,9 +232,7 @@ export default function PosSessionList() {
             ) : sessions.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={9} className="text-center text-muted-foreground py-12">
-                  {hasActiveFilters
-                    ? "No sessions match the current filters."
-                    : "No sessions found. Open a session to start tracking."}
+                  No sessions match the current filters.
                 </TableCell>
               </TableRow>
             ) : (
@@ -342,7 +271,6 @@ export default function PosSessionList() {
             )}
           </TableBody>
         </Table>
-
       </div>
 
       <TablePagination

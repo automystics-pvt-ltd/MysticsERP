@@ -19,6 +19,9 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { Package, Plus, ArrowRight, ExternalLink } from "lucide-react";
+import { useListFilters } from "@/hooks/use-list-filters";
+import { FilterBar } from "@/components/FilterBar";
+import { useListWarehouses } from "@/lib/queryKeys";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -173,14 +176,13 @@ function NewFulfillmentDialog({
   );
 }
 
-// ─── Tabs ─────────────────────────────────────────────────────────────────────
+// ─── Status filter options ─────────────────────────────────────────────────────
 
-const TABS = [
-  { label: "All", value: "all" },
-  { label: "Picking", value: "picking" },
-  { label: "Picked", value: "picked" },
-  { label: "Packed", value: "packed" },
-  { label: "Dispatched", value: "dispatched" },
+const STATUS_OPTIONS = [
+  { value: "picking", label: "Picking" },
+  { value: "picked", label: "Picked" },
+  { value: "packed", label: "Packed" },
+  { value: "dispatched", label: "Dispatched" },
 ];
 
 // ─── Main page ────────────────────────────────────────────────────────────────
@@ -188,14 +190,27 @@ const TABS = [
 export default function Fulfillments() {
   const [, navigate] = useLocation();
   const qc = useQueryClient();
-  const [tab, setTab] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
 
+  const { values, set, reset, debouncedSearch } = useListFilters({
+    search: "",
+    status: "all",
+    warehouseId: "all",
+  });
+
+  const { data: warehouses = [] } = useListWarehouses();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const warehouseOptions = (warehouses as any[]).map((w: any) => ({ value: String(w.id), label: w.name }));
+
   const { data, isLoading } = useQuery<Fulfillment[]>({
-    queryKey: ["fulfillments", tab],
+    queryKey: ["fulfillments", { search: debouncedSearch, status: values.status, warehouseId: values.warehouseId }],
     queryFn: () => {
-      const qs = tab !== "all" ? `?status=${tab}` : "";
-      return customFetch<Fulfillment[]>(`/api/fulfillments${qs}`);
+      const qs = new URLSearchParams();
+      if (values.status !== "all") qs.set("status", values.status);
+      if (values.warehouseId !== "all") qs.set("warehouseId", values.warehouseId);
+      if (debouncedSearch) qs.set("search", debouncedSearch);
+      const q = qs.toString();
+      return customFetch<Fulfillment[]>(`/api/fulfillments${q ? `?${q}` : ""}`);
     },
   });
 
@@ -220,21 +235,30 @@ export default function Fulfillments() {
         }
       />
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-4 border-b">
-        {TABS.map((t) => (
-          <button
-            key={t.value}
-            onClick={() => setTab(t.value)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              tab === t.value
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="mb-4">
+        <FilterBar
+          search={values.search}
+          onSearchChange={(v) => set("search", v)}
+          searchPlaceholder="Search fulfillment # or order #…"
+          filterDefs={[
+            {
+              key: "status",
+              label: "Status",
+              type: "select",
+              options: STATUS_OPTIONS,
+            },
+            {
+              key: "warehouseId",
+              label: "Warehouse",
+              type: "select",
+              options: warehouseOptions,
+            },
+          ]}
+          filterValues={values}
+          onFilterChange={set}
+          onReset={reset}
+          data-testid="filter-bar-fulfillments"
+        />
       </div>
 
       {/* Table */}

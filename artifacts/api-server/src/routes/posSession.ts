@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq, desc, asc, gte, lte, inArray, sql } from "drizzle-orm";
+import { and, eq, desc, asc, gte, ilike, lte, inArray, or, sql } from "drizzle-orm";
 import {
   db,
   posCountersTable,
@@ -270,7 +270,7 @@ router.delete("/pos/counters/:id", async (req, res, next) => {
 router.get("/pos/sessions", async (req, res, next) => {
   try {
     const t = req.tenant!;
-    const { status, warehouseId, counterId, cashierId, from, to } = req.query as Record<string, string | undefined>;
+    const { status, warehouseId, counterId, cashierId, from, to, search } = req.query as Record<string, string | undefined>;
 
     const conditions = [eq(posSessionsTable.organizationId, t.organizationId)];
     if (status) conditions.push(eq(posSessionsTable.status, status));
@@ -279,6 +279,7 @@ router.get("/pos/sessions", async (req, res, next) => {
     if (cashierId) conditions.push(eq(posSessionsTable.cashierId, Number(cashierId)));
     if (from) conditions.push(gte(posSessionsTable.openedAt, new Date(from)));
     if (to) conditions.push(lte(posSessionsTable.openedAt, new Date(to)));
+    if (search) conditions.push(ilike(posSessionsTable.sessionNumber, `%${search}%`));
 
     const cashierUser = db.select({ id: usersTable.id, name: usersTable.name, email: usersTable.email })
       .from(usersTable) // org-scope-allow: global users table – no organizationId column

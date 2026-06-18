@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import {
   db,
   salesOrdersTable,
@@ -193,6 +193,9 @@ router.get("/fulfillments", async (req, res, next) => {
   try {
     const t = req.tenant!;
     const status = typeof req.query.status === "string" ? req.query.status : undefined;
+    const search = typeof req.query.search === "string" ? req.query.search.trim() : undefined;
+    const warehouseIdRaw = typeof req.query.warehouseId === "string" ? Number(req.query.warehouseId) : undefined;
+    const warehouseId = warehouseIdRaw && Number.isFinite(warehouseIdRaw) ? warehouseIdRaw : undefined;
 
     const rows = await db
       .select({
@@ -208,6 +211,13 @@ router.get("/fulfillments", async (req, res, next) => {
         and(
           eq(fulfillmentsTable.organizationId, t.organizationId),
           status ? eq(fulfillmentsTable.status, status) : undefined,
+          warehouseId ? eq(fulfillmentsTable.warehouseId, warehouseId) : undefined,
+          search
+            ? or(
+                ilike(fulfillmentsTable.fulfillmentNumber, `%${search}%`),
+                ilike(salesOrdersTable.orderNumber, `%${search}%`),
+              )
+            : undefined,
         ),
       )
       .orderBy(desc(fulfillmentsTable.createdAt));

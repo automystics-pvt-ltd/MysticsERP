@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "wouter";
+import { useEffect, useState } from "react";
+import { Link } from "wouter";
 import { Can } from "@/components/Can";
 import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
@@ -8,15 +8,6 @@ import {
   useListSuppliers,
 } from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -31,62 +22,60 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { TableSkeleton } from "@/components/TableSkeleton";
 import { TablePagination } from "@/components/TablePagination";
 import { RecordSupplierPaymentDialog } from "@/components/RecordSupplierPaymentDialog";
+import { useListFilters } from "@/hooks/use-list-filters";
+import { FilterBar } from "@/components/FilterBar";
 
 const PAGE_SIZE_OPTIONS = [15, 25, 50, 100];
 
-function useQueryString() {
-  const [location] = useLocation();
-  return useMemo(() => {
-    const idx = location.indexOf("?");
-    return new URLSearchParams(idx >= 0 ? location.slice(idx + 1) : "");
-  }, [location]);
-}
+const MODE_OPTIONS = [
+  { value: "cash", label: "Cash" },
+  { value: "bank", label: "Bank Transfer" },
+  { value: "upi", label: "UPI" },
+  { value: "cheque", label: "Cheque" },
+  { value: "razorpay", label: "Razorpay" },
+  { value: "other", label: "Other" },
+];
 
 export default function SupplierPayments() {
-  const qs = useQueryString();
-  const initialSupplierId = qs.get("supplierId");
+  const { values, set, reset, debouncedSearch } = useListFilters({
+    search: "",
+    supplierId: "all",
+    mode: "all",
+    from: "",
+    to: "",
+  });
 
-  const [supplierFilter, setSupplierFilter] = useState<string>(
-    initialSupplierId ?? "all",
-  );
-  const [modeFilter, setModeFilter] = useState<string>("all");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
   const [recordOpen, setRecordOpen] = useState(false);
   const [pageSize, setPageSize] = useState(15);
   const [page, setPage] = useState(1);
 
-  useEffect(() => setPage(1), [supplierFilter, modeFilter, from, to]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, values.supplierId, values.mode, values.from, values.to]);
 
-  useEffect(() => {
-    if (initialSupplierId) setSupplierFilter(initialSupplierId);
-  }, [initialSupplierId]);
+  const { data: suppliersData } = useListSuppliers({});
+  const suppliers = suppliersData?.suppliers ?? [];
 
-  const { data: suppliers } = useListSuppliers({});
+  const supplierIdNum = values.supplierId !== "all" ? Number(values.supplierId) : null;
+  const selectedSupplier = suppliers.find((s) => s.id === supplierIdNum);
+  const supplierOptions = suppliers.map((s) => ({ value: String(s.id), label: s.name }));
+
+  const queryParams = {
+    page,
+    pageSize,
+    supplierId: supplierIdNum ?? undefined,
+    mode: values.mode !== "all" ? values.mode : undefined,
+    from: values.from || undefined,
+    to: values.to || undefined,
+    search: debouncedSearch || undefined,
+  };
 
   const { data, isLoading } = useQuery({
-    queryKey: [
-      "supplier-payments-paginated",
-      { page, pageSize, supplierFilter, modeFilter, from, to },
-    ],
-    queryFn: () =>
-      fetchSupplierPaymentsPaginated({
-        page,
-        pageSize,
-        supplierId: supplierFilter !== "all" ? Number(supplierFilter) : undefined,
-        mode: modeFilter !== "all" ? modeFilter : undefined,
-        from: from || undefined,
-        to: to || undefined,
-      }),
+    queryKey: ["supplier-payments-paginated", queryParams],
+    queryFn: () => fetchSupplierPaymentsPaginated(queryParams),
     placeholderData: (prev) => prev,
   });
 
   const payments = data?.payments ?? [];
   const total = data?.total ?? 0;
-
-  const supplierIdNum =
-    supplierFilter !== "all" ? Number(supplierFilter) : null;
-  const selectedSupplier = suppliers?.suppliers.find((s) => s.id === supplierIdNum);
 
   return (
     <div className="space-y-6">
@@ -107,59 +96,36 @@ export default function SupplierPayments() {
         }
       />
 
-      <div className="bg-card border rounded-lg p-4 grid gap-4 md:grid-cols-4">
-        <div className="space-y-1.5">
-          <Label>Supplier</Label>
-          <Select value={supplierFilter} onValueChange={setSupplierFilter}>
-            <SelectTrigger data-testid="select-payments-supplier">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All suppliers</SelectItem>
-              {suppliers?.suppliers.map((s) => (
-                <SelectItem key={s.id} value={String(s.id)}>
-                  {s.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5">
-          <Label>Mode</Label>
-          <Select value={modeFilter} onValueChange={setModeFilter}>
-            <SelectTrigger data-testid="select-payments-mode">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All modes</SelectItem>
-              <SelectItem value="cash">Cash</SelectItem>
-              <SelectItem value="bank">Bank</SelectItem>
-              <SelectItem value="upi">UPI</SelectItem>
-              <SelectItem value="cheque">Cheque</SelectItem>
-              <SelectItem value="razorpay">Razorpay</SelectItem>
-              <SelectItem value="other">Other</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5">
-          <Label>From</Label>
-          <Input
-            type="date"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            data-testid="input-payments-from"
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label>To</Label>
-          <Input
-            type="date"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            data-testid="input-payments-to"
-          />
-        </div>
-      </div>
+      <FilterBar
+        search={values.search}
+        onSearchChange={(v) => set("search", v)}
+        searchPlaceholder="Search supplier or reference…"
+        filterDefs={[
+          {
+            key: "supplierId",
+            label: "Supplier",
+            type: "select",
+            options: supplierOptions,
+          },
+          {
+            key: "mode",
+            label: "Mode",
+            type: "select",
+            options: MODE_OPTIONS,
+          },
+          {
+            key: "paymentDate",
+            label: "Payment Date",
+            type: "daterange",
+            fromKey: "from",
+            toKey: "to",
+          },
+        ]}
+        filterValues={values}
+        onFilterChange={set}
+        onReset={reset}
+        data-testid="filter-bar-supplier-payments"
+      />
 
       <div className="rounded-md border bg-card">
         <Table>
@@ -197,66 +163,63 @@ export default function SupplierPayments() {
               <TableSkeleton rows={5} cols={7} />
             ) : payments.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={7}
-                  className="h-24 text-center text-muted-foreground"
-                >
-                  No payments yet.
+                <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                  No payments match your filters.
                 </TableCell>
               </TableRow>
             ) : (
               payments.map((p) => {
                 const applied = Math.max(0, p.amount - p.unapplied);
                 return (
-                <TableRow
-                  key={p.id}
-                  data-testid={`row-supplier-payment-${p.id}`}
-                  className="cursor-pointer hover:bg-muted/40"
-                >
-                  <TableCell>
-                    <Link href={`/supplier-payments/${p.id}`} className="block">
-                      {formatDate(p.paymentDate)}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <Link href={`/supplier-payments/${p.id}`} className="block">
-                      {p.supplierName}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="capitalize">
-                    <Link href={`/supplier-payments/${p.id}`} className="block">
-                      {p.mode}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <Link href={`/supplier-payments/${p.id}`} className="block">
-                      {p.referenceNumber || "-"}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="text-right font-medium">
-                    <Link href={`/supplier-payments/${p.id}`} className="block">
-                      {formatCurrency(p.amount)}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Link href={`/supplier-payments/${p.id}`} className="block">
-                      {applied > 0 ? (
-                        <span className="font-medium">{formatCurrency(applied)}</span>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Link href={`/supplier-payments/${p.id}`} className="block">
-                      {p.unapplied > 0 ? (
-                        <span className="text-amber-600 font-medium">{formatCurrency(p.unapplied)}</span>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </Link>
-                  </TableCell>
-                </TableRow>
+                  <TableRow
+                    key={p.id}
+                    data-testid={`row-supplier-payment-${p.id}`}
+                    className="cursor-pointer hover:bg-muted/40"
+                  >
+                    <TableCell>
+                      <Link href={`/supplier-payments/${p.id}`} className="block">
+                        {formatDate(p.paymentDate)}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      <Link href={`/supplier-payments/${p.id}`} className="block">
+                        {p.supplierName}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="capitalize">
+                      <Link href={`/supplier-payments/${p.id}`} className="block">
+                        {p.mode}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      <Link href={`/supplier-payments/${p.id}`} className="block">
+                        {p.referenceNumber || "—"}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      <Link href={`/supplier-payments/${p.id}`} className="block">
+                        {formatCurrency(p.amount)}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Link href={`/supplier-payments/${p.id}`} className="block">
+                        {applied > 0 ? (
+                          <span className="font-medium">{formatCurrency(applied)}</span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Link href={`/supplier-payments/${p.id}`} className="block">
+                        {p.unapplied > 0 ? (
+                          <span className="text-amber-600 font-medium">{formatCurrency(p.unapplied)}</span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </Link>
+                    </TableCell>
+                  </TableRow>
                 );
               })
             )}

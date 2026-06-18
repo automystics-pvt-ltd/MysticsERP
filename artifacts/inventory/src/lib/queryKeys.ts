@@ -363,6 +363,7 @@ export async function fetchSupplierPaymentsPaginated(params: {
   mode?: string;
   from?: string;
   to?: string;
+  search?: string;
 }): Promise<SupplierPaymentsPage> {
   const qs = new URLSearchParams();
   if (params.page) qs.set("page", String(params.page));
@@ -371,6 +372,7 @@ export async function fetchSupplierPaymentsPaginated(params: {
   if (params.mode) qs.set("mode", params.mode);
   if (params.from) qs.set("from", params.from);
   if (params.to) qs.set("to", params.to);
+  if (params.search) qs.set("search", params.search);
   return customFetch<SupplierPaymentsPage>(`/api/supplier-payments?${qs}`);
 }
 

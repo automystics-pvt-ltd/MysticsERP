@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Link, useLocation } from "wouter";
+import { useEffect, useState } from "react";
+import { Link } from "wouter";
 import { Can } from "@/components/Can";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
@@ -10,9 +10,6 @@ import {
   type CustomerPaymentsPage,
 } from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -22,66 +19,55 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { Plus, Search, X } from "lucide-react";
+import { Plus } from "lucide-react";
 import { TableSkeleton } from "@/components/TableSkeleton";
 import { TablePagination } from "@/components/TablePagination";
 import { RecordPaymentDialog } from "@/components/RecordPaymentDialog";
-import { useMemo } from "react";
-import { useDebounce } from "@/hooks/use-debounce";
+import { useListFilters } from "@/hooks/use-list-filters";
+import { FilterBar } from "@/components/FilterBar";
 
 const PAGE_SIZE_OPTIONS = [15, 25, 50, 100];
 
-function useQueryString() {
-  const [location] = useLocation();
-  return useMemo(() => {
-    const idx = location.indexOf("?");
-    return new URLSearchParams(idx >= 0 ? location.slice(idx + 1) : "");
-  }, [location]);
-}
+const MODE_OPTIONS = [
+  { value: "cash", label: "Cash" },
+  { value: "upi", label: "UPI" },
+  { value: "card", label: "Card" },
+  { value: "bank", label: "Bank Transfer" },
+  { value: "cheque", label: "Cheque" },
+  { value: "razorpay", label: "Razorpay" },
+  { value: "other", label: "Other" },
+];
 
 export default function Payments() {
-  const qs = useQueryString();
-  const initialCustomerId = qs.get("customerId");
+  const { values, set, reset, debouncedSearch } = useListFilters({
+    search: "",
+    customerId: "all",
+    mode: "all",
+    from: "",
+    to: "",
+  });
 
-  const [search, setSearch] = useState("");
-  const [customerFilter, setCustomerFilter] = useState<string>(
-    initialCustomerId ?? "all",
-  );
-  const [modeFilter, setModeFilter] = useState<string>("all");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
   const [recordOpen, setRecordOpen] = useState(false);
   const [pageSize, setPageSize] = useState(20);
   const [page, setPage] = useState(1);
 
-  const debouncedSearch = useDebounce(search, 400);
-
-  useEffect(() => {
-    if (initialCustomerId) setCustomerFilter(initialCustomerId);
-  }, [initialCustomerId]);
-
-  const hasMounted = useRef(false);
-  useEffect(() => {
-    if (!hasMounted.current) { hasMounted.current = true; return; }
-    setPage(1);
-  }, [debouncedSearch, customerFilter, modeFilter, from, to]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, values.customerId, values.mode, values.from, values.to]);
 
   const { data: customers } = useListCustomers({});
+  const queryClient = useQueryClient();
 
-  const customerIdNum =
-    customerFilter !== "all" ? Number(customerFilter) : undefined;
+  const customerIdNum = values.customerId !== "all" ? Number(values.customerId) : undefined;
 
   const queryParams = {
     page,
     pageSize,
     customerId: customerIdNum,
-    mode: modeFilter !== "all" ? modeFilter : undefined,
-    from: from || undefined,
-    to: to || undefined,
+    mode: values.mode !== "all" ? values.mode : undefined,
+    from: values.from || undefined,
+    to: values.to || undefined,
     search: debouncedSearch || undefined,
   };
 
-  const queryClient = useQueryClient();
   const { data, isLoading } = useQuery<CustomerPaymentsPage>({
     queryKey: [...getListCustomerPaymentsQueryKey({}), queryParams],
     queryFn: () => fetchCustomerPaymentsPaginated(queryParams),
@@ -90,19 +76,8 @@ export default function Payments() {
 
   const payments = data?.payments ?? [];
   const total = data?.total ?? 0;
-
   const selectedCustomer = customers?.find((c) => c.id === customerIdNum);
-
-  const hasActiveFilters = !!(debouncedSearch || customerFilter !== "all" || modeFilter !== "all" || from || to);
-
-  function clearFilters() {
-    setSearch("");
-    setCustomerFilter("all");
-    setModeFilter("all");
-    setFrom("");
-    setTo("");
-    setPage(1);
-  }
+  const customerOptions = customers?.map((c) => ({ value: String(c.id), label: c.name })) ?? [];
 
   return (
     <div className="space-y-6">
@@ -123,103 +98,36 @@ export default function Payments() {
         }
       />
 
-      <div className="rounded-xl border border-border/60 bg-card p-4 space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-          {/* Search */}
-          <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
-            <Label className="text-xs font-medium">Search</Label>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-              <Input
-                className="pl-8 h-9 text-sm"
-                placeholder="Customer or reference…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                data-testid="input-search-payments"
-              />
-              {search && (
-                <button
-                  type="button"
-                  onClick={() => setSearch("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Customer */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">Customer</Label>
-            <Select value={customerFilter} onValueChange={(v) => { setCustomerFilter(v); setPage(1); }}>
-              <SelectTrigger className="h-9 text-sm" data-testid="select-payments-customer">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All customers</SelectItem>
-                {customers?.map((c) => (
-                  <SelectItem key={c.id} value={String(c.id)}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Mode */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">Mode</Label>
-            <Select value={modeFilter} onValueChange={(v) => { setModeFilter(v); setPage(1); }}>
-              <SelectTrigger className="h-9 text-sm" data-testid="select-payments-mode">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All modes</SelectItem>
-                <SelectItem value="cash">Cash</SelectItem>
-                <SelectItem value="upi">UPI</SelectItem>
-                <SelectItem value="card">Card</SelectItem>
-                <SelectItem value="bank">Bank</SelectItem>
-                <SelectItem value="other">Other</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Date from */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">From</Label>
-            <Input
-              type="date"
-              className="h-9 text-sm"
-              value={from}
-              onChange={(e) => { setFrom(e.target.value); setPage(1); }}
-              data-testid="input-payments-from"
-            />
-          </div>
-
-          {/* Date to */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">To</Label>
-            <Input
-              type="date"
-              className="h-9 text-sm"
-              value={to}
-              onChange={(e) => { setTo(e.target.value); setPage(1); }}
-              data-testid="input-payments-to"
-            />
-          </div>
-        </div>
-
-        {hasActiveFilters && (
-          <div className="flex items-center gap-2 pt-1">
-            <span className="text-xs text-muted-foreground">Filters active</span>
-            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1" onClick={clearFilters}>
-              <X className="h-3 w-3" />
-              Clear all
-            </Button>
-          </div>
-        )}
-      </div>
+      <FilterBar
+        search={values.search}
+        onSearchChange={(v) => set("search", v)}
+        searchPlaceholder="Search customer or reference…"
+        filterDefs={[
+          {
+            key: "customerId",
+            label: "Customer",
+            type: "select",
+            options: customerOptions,
+          },
+          {
+            key: "mode",
+            label: "Mode",
+            type: "select",
+            options: MODE_OPTIONS,
+          },
+          {
+            key: "paymentDate",
+            label: "Payment Date",
+            type: "daterange",
+            fromKey: "from",
+            toKey: "to",
+          },
+        ]}
+        filterValues={values}
+        onFilterChange={set}
+        onReset={reset}
+        data-testid="filter-bar-payments"
+      />
 
       <div className="rounded-lg border bg-card overflow-hidden">
         <Table>
@@ -237,11 +145,8 @@ export default function Payments() {
               <TableSkeleton rows={8} cols={5} />
             ) : payments.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={5}
-                  className="h-32 text-center text-muted-foreground"
-                >
-                  {hasActiveFilters ? "No payments match your filters." : "No payments yet."}
+                <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">
+                  No payments match your filters.
                 </TableCell>
               </TableRow>
             ) : (

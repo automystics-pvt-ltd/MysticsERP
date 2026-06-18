@@ -157,6 +157,7 @@ export const listSessions = (params?: {
   to?: string;
   page?: number;
   pageSize?: number;
+  search?: string;
 }) => {
   const qs = new URLSearchParams();
   if (params?.status) qs.set("status", params.status);
@@ -167,6 +168,7 @@ export const listSessions = (params?: {
   if (params?.to) qs.set("to", params.to);
   if (params?.page) qs.set("page", String(params.page));
   if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params?.search) qs.set("search", params.search);
   const q = qs.toString();
   return apiFetch<SessionsPage>(`/pos/sessions${q ? `?${q}` : ""}`);
 };
