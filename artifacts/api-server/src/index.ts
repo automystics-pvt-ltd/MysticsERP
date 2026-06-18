@@ -7,6 +7,7 @@ import {
   startBulkBatchPruneScheduler,
 } from "./routes/einvoice";
 import { reconcileOrphanedImportJobs } from "./lib/shopifyImportJobs";
+import { cleanupOrphanedArchivedStock } from "./lib/stockCleanup";
 
 const rawPort = process.env["PORT"];
 
@@ -57,6 +58,13 @@ const server = app.listen(port, (err) => {
   // polling and the merchant can retry the orders that failed.
   void reconcileOrphanedImportJobs().catch((err) => {
     logger.error({ err }, "shopify: import job recovery failed");
+  });
+
+  // Zero out item_warehouse_stock rows that still have a non-zero quantity
+  // for archived (soft-deleted) items — orphans from deletes that happened
+  // before the transactional stock-zeroing fix was deployed.
+  void cleanupOrphanedArchivedStock().catch((err) => {
+    logger.error({ err }, "stockCleanup: startup repair failed");
   });
   // Periodic prune of expired bulk batch rows. Idempotent and cheap;
   // unref'd so it never holds the event loop open by itself.
