@@ -24,7 +24,6 @@ import {
   FormControl,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -45,7 +44,16 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { formatCurrency } from "@/lib/format";
-import { Trash2, Plus, ArrowLeft, ScanBarcode, UserPlus, Loader2, AlertTriangle } from "lucide-react";
+import {
+  Trash2,
+  Plus,
+  ArrowLeft,
+  ScanBarcode,
+  UserPlus,
+  Loader2,
+  AlertTriangle,
+  X,
+} from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { ItemPicker } from "@/components/ItemPicker";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -67,6 +75,7 @@ const salesOrderSchema = z.object({
   orderDate: z.string().min(1, "Date is required"),
   expectedShipDate: z.string().optional().or(z.literal("")),
   notes: z.string().optional(),
+  termsAndConditions: z.string().optional(),
   lines: z.array(orderLineSchema).min(1, "At least one item is required"),
 });
 
@@ -87,16 +96,13 @@ export default function SalesOrderNew() {
   const showOrderDiscount = (org as any)?.showOrderDiscount ?? true;
 
   const [parentByLine, setParentByLine] = useState<Record<string, number>>({});
-  // Per-line barcode input values (keyed by field.id)
   const [barcodeByLine, setBarcodeByLine] = useState<Record<string, string>>({});
-  // Per-line loading indicator while the lookup is in flight
   const [barcodeLookingUp, setBarcodeLookingUp] = useState<Record<string, boolean>>({});
+  const [barcodeOpenLines, setBarcodeOpenLines] = useState<Set<string>>(new Set());
 
-  // Order-level discount (POS pattern)
   const [orderDiscountMode, setOrderDiscountMode] = useState<"percent" | "amount">("percent");
   const [orderDiscountValue, setOrderDiscountValue] = useState<number>(0);
 
-  // New-customer dialog state
   const [newCustomerOpen, setNewCustomerOpen] = useState(false);
   const [newCustName, setNewCustName] = useState("");
   const [newCustPhone, setNewCustPhone] = useState("");
@@ -112,7 +118,11 @@ export default function SalesOrderNew() {
       },
       onError: (err: unknown) => {
         const e = err as { data?: { error?: string } };
-        toast({ title: "Failed to create sales order", description: e.data?.error ?? "Please try again.", variant: "destructive" });
+        toast({
+          title: "Failed to create sales order",
+          description: e.data?.error ?? "Please try again.",
+          variant: "destructive",
+        });
       },
     },
   });
@@ -123,7 +133,18 @@ export default function SalesOrderNew() {
       orderDate: format(new Date(), "yyyy-MM-dd"),
       expectedShipDate: "",
       notes: "",
-      lines: [{ itemId: 0, quantity: 1, unitPrice: 0, taxRate: 18, discountPercent: 0, discountAmount: 0, description: "" }],
+      termsAndConditions: "",
+      lines: [
+        {
+          itemId: 0,
+          quantity: 1,
+          unitPrice: 0,
+          taxRate: 18,
+          discountPercent: 0,
+          discountAmount: 0,
+          description: "",
+        },
+      ],
     },
   });
 
@@ -145,13 +166,35 @@ export default function SalesOrderNew() {
 
   const items = useMemo(() => itemsRaw ?? [], [itemsRaw]);
 
+  // Only show in-stock items for sales orders (prevents selling unavailable stock).
+  // Variant parents and their children are always included so the picker works correctly.
+  const inStockItems = useMemo(() => {
+    if (!warehouseIdNum) return items;
+    return items.filter((i) => {
+      if (i.parentItemId != null) return true; // variant child — always pass through
+      if (i.hasVariants) return true; // parent with variants — stock is per-variant
+      return (i.stockAtWarehouse ?? 0) > 0;
+    });
+  }, [items, warehouseIdNum]);
+
   const previousWarehouseRef = useRef<number | undefined>(warehouseIdNum);
   useEffect(() => {
     const prev = previousWarehouseRef.current;
     if (prev !== undefined && prev !== warehouseIdNum) {
-      replace([{ itemId: 0, quantity: 1, unitPrice: 0, taxRate: 18, discountPercent: 0, discountAmount: 0, description: "" }]);
+      replace([
+        {
+          itemId: 0,
+          quantity: 1,
+          unitPrice: 0,
+          taxRate: 18,
+          discountPercent: 0,
+          discountAmount: 0,
+          description: "",
+        },
+      ]);
       setParentByLine({});
       setBarcodeByLine({});
+      setBarcodeOpenLines(new Set());
     }
     previousWarehouseRef.current = warehouseIdNum;
   }, [warehouseIdNum, replace]);
@@ -159,7 +202,7 @@ export default function SalesOrderNew() {
   const watchLines = form.watch("lines");
 
   const resolveLineDiscount = (gross: number, pct: number, flat: number) => {
-    if (pct > 0) return Math.min(gross, Math.round(gross * pct / 100 * 100) / 100);
+    if (pct > 0) return Math.min(gross, Math.round((gross * pct) / 100 * 100) / 100);
     if (flat > 0) return Math.min(gross, flat);
     return 0;
   };
@@ -168,11 +211,19 @@ export default function SalesOrderNew() {
   const { subtotal, taxTotal } = watchLines.reduce(
     (acc, line) => {
       const gross = line.quantity * line.unitPrice;
-      const disc = resolveLineDiscount(gross, line.discountPercent || 0, line.discountAmount || 0);
+      const disc = resolveLineDiscount(
+        gross,
+        line.discountPercent || 0,
+        line.discountAmount || 0,
+      );
       if (taxMode === "inclusive") {
         const lineTotal = gross - disc;
-        const lineTax = line.taxRate > 0 ? (lineTotal * line.taxRate) / (100 + line.taxRate) : 0;
-        return { subtotal: acc.subtotal + lineTotal - lineTax, taxTotal: acc.taxTotal + lineTax };
+        const lineTax =
+          line.taxRate > 0 ? (lineTotal * line.taxRate) / (100 + line.taxRate) : 0;
+        return {
+          subtotal: acc.subtotal + lineTotal - lineTax,
+          taxTotal: acc.taxTotal + lineTax,
+        };
       }
       const lineSubtotal = gross - disc;
       return {
@@ -182,11 +233,19 @@ export default function SalesOrderNew() {
     },
     { subtotal: 0, taxTotal: 0 },
   );
-  const orderDiscountComputed = orderDiscountMode === "percent"
-    ? Math.min(subtotal + taxTotal, Math.round((subtotal + taxTotal) * orderDiscountValue / 100 * 100) / 100)
-    : Math.min(subtotal + taxTotal, orderDiscountValue);
+
+  const orderDiscountComputed =
+    orderDiscountMode === "percent"
+      ? Math.min(
+          subtotal + taxTotal,
+          Math.round(((subtotal + taxTotal) * orderDiscountValue) / 100 * 100) / 100,
+        )
+      : Math.min(subtotal + taxTotal, orderDiscountValue);
   const total = subtotal + taxTotal - orderDiscountComputed;
 
+  const totalQuantity = watchLines.reduce((sum, l) => sum + (l.quantity || 0), 0);
+
+  // Per-line stock violation: qty > available stock at the selected warehouse
   const stockViolations = useMemo(() => {
     if (!items || !warehouseIdNum) return watchLines.map(() => false);
     return watchLines.map((line) => {
@@ -218,12 +277,24 @@ export default function SalesOrderNew() {
     });
   };
 
+  // Cap qty to available stock on selection, fill price/tax/description from item
   const applyItemDefaults = (index: number, itemId: number) => {
     const selectedItem = items.find((i) => i.id === itemId);
     if (selectedItem) {
       form.setValue(`lines.${index}.unitPrice`, selectedItem.salePrice);
       form.setValue(`lines.${index}.taxRate`, selectedItem.taxRate);
       form.setValue(`lines.${index}.description`, selectedItem.description || "");
+      // Cap existing qty to available stock so stock never goes negative
+      if (selectedItem.stockAtWarehouse != null) {
+        const currentQty = form.getValues(`lines.${index}.quantity`);
+        if (currentQty > selectedItem.stockAtWarehouse) {
+          form.setValue(
+            `lines.${index}.quantity`,
+            Math.max(1, selectedItem.stockAtWarehouse),
+            { shouldValidate: true },
+          );
+        }
+      }
     }
   };
 
@@ -254,26 +325,38 @@ export default function SalesOrderNew() {
     applyItemDefaults(index, variantId);
   };
 
-  // Resolve a barcode/SKU code for a given line.
+  // Cap qty at available stock whenever user changes the quantity field
+  const handleQtyChange = (index: number, rawValue: string) => {
+    const v = Number(rawValue);
+    if (!Number.isFinite(v) || v < 0) return;
+    const itemId = form.getValues(`lines.${index}.itemId`);
+    const item = items.find((i) => i.id === itemId);
+    const maxStock = item?.stockAtWarehouse ?? null;
+    const capped = maxStock != null ? Math.min(v, maxStock) : v;
+    form.setValue(`lines.${index}.quantity`, capped, { shouldValidate: true });
+  };
+
   const handleBarcodeResolve = async (index: number, fieldId: string, code: string) => {
     const trimmed = code.trim();
     if (!trimmed) return;
     setBarcodeLookingUp((prev) => ({ ...prev, [fieldId]: true }));
     try {
       const matched = await lookupItemByCode({ code: trimmed });
-      // Fill the line with the matched item
       form.setValue(`lines.${index}.itemId`, matched.id);
       form.setValue(`lines.${index}.unitPrice`, matched.salePrice);
       form.setValue(`lines.${index}.taxRate`, matched.taxRate);
       form.setValue(`lines.${index}.description`, matched.description || "");
-      // Clear parent selection if any
       setParentByLine((prev) => {
         const next = { ...prev };
         delete next[fieldId];
         return next;
       });
-      // Clear the barcode input after successful resolve
       setBarcodeByLine((prev) => ({ ...prev, [fieldId]: "" }));
+      setBarcodeOpenLines((prev) => {
+        const next = new Set(prev);
+        next.delete(fieldId);
+        return next;
+      });
       toast({ title: `Item resolved: ${matched.name}` });
     } catch {
       toast({
@@ -286,7 +369,6 @@ export default function SalesOrderNew() {
     }
   };
 
-  // Create a new customer inline and auto-select them on the order.
   const handleCreateCustomer = async () => {
     if (!newCustName.trim()) return;
     try {
@@ -305,15 +387,22 @@ export default function SalesOrderNew() {
       setNewCustEmail("");
       toast({ title: `Customer "${created.name}" created and selected` });
     } catch {
-      toast({
-        title: "Failed to create customer",
-        variant: "destructive",
-      });
+      toast({ title: "Failed to create customer", variant: "destructive" });
     }
   };
 
+  const emptyLineDefaults = () => ({
+    itemId: 0,
+    quantity: 1,
+    unitPrice: 0,
+    taxRate: 18,
+    discountPercent: 0,
+    discountAmount: 0,
+    description: "",
+  });
+
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6 max-w-7xl">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
           <Link href="/sales-orders">
@@ -325,24 +414,27 @@ export default function SalesOrderNew() {
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          {/* Header details */}
           <Card>
-            <CardContent className="pt-6 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Customer field + New Customer button */}
+            <CardContent className="pt-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Customer + new-customer button */}
                 <FormField
                   control={form.control}
                   name="customerId"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Customer *</FormLabel>
-                      <div className="flex gap-2">
+                      <Label className="text-xs font-medium text-muted-foreground">
+                        Client name *
+                      </Label>
+                      <div className="flex gap-2 mt-1">
                         <Select
                           onValueChange={field.onChange}
                           value={field.value ? field.value.toString() : ""}
                         >
                           <FormControl>
                             <SelectTrigger data-testid="select-customer">
-                              <SelectValue placeholder="Select a customer" />
+                              <SelectValue placeholder="Select Client" />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
@@ -369,18 +461,21 @@ export default function SalesOrderNew() {
                   )}
                 />
 
+                {/* Warehouse */}
                 <FormField
                   control={form.control}
                   name="warehouseId"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Fulfill from Warehouse *</FormLabel>
+                      <Label className="text-xs font-medium text-muted-foreground">
+                        Fulfill from Warehouse *
+                      </Label>
                       <Select
                         onValueChange={field.onChange}
                         value={field.value ? field.value.toString() : ""}
                       >
                         <FormControl>
-                          <SelectTrigger data-testid="select-warehouse">
+                          <SelectTrigger className="mt-1" data-testid="select-warehouse">
                             <SelectValue placeholder="Select warehouse" />
                           </SelectTrigger>
                         </FormControl>
@@ -397,15 +492,19 @@ export default function SalesOrderNew() {
                   )}
                 />
 
+                {/* Order Date */}
                 <FormField
                   control={form.control}
                   name="orderDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Order Date *</FormLabel>
+                      <Label className="text-xs font-medium text-muted-foreground">
+                        Order date *
+                      </Label>
                       <FormControl>
                         <Input
                           type="date"
+                          className="mt-1"
                           {...field}
                           data-testid="input-order-date"
                         />
@@ -415,15 +514,19 @@ export default function SalesOrderNew() {
                   )}
                 />
 
+                {/* Expected Ship Date */}
                 <FormField
                   control={form.control}
                   name="expectedShipDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Expected Ship Date</FormLabel>
+                      <Label className="text-xs font-medium text-muted-foreground">
+                        Due date
+                      </Label>
                       <FormControl>
                         <Input
                           type="date"
+                          className="mt-1"
                           {...field}
                           data-testid="input-ship-date"
                         />
@@ -436,332 +539,516 @@ export default function SalesOrderNew() {
             </CardContent>
           </Card>
 
+          {/* Invoice / Line items table */}
           <Card>
-            <CardContent className="pt-6">
-              <h3 className="font-medium text-lg mb-4">Line Items</h3>
-
-              <div className="space-y-4">
-                {fields.map((field, index) => (
-                  <div
-                    key={field.id}
-                    className="flex gap-3 items-start border p-4 rounded-lg bg-muted/20 relative"
-                  >
-                    <div className="grid grid-cols-12 gap-3 w-full">
-                      {/* Barcode scan row — spans the full width of the item column */}
-                      <div className="col-span-12 md:col-span-4">
-                        <div className="space-y-1.5 mb-2">
-                          <Label
-                            htmlFor={`barcode-line-${field.id}`}
-                            className="text-xs text-muted-foreground flex items-center gap-1"
-                          >
-                            <ScanBarcode className="h-3 w-3" />
-                            Scan / type barcode
-                          </Label>
-                          <div className="relative">
-                            <Input
-                              id={`barcode-line-${field.id}`}
-                              value={barcodeByLine[field.id] ?? ""}
-                              onChange={(e) =>
-                                setBarcodeByLine((prev) => ({
-                                  ...prev,
-                                  [field.id]: e.target.value,
-                                }))
-                              }
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  e.preventDefault();
-                                  handleBarcodeResolve(
-                                    index,
-                                    field.id,
-                                    barcodeByLine[field.id] ?? "",
-                                  );
-                                }
-                              }}
-                              onBlur={() =>
-                                handleBarcodeResolve(
-                                  index,
-                                  field.id,
-                                  barcodeByLine[field.id] ?? "",
-                                )
-                              }
-                              placeholder="Scan or type, then press Enter"
-                              className="pr-8 text-xs h-8"
-                              disabled={!warehouseIdNum}
-                              data-testid={`input-barcode-${index}`}
-                            />
-                            {barcodeLookingUp[field.id] && (
-                              <Loader2 className="absolute right-2 top-1.5 h-4 w-4 animate-spin text-muted-foreground" />
-                            )}
-                          </div>
-                        </div>
-
-                        <FormField
-                          control={form.control}
-                          name={`lines.${index}.itemId`}
-                          render={({ field: selectField, fieldState }) => (
-                            <ItemPicker
-                              items={items}
-                              selectedItemId={selectField.value || null}
-                              parentSelection={parentByLine[field.id] ?? null}
-                              onParentChange={(pid) =>
-                                pid != null &&
-                                handleParentChange(index, field.id, pid)
-                              }
-                              onVariantChange={(vid) =>
-                                handleVariantChange(index, field.id, vid)
-                              }
-                              testIdPrefix={`select-item-${index}`}
-                              errorMessage={fieldState.error?.message}
-                              disabled={!warehouseIdNum}
-                              disabledMessage="Pick a warehouse first"
-                              emptyMessage="No items yet — add some on the Items page"
-                              showStockHint
-                            />
-                          )}
-                        />
-                      </div>
-
-                      <div className="col-span-6 md:col-span-2">
-                        <FormField
-                          control={form.control}
-                          name={`lines.${index}.quantity`}
-                          render={({ field: inputField }) => (
-                            <FormItem>
-                              <FormLabel className="text-xs">Qty</FormLabel>
-                              <FormControl>
-                                <Input
-                                  type="text"
-                                  inputMode="numeric"
-                                  {...inputField}
-                                  data-testid={`input-qty-${index}`}
-                                />
-                              </FormControl>
-                              <FormMessage />
-                              {stockViolations[index] && (
-                                <p className="text-xs text-destructive flex items-center gap-1 mt-1">
-                                  <AlertTriangle className="h-3 w-3 flex-shrink-0" />
-                                  Only {items?.find((i) => i.id === watchLines[index]?.itemId)?.stockAtWarehouse ?? 0} available
-                                </p>
-                              )}
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-
-                      <div className="col-span-6 md:col-span-2">
-                        <FormField
-                          control={form.control}
-                          name={`lines.${index}.unitPrice`}
-                          render={({ field: inputField }) => (
-                            <FormItem>
-                              <FormLabel className="text-xs">Price</FormLabel>
-                              <FormControl>
-                                <Input
-                                  type="text"
-                                  inputMode="decimal"
-                                  {...inputField}
-                                  data-testid={`input-price-${index}`}
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-
-                      <div className="col-span-6 md:col-span-2">
-                        <FormField
-                          control={form.control}
-                          name={`lines.${index}.taxRate`}
-                          render={({ field: inputField }) => (
-                            <FormItem>
-                              <FormLabel className="text-xs">Tax %</FormLabel>
-                              <FormControl>
-                                <Input
-                                  type="text"
-                                  inputMode="decimal"
-                                  {...inputField}
-                                  data-testid={`input-tax-${index}`}
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-
-                      <div className="col-span-6 md:col-span-2">
-                        <p className="text-xs font-medium leading-none mb-1.5">Disc</p>
-                        <div className="flex items-center gap-1">
-                          <div className="relative">
-                            <Input
-                              type="text"
-                              inputMode="decimal"
-                              value={watchLines[index].discountPercent || ""}
-                              onChange={(e) => {
-                                const v = Number(e.target.value);
-                                if (!Number.isFinite(v) || v < 0) return;
-                                form.setValue(`lines.${index}.discountPercent`, Math.min(100, v), { shouldValidate: true });
-                                form.setValue(`lines.${index}.discountAmount`, 0, { shouldValidate: true });
-                              }}
-                              className="h-8 w-16 text-right pr-5"
-                              placeholder="0"
-                              data-testid={`input-discount-${index}`}
-                            />
-                            <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">%</span>
-                          </div>
-                          <div className="relative">
-                            <Input
-                              type="text"
-                              inputMode="decimal"
-                              value={watchLines[index].discountAmount || ""}
-                              onChange={(e) => {
-                                const v = Number(e.target.value);
-                                if (!Number.isFinite(v) || v < 0) return;
-                                const gross = watchLines[index].quantity * watchLines[index].unitPrice;
-                                form.setValue(`lines.${index}.discountAmount`, Math.min(gross, v), { shouldValidate: true });
-                                form.setValue(`lines.${index}.discountPercent`, 0, { shouldValidate: true });
-                              }}
-                              className="h-8 w-16 text-right pl-5"
-                              placeholder="0"
-                              data-testid={`input-discount-amount-${index}`}
-                            />
-                            <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">₹</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="col-span-6 md:col-span-2 flex flex-col justify-end pb-2 text-right">
-                        <span className="text-xs text-muted-foreground">Line Total</span>
-                        <span className="font-medium">
-                          {formatCurrency((() => {
-                            const gross = watchLines[index].quantity * watchLines[index].unitPrice;
-                            const disc = resolveLineDiscount(gross, watchLines[index].discountPercent || 0, watchLines[index].discountAmount || 0);
-                            const netAfterDisc = gross - disc;
-                            if (taxMode === "inclusive") return netAfterDisc;
-                            return netAfterDisc * (1 + watchLines[index].taxRate / 100);
-                          })())}
-                        </span>
-                      </div>
-                    </div>
-
-                    {fields.length > 1 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="text-destructive h-9 w-9 mt-6"
-                        onClick={() => remove(index)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
-                ))}
+            <CardContent className="pt-6 px-0 pb-0">
+              <div className="px-6 pb-3 flex items-center justify-between">
+                <h3 className="font-semibold text-base">Invoice</h3>
               </div>
 
-              <Button
-                type="button"
-                variant="outline"
-                className="mt-4"
-                onClick={() =>
-                  append({ itemId: 0, quantity: 1, unitPrice: 0, taxRate: 18, discountPercent: 0, discountAmount: 0, description: "" })
-                }
-                data-testid="btn-add-line"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Line Item
-              </Button>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="bg-muted/50 border-y">
+                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground w-8">
+                        No
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground min-w-[200px]">
+                        Item Name
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground min-w-[130px]">
+                        Description
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground w-[90px]">
+                        HSN/SAC
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground w-[70px]">
+                        Unit
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground w-[80px]">
+                        QTY
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground w-[100px]">
+                        Price
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground w-[90px]">
+                        Disc%
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground w-[70px]">
+                        Tax%
+                      </th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground w-[100px]">
+                        Total
+                      </th>
+                      <th className="px-3 py-2 w-[100px] text-right">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => append(emptyLineDefaults())}
+                          data-testid="btn-add-line"
+                          className="h-7 px-2 text-xs"
+                        >
+                          <Plus className="h-3 w-3 mr-1" />
+                          Add line
+                        </Button>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fields.map((field, index) => {
+                      const lineItem = items.find(
+                        (i) => i.id === watchLines[index]?.itemId,
+                      );
+                      const availableStock = lineItem?.stockAtWarehouse ?? null;
+                      const gross =
+                        watchLines[index].quantity * watchLines[index].unitPrice;
+                      const disc = resolveLineDiscount(
+                        gross,
+                        watchLines[index].discountPercent || 0,
+                        watchLines[index].discountAmount || 0,
+                      );
+                      const netAfterDisc = gross - disc;
+                      const lineTotal =
+                        taxMode === "inclusive"
+                          ? netAfterDisc
+                          : netAfterDisc * (1 + watchLines[index].taxRate / 100);
 
-              <Separator className="my-6" />
+                      const isBarcodeOpen = barcodeOpenLines.has(field.id);
 
-              <div className="flex flex-col md:flex-row justify-between gap-8">
-                <div className="flex-1">
-                  <FormField
-                    control={form.control}
-                    name="notes"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Notes</FormLabel>
-                        <FormControl>
-                          <Textarea
-                            {...field}
-                            className="h-24"
-                            placeholder="Add any notes for the customer here..."
-                            data-testid="input-notes"
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
+                      return (
+                        <tr
+                          key={field.id}
+                          className="border-b align-top hover:bg-muted/20"
+                        >
+                          {/* # */}
+                          <td className="px-3 py-2 text-muted-foreground text-xs pt-3">
+                            {index + 1}
+                          </td>
+
+                          {/* Item picker */}
+                          <td className="px-3 py-2">
+                            <div className="flex flex-col gap-1">
+                              <FormField
+                                control={form.control}
+                                name={`lines.${index}.itemId`}
+                                render={({ field: selectField, fieldState }) => (
+                                  <ItemPicker
+                                    items={inStockItems}
+                                    selectedItemId={selectField.value || null}
+                                    parentSelection={parentByLine[field.id] ?? null}
+                                    onParentChange={(pid) =>
+                                      pid != null &&
+                                      handleParentChange(index, field.id, pid)
+                                    }
+                                    onVariantChange={(vid) =>
+                                      handleVariantChange(index, field.id, vid)
+                                    }
+                                    testIdPrefix={`select-item-${index}`}
+                                    errorMessage={fieldState.error?.message}
+                                    disabled={!warehouseIdNum}
+                                    disabledMessage="Pick a warehouse first"
+                                    emptyMessage="No items in stock"
+                                    showStockHint
+                                    hideLabel
+                                  />
+                                )}
+                              />
+                              {/* Barcode scan toggle */}
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                                  onClick={() =>
+                                    setBarcodeOpenLines((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(field.id)) next.delete(field.id);
+                                      else next.add(field.id);
+                                      return next;
+                                    })
+                                  }
+                                  disabled={!warehouseIdNum}
+                                >
+                                  <ScanBarcode className="h-3 w-3" />
+                                  <span>{isBarcodeOpen ? "Hide scan" : "Scan barcode"}</span>
+                                </button>
+                              </div>
+                              {isBarcodeOpen && (
+                                <div className="relative mt-1">
+                                  <Input
+                                    value={barcodeByLine[field.id] ?? ""}
+                                    onChange={(e) =>
+                                      setBarcodeByLine((prev) => ({
+                                        ...prev,
+                                        [field.id]: e.target.value,
+                                      }))
+                                    }
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        handleBarcodeResolve(
+                                          index,
+                                          field.id,
+                                          barcodeByLine[field.id] ?? "",
+                                        );
+                                      }
+                                    }}
+                                    onBlur={() =>
+                                      handleBarcodeResolve(
+                                        index,
+                                        field.id,
+                                        barcodeByLine[field.id] ?? "",
+                                      )
+                                    }
+                                    placeholder="Scan or type, press Enter"
+                                    className="h-7 pr-7 text-xs"
+                                    data-testid={`input-barcode-${index}`}
+                                  />
+                                  {barcodeLookingUp[field.id] ? (
+                                    <Loader2 className="absolute right-2 top-1 h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="absolute right-2 top-1"
+                                      onClick={() => {
+                                        setBarcodeByLine((prev) => ({
+                                          ...prev,
+                                          [field.id]: "",
+                                        }));
+                                      }}
+                                    >
+                                      <X className="h-3.5 w-3.5 text-muted-foreground" />
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Description */}
+                          <td className="px-3 py-2">
+                            <FormField
+                              control={form.control}
+                              name={`lines.${index}.description`}
+                              render={({ field: inputField }) => (
+                                <FormItem>
+                                  <FormControl>
+                                    <Input
+                                      {...inputField}
+                                      placeholder="Description"
+                                      className="h-9 text-sm"
+                                      data-testid={`input-desc-${index}`}
+                                    />
+                                  </FormControl>
+                                </FormItem>
+                              )}
+                            />
+                          </td>
+
+                          {/* HSN/SAC — auto-filled from item master */}
+                          <td className="px-3 py-2 pt-3">
+                            <span className="text-xs text-muted-foreground font-mono">
+                              {lineItem?.hsnCode ?? "—"}
+                            </span>
+                          </td>
+
+                          {/* Unit — auto-filled from item master */}
+                          <td className="px-3 py-2 pt-3">
+                            <span className="text-xs text-muted-foreground">
+                              {lineItem?.unit ?? "pcs"}
+                            </span>
+                          </td>
+
+                          {/* QTY */}
+                          <td className="px-3 py-2">
+                            <FormField
+                              control={form.control}
+                              name={`lines.${index}.quantity`}
+                              render={({ field: inputField }) => (
+                                <FormItem>
+                                  <FormControl>
+                                    <Input
+                                      type="text"
+                                      inputMode="numeric"
+                                      {...inputField}
+                                      onChange={(e) =>
+                                        handleQtyChange(index, e.target.value)
+                                      }
+                                      className="h-9 text-sm w-full"
+                                      data-testid={`input-qty-${index}`}
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                  {stockViolations[index] && (
+                                    <p className="text-xs text-destructive flex items-center gap-1 mt-0.5">
+                                      <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+                                      Max {availableStock ?? 0}
+                                    </p>
+                                  )}
+                                  {!stockViolations[index] &&
+                                    availableStock != null && (
+                                      <p className="text-xs text-muted-foreground mt-0.5">
+                                        Avail: {availableStock}
+                                      </p>
+                                    )}
+                                </FormItem>
+                              )}
+                            />
+                          </td>
+
+                          {/* Price */}
+                          <td className="px-3 py-2">
+                            <FormField
+                              control={form.control}
+                              name={`lines.${index}.unitPrice`}
+                              render={({ field: inputField }) => (
+                                <FormItem>
+                                  <FormControl>
+                                    <Input
+                                      type="text"
+                                      inputMode="decimal"
+                                      {...inputField}
+                                      placeholder="0.00"
+                                      className="h-9 text-sm"
+                                      data-testid={`input-price-${index}`}
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          </td>
+
+                          {/* Discount % */}
+                          <td className="px-3 py-2">
+                            <div className="relative">
+                              <Input
+                                type="text"
+                                inputMode="decimal"
+                                value={watchLines[index].discountPercent || ""}
+                                onChange={(e) => {
+                                  const v = Number(e.target.value);
+                                  if (!Number.isFinite(v) || v < 0) return;
+                                  form.setValue(
+                                    `lines.${index}.discountPercent`,
+                                    Math.min(100, v),
+                                    { shouldValidate: true },
+                                  );
+                                  form.setValue(`lines.${index}.discountAmount`, 0, {
+                                    shouldValidate: true,
+                                  });
+                                }}
+                                className="h-9 text-sm pr-5"
+                                placeholder="0"
+                                data-testid={`input-discount-${index}`}
+                              />
+                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
+                                %
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Tax % */}
+                          <td className="px-3 py-2">
+                            <FormField
+                              control={form.control}
+                              name={`lines.${index}.taxRate`}
+                              render={({ field: inputField }) => (
+                                <FormItem>
+                                  <FormControl>
+                                    <Input
+                                      type="text"
+                                      inputMode="decimal"
+                                      {...inputField}
+                                      className="h-9 text-sm"
+                                      data-testid={`input-tax-${index}`}
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          </td>
+
+                          {/* Line total */}
+                          <td className="px-3 py-2 text-right pt-3">
+                            <span className="font-medium text-sm">
+                              {formatCurrency(lineTotal)}
+                            </span>
+                          </td>
+
+                          {/* Delete row */}
+                          <td className="px-3 py-2 text-right">
+                            {fields.length > 1 && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                onClick={() => remove(index)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Summary footer */}
+              <div className="px-6 py-4 space-y-4">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span>Total quantity:</span>
+                  <span className="font-medium text-foreground">{totalQuantity}</span>
                 </div>
-                <div className="w-full md:w-72 space-y-2 bg-muted/20 p-4 rounded-lg border">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Subtotal</span>
-                    <span>{formatCurrency(subtotal)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Tax</span>
-                    <span>{formatCurrency(taxTotal)}</span>
-                  </div>
-                  {showOrderDiscount && (
-                  <div className="flex items-center justify-between text-sm gap-2">
-                    <span className="text-muted-foreground whitespace-nowrap">Order Discount</span>
-                    <div className="flex gap-1">
-                      <Input
-                        type="text"
-                        inputMode="decimal"
-                        value={orderDiscountValue || ""}
-                        onChange={(e) => {
-                          const v = Number(e.target.value);
-                          if (!Number.isFinite(v) || v < 0) return;
-                          const cap = orderDiscountMode === "percent" ? 100 : subtotal + taxTotal;
-                          setOrderDiscountValue(Math.min(cap, v));
-                        }}
-                        placeholder="0"
-                        className="h-7 w-20 text-right text-sm"
-                        data-testid="input-order-discount"
-                      />
-                      <Select
-                        value={orderDiscountMode}
-                        onValueChange={(v) => {
-                          setOrderDiscountMode(v as "percent" | "amount");
-                          setOrderDiscountValue(0);
-                        }}
-                      >
-                        <SelectTrigger className="h-7 w-14 px-2 text-sm" data-testid="select-order-discount-mode">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="percent">%</SelectItem>
-                          <SelectItem value="amount">₹</SelectItem>
-                        </SelectContent>
-                      </Select>
+
+                {/* Order-level discount + totals */}
+                <div className="flex flex-col md:flex-row md:justify-end gap-4">
+                  <div className="w-full md:w-72 space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Subtotal</span>
+                      <span>{formatCurrency(subtotal)}</span>
                     </div>
-                  </div>
-                  )}
-                  <Separator />
-                  <div className="flex justify-between font-bold text-lg">
-                    <span>Total</span>
-                    <span>{formatCurrency(total)}</span>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Tax</span>
+                      <span>{formatCurrency(taxTotal)}</span>
+                    </div>
+                    {showOrderDiscount && (
+                      <div className="flex items-center justify-between text-sm gap-2">
+                        <span className="text-muted-foreground whitespace-nowrap">
+                          Order Discount
+                        </span>
+                        <div className="flex gap-1">
+                          <Input
+                            type="text"
+                            inputMode="decimal"
+                            value={orderDiscountValue || ""}
+                            onChange={(e) => {
+                              const v = Number(e.target.value);
+                              if (!Number.isFinite(v) || v < 0) return;
+                              const cap =
+                                orderDiscountMode === "percent"
+                                  ? 100
+                                  : subtotal + taxTotal;
+                              setOrderDiscountValue(Math.min(cap, v));
+                            }}
+                            placeholder="0"
+                            className="h-7 w-20 text-right text-sm"
+                            data-testid="input-order-discount"
+                          />
+                          <Select
+                            value={orderDiscountMode}
+                            onValueChange={(v) => {
+                              setOrderDiscountMode(v as "percent" | "amount");
+                              setOrderDiscountValue(0);
+                            }}
+                          >
+                            <SelectTrigger
+                              className="h-7 w-14 px-2 text-sm"
+                              data-testid="select-order-discount-mode"
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="percent">%</SelectItem>
+                              <SelectItem value="amount">₹</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    )}
+                    <Separator />
+                    <div className="flex justify-between font-bold text-base">
+                      <span>Total</span>
+                      <span>{formatCurrency(total)}</span>
+                    </div>
                   </div>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <div className="flex justify-end gap-4">
-            <Button type="button" variant="outline" asChild>
-              <Link href="/sales-orders">Cancel</Link>
-            </Button>
+          {/* Terms & Conditions + Private Notes */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormField
+              control={form.control}
+              name="termsAndConditions"
+              render={({ field }) => (
+                <FormItem>
+                  <Label className="text-sm font-medium">Terms &amp; Conditions</Label>
+                  <FormControl>
+                    <Textarea
+                      {...field}
+                      className="h-28 mt-1"
+                      placeholder="Enter terms and conditions..."
+                      data-testid="input-terms"
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="notes"
+              render={({ field }) => (
+                <FormItem>
+                  <Label className="text-sm font-medium">
+                    Private notes{" "}
+                    <span className="text-muted-foreground font-normal text-xs">
+                      (not shown to client)
+                    </span>
+                  </Label>
+                  <FormControl>
+                    <Textarea
+                      {...field}
+                      className="h-28 mt-1"
+                      placeholder="Internal notes..."
+                      data-testid="input-notes"
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex items-center gap-3">
             <Button
               type="submit"
               disabled={createMutation.isPending || hasStockViolations}
               data-testid="btn-submit-order"
+              className="gap-1"
             >
-              {createMutation.isPending ? "Creating..." : "Create Order"}
+              {createMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Creating…
+                </>
+              ) : (
+                "Create Order"
+              )}
+            </Button>
+            <Button
+              type="submit"
+              variant="outline"
+              disabled={createMutation.isPending || hasStockViolations}
+              data-testid="btn-save-draft"
+            >
+              Save as draft
+            </Button>
+            <Button type="button" variant="ghost" asChild>
+              <Link href="/sales-orders">Cancel</Link>
             </Button>
           </div>
+
+          {hasStockViolations && (
+            <p className="text-sm text-destructive flex items-center gap-1.5">
+              <AlertTriangle className="h-4 w-4" />
+              Some items exceed available stock. Adjust quantities before saving.
+            </p>
+          )}
         </form>
       </Form>
 
@@ -812,10 +1099,7 @@ export default function SalesOrderNew() {
             </div>
           </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setNewCustomerOpen(false)}
-            >
+            <Button variant="outline" onClick={() => setNewCustomerOpen(false)}>
               Cancel
             </Button>
             <Button

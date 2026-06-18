@@ -8,16 +8,16 @@ import {
   useGetCurrentOrganization,
 } from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Form,
   FormControl,
   FormField,
   FormItem,
-  FormLabel,
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -34,7 +34,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { formatCurrency } from "@/lib/format";
-import { Trash2, Plus, ArrowLeft, Building2 } from "lucide-react";
+import { Trash2, Plus, ArrowLeft, Building2, Loader2 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { ItemPicker } from "@/components/ItemPicker";
 import { useEffect, useState, useMemo } from "react";
@@ -84,7 +84,11 @@ export default function PurchaseOrderNew() {
       },
       onError: (err: unknown) => {
         const e = err as { data?: { error?: string } };
-        toast({ title: "Failed to create purchase order", description: e.data?.error ?? "Please try again.", variant: "destructive" });
+        toast({
+          title: "Failed to create purchase order",
+          description: e.data?.error ?? "Please try again.",
+          variant: "destructive",
+        });
       },
     },
   });
@@ -95,7 +99,9 @@ export default function PurchaseOrderNew() {
       orderDate: format(new Date(), "yyyy-MM-dd"),
       expectedDeliveryDate: "",
       notes: "",
-      lines: [{ itemId: 0, quantity: 1, unitPrice: 0, taxRate: 0, discountPercent: 0, description: "" }],
+      lines: [
+        { itemId: 0, quantity: 1, unitPrice: 0, taxRate: 0, discountPercent: 0, description: "" },
+      ],
     },
   });
 
@@ -107,10 +113,8 @@ export default function PurchaseOrderNew() {
   const watchSupplierId = form.watch("supplierId");
   const watchLines = form.watch("lines");
 
-  // Look up the selected supplier from the already-loaded list
   const selectedSupplier = useMemo(
-    () =>
-      suppliers?.suppliers.find((s) => s.id === Number(watchSupplierId)) ?? null,
+    () => suppliers?.suppliers.find((s) => s.id === Number(watchSupplierId)) ?? null,
     [suppliers, watchSupplierId],
   );
 
@@ -120,8 +124,14 @@ export default function PurchaseOrderNew() {
       const gross = line.quantity * line.unitPrice;
       const lineAfterDisc = gross * (1 - (line.discountPercent || 0) / 100);
       if (taxMode === "inclusive") {
-        const lineTax = line.taxRate > 0 ? (lineAfterDisc * line.taxRate) / (100 + line.taxRate) : 0;
-        return { subtotal: acc.subtotal + lineAfterDisc - lineTax, taxTotal: acc.taxTotal + lineTax };
+        const lineTax =
+          line.taxRate > 0
+            ? (lineAfterDisc * line.taxRate) / (100 + line.taxRate)
+            : 0;
+        return {
+          subtotal: acc.subtotal + lineAfterDisc - lineTax,
+          taxTotal: acc.taxTotal + lineTax,
+        };
       }
       return {
         subtotal: acc.subtotal + lineAfterDisc,
@@ -131,6 +141,8 @@ export default function PurchaseOrderNew() {
     { subtotal: 0, taxTotal: 0 },
   );
   const total = subtotal + taxTotal;
+
+  const totalQuantity = watchLines.reduce((sum, l) => sum + (l.quantity || 0), 0);
 
   const onSubmit = (data: PurchaseOrderFormValues) => {
     createMutation.mutate({
@@ -179,8 +191,17 @@ export default function PurchaseOrderNew() {
     applyItemDefaults(index, variantId);
   };
 
+  const emptyLineDefaults = () => ({
+    itemId: 0,
+    quantity: 1,
+    unitPrice: 0,
+    taxRate: 0,
+    discountPercent: 0,
+    description: "",
+  });
+
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6 max-w-7xl">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
           <Link href="/purchase-orders">
@@ -192,21 +213,24 @@ export default function PurchaseOrderNew() {
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          {/* Header details */}
           <Card>
-            <CardContent className="pt-6 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <CardContent className="pt-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <FormField
                   control={form.control}
                   name="supplierId"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Supplier *</FormLabel>
+                      <Label className="text-xs font-medium text-muted-foreground">
+                        Supplier *
+                      </Label>
                       <Select
                         onValueChange={field.onChange}
                         value={field.value ? field.value.toString() : ""}
                       >
                         <FormControl>
-                          <SelectTrigger data-testid="select-supplier">
+                          <SelectTrigger className="mt-1" data-testid="select-supplier">
                             <SelectValue placeholder="Select a supplier" />
                           </SelectTrigger>
                         </FormControl>
@@ -222,18 +246,21 @@ export default function PurchaseOrderNew() {
                     </FormItem>
                   )}
                 />
+
                 <FormField
                   control={form.control}
                   name="warehouseId"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Deliver to Warehouse *</FormLabel>
+                      <Label className="text-xs font-medium text-muted-foreground">
+                        Deliver to Warehouse *
+                      </Label>
                       <Select
                         onValueChange={field.onChange}
                         value={field.value ? field.value.toString() : ""}
                       >
                         <FormControl>
-                          <SelectTrigger data-testid="select-warehouse">
+                          <SelectTrigger className="mt-1" data-testid="select-warehouse">
                             <SelectValue placeholder="Select warehouse" />
                           </SelectTrigger>
                         </FormControl>
@@ -249,15 +276,19 @@ export default function PurchaseOrderNew() {
                     </FormItem>
                   )}
                 />
+
                 <FormField
                   control={form.control}
                   name="orderDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Order Date *</FormLabel>
+                      <Label className="text-xs font-medium text-muted-foreground">
+                        Order date *
+                      </Label>
                       <FormControl>
                         <Input
                           type="date"
+                          className="mt-1"
                           {...field}
                           data-testid="input-order-date"
                         />
@@ -266,15 +297,19 @@ export default function PurchaseOrderNew() {
                     </FormItem>
                   )}
                 />
+
                 <FormField
                   control={form.control}
                   name="expectedDeliveryDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Expected Delivery Date</FormLabel>
+                      <Label className="text-xs font-medium text-muted-foreground">
+                        Expected delivery date
+                      </Label>
                       <FormControl>
                         <Input
                           type="date"
+                          className="mt-1"
                           {...field}
                           data-testid="input-delivery-date"
                         />
@@ -285,10 +320,10 @@ export default function PurchaseOrderNew() {
                 />
               </div>
 
-              {/* Supplier info panel — shown once a supplier is picked */}
+              {/* Supplier info panel */}
               {selectedSupplier && (
                 <div
-                  className="border rounded-lg p-4 bg-muted/30 space-y-3"
+                  className="mt-4 border rounded-lg p-4 bg-muted/30 space-y-3"
                   data-testid="card-supplier-info"
                 >
                   <div className="flex items-center gap-2 text-sm font-medium">
@@ -332,223 +367,322 @@ export default function PurchaseOrderNew() {
             </CardContent>
           </Card>
 
+          {/* Line items table */}
           <Card>
-            <CardContent className="pt-6">
-              <h3 className="font-medium text-lg mb-4">Line Items</h3>
-
-              <div className="space-y-4">
-                {fields.map((field, index) => {
-                  const selectedItemId = watchLines[index]?.itemId;
-                  const selectedItem = items?.find((i) => i.id === selectedItemId);
-                  return (
-                    <div
-                      key={field.id}
-                      className="flex gap-3 items-start border p-4 rounded-lg bg-muted/20 relative"
-                    >
-                      <div className="grid grid-cols-12 gap-3 w-full">
-                        <div className="col-span-12 md:col-span-4">
-                          <FormField
-                            control={form.control}
-                            name={`lines.${index}.itemId`}
-                            render={({ field: selectField, fieldState }) => (
-                              <ItemPicker
-                                items={items ?? []}
-                                selectedItemId={selectField.value || null}
-                                parentSelection={parentByLine[field.id] ?? null}
-                                onParentChange={(pid) =>
-                                  pid != null &&
-                                  handleParentChange(index, field.id, pid)
-                                }
-                                onVariantChange={(vid) =>
-                                  handleVariantChange(index, field.id, vid)
-                                }
-                                testIdPrefix={`select-item-${index}`}
-                                errorMessage={fieldState.error?.message}
-                              />
-                            )}
-                          />
-                          {/* SKU badge shown for selected item */}
-                          {selectedItem?.sku && (
-                            <p
-                              className="text-xs text-muted-foreground mt-1 font-mono"
-                              data-testid={`text-line-sku-${index}`}
-                            >
-                              SKU: {selectedItem.sku}
-                            </p>
-                          )}
-                        </div>
-                        <div className="col-span-6 md:col-span-2">
-                          <FormField
-                            control={form.control}
-                            name={`lines.${index}.quantity`}
-                            render={({ field: inputField }) => (
-                              <FormItem>
-                                <FormLabel className="text-xs">Qty</FormLabel>
-                                <FormControl>
-                                  <Input
-                                    type="text"
-                                    inputMode="numeric"
-                                    {...inputField}
-                                    data-testid={`input-qty-${index}`}
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-                        <div className="col-span-6 md:col-span-2">
-                          <FormField
-                            control={form.control}
-                            name={`lines.${index}.unitPrice`}
-                            render={({ field: inputField }) => (
-                              <FormItem>
-                                <FormLabel className="text-xs">Price</FormLabel>
-                                <FormControl>
-                                  <Input
-                                    type="text"
-                                    inputMode="decimal"
-                                    {...inputField}
-                                    data-testid={`input-price-${index}`}
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-                        <div className="col-span-6 md:col-span-2">
-                          <FormField
-                            control={form.control}
-                            name={`lines.${index}.taxRate`}
-                            render={({ field: inputField }) => (
-                              <FormItem>
-                                <FormLabel className="text-xs">Tax %</FormLabel>
-                                <FormControl>
-                                  <Input
-                                    type="text"
-                                    inputMode="decimal"
-                                    {...inputField}
-                                    data-testid={`input-tax-${index}`}
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-                        <div className="col-span-6 md:col-span-2">
-                          <FormField
-                            control={form.control}
-                            name={`lines.${index}.discountPercent`}
-                            render={({ field: inputField }) => (
-                              <FormItem>
-                                <FormLabel className="text-xs">Disc %</FormLabel>
-                                <FormControl>
-                                  <Input
-                                    type="text"
-                                    inputMode="decimal"
-                                    {...inputField}
-                                    data-testid={`input-discount-${index}`}
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-                        <div className="col-span-6 md:col-span-2 flex flex-col justify-end pb-2 text-right">
-                          <span className="text-xs text-muted-foreground">Line Total</span>
-                          <span className="font-medium">
-                            {formatCurrency((() => {
-                              const gross = watchLines[index].quantity * watchLines[index].unitPrice;
-                              const netAfterDisc = gross * (1 - (watchLines[index].discountPercent || 0) / 100);
-                              if (taxMode === "inclusive") return netAfterDisc;
-                              return netAfterDisc * (1 + watchLines[index].taxRate / 100);
-                            })())}
-                          </span>
-                        </div>
-                      </div>
-                      {fields.length > 1 && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="text-destructive h-9 w-9 mt-6"
-                          onClick={() => remove(index)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </div>
-                  );
-                })}
+            <CardContent className="pt-6 px-0 pb-0">
+              <div className="px-6 pb-3 flex items-center justify-between">
+                <h3 className="font-semibold text-base">Line Items</h3>
               </div>
 
-              <Button
-                type="button"
-                variant="outline"
-                className="mt-4"
-                onClick={() =>
-                  append({ itemId: 0, quantity: 1, unitPrice: 0, taxRate: 0, discountPercent: 0, description: "" })
-                }
-                data-testid="btn-add-line"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Line Item
-              </Button>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="bg-muted/50 border-y">
+                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground w-8">
+                        No
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground min-w-[200px]">
+                        Item Name
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground min-w-[130px]">
+                        Description
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground w-[90px]">
+                        HSN/SAC
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground w-[70px]">
+                        Unit
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground w-[80px]">
+                        QTY
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground w-[100px]">
+                        Price
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground w-[90px]">
+                        Disc%
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground w-[70px]">
+                        Tax%
+                      </th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground w-[100px]">
+                        Total
+                      </th>
+                      <th className="px-3 py-2 w-[100px] text-right">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => append(emptyLineDefaults())}
+                          data-testid="btn-add-line"
+                          className="h-7 px-2 text-xs"
+                        >
+                          <Plus className="h-3 w-3 mr-1" />
+                          Add line
+                        </Button>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fields.map((field, index) => {
+                      const lineItem = items?.find(
+                        (i) => i.id === watchLines[index]?.itemId,
+                      );
+                      const gross =
+                        watchLines[index].quantity * watchLines[index].unitPrice;
+                      const lineAfterDisc =
+                        gross * (1 - (watchLines[index].discountPercent || 0) / 100);
+                      const lineTotal =
+                        taxMode === "inclusive"
+                          ? lineAfterDisc
+                          : lineAfterDisc *
+                            (1 + watchLines[index].taxRate / 100);
 
-              <Separator className="my-6" />
+                      return (
+                        <tr
+                          key={field.id}
+                          className="border-b align-top hover:bg-muted/20"
+                        >
+                          <td className="px-3 py-2 text-muted-foreground text-xs pt-3">
+                            {index + 1}
+                          </td>
 
-              <div className="flex flex-col md:flex-row justify-between gap-8">
-                <div className="flex-1">
-                  <FormField
-                    control={form.control}
-                    name="notes"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Notes</FormLabel>
-                        <FormControl>
-                          <Textarea
-                            {...field}
-                            className="h-24"
-                            placeholder="Add any notes for the supplier here..."
-                            data-testid="input-notes"
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
+                          <td className="px-3 py-2">
+                            <FormField
+                              control={form.control}
+                              name={`lines.${index}.itemId`}
+                              render={({ field: selectField, fieldState }) => (
+                                <ItemPicker
+                                  items={items ?? []}
+                                  selectedItemId={selectField.value || null}
+                                  parentSelection={parentByLine[field.id] ?? null}
+                                  onParentChange={(pid) =>
+                                    pid != null &&
+                                    handleParentChange(index, field.id, pid)
+                                  }
+                                  onVariantChange={(vid) =>
+                                    handleVariantChange(index, field.id, vid)
+                                  }
+                                  testIdPrefix={`select-item-${index}`}
+                                  errorMessage={fieldState.error?.message}
+                                  hideLabel
+                                />
+                              )}
+                            />
+                          </td>
+
+                          <td className="px-3 py-2">
+                            <FormField
+                              control={form.control}
+                              name={`lines.${index}.description`}
+                              render={({ field: inputField }) => (
+                                <FormItem>
+                                  <FormControl>
+                                    <Input
+                                      {...inputField}
+                                      placeholder="Description"
+                                      className="h-9 text-sm"
+                                      data-testid={`input-desc-${index}`}
+                                    />
+                                  </FormControl>
+                                </FormItem>
+                              )}
+                            />
+                          </td>
+
+                          <td className="px-3 py-2 pt-3">
+                            <span className="text-xs text-muted-foreground font-mono">
+                              {lineItem?.hsnCode ?? "—"}
+                            </span>
+                          </td>
+
+                          <td className="px-3 py-2 pt-3">
+                            <span className="text-xs text-muted-foreground">
+                              {lineItem?.unit ?? "pcs"}
+                            </span>
+                          </td>
+
+                          <td className="px-3 py-2">
+                            <FormField
+                              control={form.control}
+                              name={`lines.${index}.quantity`}
+                              render={({ field: inputField }) => (
+                                <FormItem>
+                                  <FormControl>
+                                    <Input
+                                      type="text"
+                                      inputMode="numeric"
+                                      {...inputField}
+                                      className="h-9 text-sm w-full"
+                                      data-testid={`input-qty-${index}`}
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          </td>
+
+                          <td className="px-3 py-2">
+                            <FormField
+                              control={form.control}
+                              name={`lines.${index}.unitPrice`}
+                              render={({ field: inputField }) => (
+                                <FormItem>
+                                  <FormControl>
+                                    <Input
+                                      type="text"
+                                      inputMode="decimal"
+                                      {...inputField}
+                                      placeholder="0.00"
+                                      className="h-9 text-sm"
+                                      data-testid={`input-price-${index}`}
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          </td>
+
+                          <td className="px-3 py-2">
+                            <FormField
+                              control={form.control}
+                              name={`lines.${index}.discountPercent`}
+                              render={({ field: inputField }) => (
+                                <FormItem>
+                                  <FormControl>
+                                    <div className="relative">
+                                      <Input
+                                        type="text"
+                                        inputMode="decimal"
+                                        {...inputField}
+                                        className="h-9 text-sm pr-5"
+                                        placeholder="0"
+                                        data-testid={`input-discount-${index}`}
+                                      />
+                                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
+                                        %
+                                      </span>
+                                    </div>
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          </td>
+
+                          <td className="px-3 py-2">
+                            <FormField
+                              control={form.control}
+                              name={`lines.${index}.taxRate`}
+                              render={({ field: inputField }) => (
+                                <FormItem>
+                                  <FormControl>
+                                    <Input
+                                      type="text"
+                                      inputMode="decimal"
+                                      {...inputField}
+                                      className="h-9 text-sm"
+                                      data-testid={`input-tax-${index}`}
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          </td>
+
+                          <td className="px-3 py-2 text-right pt-3">
+                            <span className="font-medium text-sm">
+                              {formatCurrency(lineTotal)}
+                            </span>
+                          </td>
+
+                          <td className="px-3 py-2 text-right">
+                            {fields.length > 1 && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                onClick={() => remove(index)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Summary footer */}
+              <div className="px-6 py-4 space-y-4">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span>Total quantity:</span>
+                  <span className="font-medium text-foreground">{totalQuantity}</span>
                 </div>
-                <div className="w-full md:w-64 space-y-2 bg-muted/20 p-4 rounded-lg border">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Subtotal</span>
-                    <span>{formatCurrency(subtotal)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Tax</span>
-                    <span>{formatCurrency(taxTotal)}</span>
-                  </div>
-                  <Separator />
-                  <div className="flex justify-between font-bold text-lg">
-                    <span>Total</span>
-                    <span>{formatCurrency(total)}</span>
+
+                <div className="flex flex-col md:flex-row md:justify-end gap-4">
+                  <div className="w-full md:w-64 space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Subtotal</span>
+                      <span>{formatCurrency(subtotal)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Tax</span>
+                      <span>{formatCurrency(taxTotal)}</span>
+                    </div>
+                    <Separator />
+                    <div className="flex justify-between font-bold text-base">
+                      <span>Total</span>
+                      <span>{formatCurrency(total)}</span>
+                    </div>
                   </div>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <div className="flex justify-end gap-4">
-            <Button type="button" variant="outline" asChild>
-              <Link href="/purchase-orders">Cancel</Link>
-            </Button>
+          {/* Notes */}
+          <FormField
+            control={form.control}
+            name="notes"
+            render={({ field }) => (
+              <FormItem>
+                <Label className="text-sm font-medium">Notes</Label>
+                <FormControl>
+                  <Textarea
+                    {...field}
+                    className="h-24 mt-1"
+                    placeholder="Add any notes for the supplier here..."
+                    data-testid="input-notes"
+                  />
+                </FormControl>
+              </FormItem>
+            )}
+          />
+
+          {/* Action buttons */}
+          <div className="flex items-center gap-3">
             <Button
               type="submit"
               disabled={createMutation.isPending}
               data-testid="btn-submit-order"
             >
-              {createMutation.isPending ? "Creating..." : "Create Order"}
+              {createMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Creating…
+                </>
+              ) : (
+                "Create Order"
+              )}
+            </Button>
+            <Button type="button" variant="ghost" asChild>
+              <Link href="/purchase-orders">Cancel</Link>
             </Button>
           </div>
         </form>

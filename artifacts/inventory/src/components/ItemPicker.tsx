@@ -32,6 +32,8 @@ export type ItemForPicker = {
   taxRate?: number;
   description?: string | null;
   stockAtWarehouse?: number | null;
+  hsnCode?: string | null;
+  unit?: string | null;
 };
 
 type Props = {
@@ -44,6 +46,9 @@ type Props = {
   disabled?: boolean;
   errorMessage?: string;
   showStockHint?: boolean;
+  /** When true, suppresses the "Item" / "Variant" labels above the picker.
+   *  Use inside table rows where the column header serves as the label. */
+  hideLabel?: boolean;
   /** Placeholder shown when the picker is disabled (e.g. waiting for a
    *  warehouse to be picked first). Overrides the default "Select item". */
   disabledMessage?: string;
@@ -71,6 +76,7 @@ export function ItemPicker({
   disabled,
   errorMessage,
   showStockHint,
+  hideLabel,
   disabledMessage,
   emptyMessage,
 }: Props) {
@@ -120,9 +126,9 @@ export function ItemPicker({
   })();
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       <FormItem>
-        <FormLabel className="text-xs">Item</FormLabel>
+        {!hideLabel && <FormLabel className="text-xs">Item</FormLabel>}
         <Popover open={open} onOpenChange={disabled ? undefined : setOpen}>
           <PopoverTrigger asChild>
             <Button
@@ -133,7 +139,7 @@ export function ItemPicker({
               disabled={disabled}
               data-testid={`${testIdPrefix}-parent`}
               className={cn(
-                "w-full justify-between font-normal h-10 px-3",
+                "w-full justify-between font-normal h-9 px-3 text-sm",
                 !parentItem && "text-muted-foreground",
               )}
             >
@@ -194,7 +200,7 @@ export function ItemPicker({
 
       {parentItem?.hasVariants ? (
         <FormItem>
-          <FormLabel className="text-xs">Variant</FormLabel>
+          {!hideLabel && <FormLabel className="text-xs">Variant</FormLabel>}
           <Select
             disabled={disabled || variants.length === 0}
             onValueChange={(val) => {
@@ -203,7 +209,7 @@ export function ItemPicker({
             }}
             value={selectedItemId ? selectedItemId.toString() : ""}
           >
-            <SelectTrigger data-testid={`${testIdPrefix}-variant`}>
+            <SelectTrigger className="h-9 text-sm" data-testid={`${testIdPrefix}-variant`}>
               <SelectValue
                 placeholder={
                   variants.length === 0
