@@ -281,8 +281,8 @@ export default function SalesOrderNew() {
   const applyItemDefaults = (index: number, itemId: number) => {
     const selectedItem = items.find((i) => i.id === itemId);
     if (selectedItem) {
-      form.setValue(`lines.${index}.unitPrice`, selectedItem.salePrice);
-      form.setValue(`lines.${index}.taxRate`, selectedItem.taxRate);
+      form.setValue(`lines.${index}.unitPrice`, selectedItem.salePrice ?? 0);
+      form.setValue(`lines.${index}.taxRate`, selectedItem.taxRate ?? 0);
       form.setValue(`lines.${index}.description`, selectedItem.description || "");
       // Cap existing qty to available stock so stock never goes negative
       if (selectedItem.stockAtWarehouse != null) {
@@ -556,14 +556,8 @@ export default function SalesOrderNew() {
                       <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground min-w-[200px]">
                         Item Name
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground min-w-[130px]">
-                        Description
-                      </th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground w-[90px]">
                         HSN/SAC
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground w-[70px]">
-                        Unit
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground w-[80px]">
                         QTY
@@ -618,10 +612,10 @@ export default function SalesOrderNew() {
                       return (
                         <tr
                           key={field.id}
-                          className="border-b align-top hover:bg-muted/20"
+                          className="border-b align-middle hover:bg-muted/20"
                         >
                           {/* # */}
-                          <td className="px-3 py-2 text-muted-foreground text-xs pt-3">
+                          <td className="px-3 py-2 text-muted-foreground text-xs">
                             {index + 1}
                           </td>
 
@@ -724,37 +718,10 @@ export default function SalesOrderNew() {
                             </div>
                           </td>
 
-                          {/* Description */}
-                          <td className="px-3 py-2">
-                            <FormField
-                              control={form.control}
-                              name={`lines.${index}.description`}
-                              render={({ field: inputField }) => (
-                                <FormItem>
-                                  <FormControl>
-                                    <Input
-                                      {...inputField}
-                                      placeholder="Description"
-                                      className="h-9 text-sm"
-                                      data-testid={`input-desc-${index}`}
-                                    />
-                                  </FormControl>
-                                </FormItem>
-                              )}
-                            />
-                          </td>
-
                           {/* HSN/SAC — auto-filled from item master */}
-                          <td className="px-3 py-2 pt-3">
+                          <td className="px-3 py-2">
                             <span className="text-xs text-muted-foreground font-mono">
                               {lineItem?.hsnCode ?? "—"}
-                            </span>
-                          </td>
-
-                          {/* Unit — auto-filled from item master */}
-                          <td className="px-3 py-2 pt-3">
-                            <span className="text-xs text-muted-foreground">
-                              {lineItem?.unit ?? "pcs"}
                             </span>
                           </td>
 
@@ -870,7 +837,7 @@ export default function SalesOrderNew() {
                           </td>
 
                           {/* Line total */}
-                          <td className="px-3 py-2 text-right pt-3">
+                          <td className="px-3 py-2 text-right">
                             <span className="font-medium text-sm">
                               {formatCurrency(lineTotal)}
                             </span>

@@ -293,8 +293,8 @@ export default function SalesOrderEdit() {
   const applyItemDefaults = (index: number, itemId: number) => {
     const selectedItem = items.find((i) => i.id === itemId);
     if (selectedItem) {
-      form.setValue(`lines.${index}.unitPrice`, selectedItem.salePrice);
-      form.setValue(`lines.${index}.taxRate`, selectedItem.taxRate);
+      form.setValue(`lines.${index}.unitPrice`, selectedItem.salePrice ?? 0);
+      form.setValue(`lines.${index}.taxRate`, selectedItem.taxRate ?? 0);
       form.setValue(`lines.${index}.description`, selectedItem.description || "");
       if (selectedItem.stockAtWarehouse != null) {
         const currentQty = form.getValues(`lines.${index}.quantity`);
@@ -550,14 +550,8 @@ export default function SalesOrderEdit() {
                       <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground min-w-[200px]">
                         Item Name
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground min-w-[130px]">
-                        Description
-                      </th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground w-[90px]">
                         HSN/SAC
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground w-[70px]">
-                        Unit
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground w-[80px]">
                         QTY
@@ -610,9 +604,9 @@ export default function SalesOrderEdit() {
                       return (
                         <tr
                           key={field.id}
-                          className="border-b align-top hover:bg-muted/20"
+                          className="border-b align-middle hover:bg-muted/20"
                         >
-                          <td className="px-3 py-2 text-muted-foreground text-xs pt-3">
+                          <td className="px-3 py-2 text-muted-foreground text-xs">
                             {index + 1}
                           </td>
 
@@ -645,33 +639,8 @@ export default function SalesOrderEdit() {
                           </td>
 
                           <td className="px-3 py-2">
-                            <FormField
-                              control={form.control}
-                              name={`lines.${index}.description`}
-                              render={({ field: inputField }) => (
-                                <FormItem>
-                                  <FormControl>
-                                    <Input
-                                      {...inputField}
-                                      placeholder="Description"
-                                      className="h-9 text-sm"
-                                      data-testid={`input-desc-${index}`}
-                                    />
-                                  </FormControl>
-                                </FormItem>
-                              )}
-                            />
-                          </td>
-
-                          <td className="px-3 py-2 pt-3">
                             <span className="text-xs text-muted-foreground font-mono">
                               {lineItem?.hsnCode ?? "—"}
-                            </span>
-                          </td>
-
-                          <td className="px-3 py-2 pt-3">
-                            <span className="text-xs text-muted-foreground">
-                              {lineItem?.unit ?? "pcs"}
                             </span>
                           </td>
 
@@ -782,7 +751,7 @@ export default function SalesOrderEdit() {
                             />
                           </td>
 
-                          <td className="px-3 py-2 text-right pt-3">
+                          <td className="px-3 py-2 text-right">
                             <span className="font-medium text-sm">
                               {formatCurrency(lineTotal)}
                             </span>
