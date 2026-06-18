@@ -20,7 +20,7 @@ const router: IRouter = Router();
 router.use(tenantMiddleware);
 
 // ─── Simple in-memory TTL cache for dashboard aggregations ─────────────────
-// Dashboard summary runs 10+ heavy aggregation queries. A 60-second cache
+// Dashboard summary runs 20+ heavy aggregation queries. A 60-second cache
 // prevents re-computation on every page navigation without sacrificing accuracy
 // for an ops tool where minute-level freshness is sufficient.
 const DASHBOARD_CACHE_TTL_MS = 60_000;
@@ -116,8 +116,20 @@ router.get("/dashboard/summary", async (req, res, next) => {
       toISO = todayDate.toISOString().slice(0, 10);
     }
 
+    // Compute the comparison (previous) period: same duration, shifted back by
+    // one period so e.g. "This Month" compares against the prior calendar month.
+    const fromDateMs = new Date(fromISO + "T00:00:00").getTime();
+    const toDateMs   = new Date(toISO   + "T00:00:00").getTime();
+    const periodDays = Math.round((toDateMs - fromDateMs) / 86_400_000) + 1;
+    const prevToDate   = new Date(fromDateMs - 86_400_000); // day before fromISO
+    const prevFromDate = new Date(prevToDate.getTime() - (periodDays - 1) * 86_400_000);
+    const prevFromISO  = prevFromDate.toISOString().slice(0, 10);
+    const prevToISO    = prevToDate.toISOString().slice(0, 10);
+
     // Fetch the org's configured payment terms so the overdue threshold is
     // accurate. This is a single-row PK lookup; hot-path cost is negligible.
+    // Run it first (before the big parallel batch) because overdueThreshold
+    // depends on paymentTermsDays for its WHERE clause.
     const orgRow = await db
       .select({ defaultPaymentTermsDays: organizationsTable.defaultPaymentTermsDays })
       .from(organizationsTable)
@@ -134,211 +146,212 @@ router.get("/dashboard/summary", async (req, res, next) => {
       return;
     }
 
-    const itemsAgg = await db
-      .select({
-        totalItems: sql<string>`COUNT(DISTINCT ${itemsTable.id})`,
-      })
-      .from(itemsTable)
-      .leftJoin(
-        itemWarehouseStockTable,
-        and(
-          eq(itemWarehouseStockTable.itemId, itemsTable.id),
-          warehouseId !== undefined
-            ? eq(itemWarehouseStockTable.warehouseId, warehouseId)
-            : undefined,
-        ),
-      )
-      .where(
-        and(
-          eq(itemsTable.organizationId, orgId),
-          sql`${itemsTable.archivedAt} IS NULL`,
-          warehouseId !== undefined
-            ? sql`${itemWarehouseStockTable.quantity} > 0`
-            : undefined,
-        ),
-      );
-    const totalItems = Number(itemsAgg[0]?.totalItems ?? 0);
+    // Overdue threshold: orderDate < today - paymentTermsDays means the
+    // derived dueDate (orderDate + terms) has already passed.
+    const overdueThreshold = new Date();
+    overdueThreshold.setDate(overdueThreshold.getDate() - paymentTermsDays);
+    const thirtyDaysAgoISO = overdueThreshold.toISOString().slice(0, 10);
 
-    const stockWhere = and(
-      eq(itemWarehouseStockTable.organizationId, orgId),
-      sql`${itemsTable.archivedAt} IS NULL`,
-      warehouseId !== undefined
-        ? eq(itemWarehouseStockTable.warehouseId, warehouseId)
-        : undefined,
-    );
-    // Exclude virtual (job-worker) warehouses from the inventory valuation:
-    // stock at a supplier inflates the book value shown on the dashboard.
-    const stockAgg = await db
-      .select({
-        totalValue: sql<string>`COALESCE(SUM(${itemWarehouseStockTable.quantity} * ${itemsTable.purchasePrice}), 0)`,
-      })
-      .from(itemWarehouseStockTable)
-      .innerJoin(itemsTable, eq(itemsTable.id, itemWarehouseStockTable.itemId))
-      .innerJoin(
-        warehousesTable,
-        and(
-          eq(warehousesTable.id, itemWarehouseStockTable.warehouseId),
-          eq(warehousesTable.isVirtual, false),
-        ),
-      )
-      .where(stockWhere);
-    const totalStockValue = toNum(stockAgg[0]?.totalValue);
-
-    // Use a correlated subquery so virtual (job-worker) warehouses are excluded
-    // from the on-hand total.  Stock held at a supplier must not suppress
-    // genuine low-stock alerts for items that are physically empty.
+    // ── Fire all 24 aggregation queries in parallel ─────────────────────────
+    // Previously these ran in ~8 sequential groups; running them all at once
+    // reduces wall-clock time from Σ(query latencies) to max(query latency).
     const warehouseFilter = warehouseId !== undefined
       ? sql`AND iws.warehouse_id = ${warehouseId}`
       : sql``;
-    const lowStockRows = await db
-      .select({
-        itemId: itemsTable.id,
-        reorder: itemsTable.reorderLevel,
-        // Use "items"."id" (table-qualified) inside the correlated subquery
-        // because Drizzle's sql`` helper strips the table prefix when
-        // interpolating a column reference, making plain ${itemsTable.id}
-        // resolve to the ambiguous bare column name "id".
-        onHand: sql<string>`COALESCE((
-          SELECT SUM(iws.quantity)
-          FROM item_warehouse_stock iws
-          INNER JOIN warehouses w ON w.id = iws.warehouse_id AND w.is_virtual = false
-          WHERE iws.item_id = "items"."id"
-            AND iws.organization_id = ${orgId}
-            ${warehouseFilter}
-        ), 0)`,
-      })
-      .from(itemsTable)
-      .where(
-        and(
-          eq(itemsTable.organizationId, orgId),
-          sql`${itemsTable.archivedAt} IS NULL`,
+
+    const [
+      itemsAggResult,
+      stockAggResult,
+      lowStockRowsResult,
+      openSOResult,
+      openPOResult,
+      salesMonthResult,
+      salesPrevMonthResult,
+      purchasesMonthResult,
+      purchasesPrevMonthResult,
+      recvSnapshotPrevResult,
+      paySnapshotPrevResult,
+      newSOThisResult,
+      newSOPrevResult,
+      movementsSincePeriodStartResult,
+      recvAggResult,
+      overdueRecvAggResult,
+      overduePayAggResult,
+      payAggResult,
+      dailySalesResult,
+      dailyPurchasesResult,
+      topItemsRowsResult,
+      recentSOResult,
+      recentPOResult,
+      failedRowsResult,
+    ] = await Promise.all([
+
+      // 1. Total active items (optionally scoped to warehouse)
+      db
+        .select({
+          totalItems: sql<string>`COUNT(DISTINCT ${itemsTable.id})`,
+        })
+        .from(itemsTable)
+        .leftJoin(
+          itemWarehouseStockTable,
+          and(
+            eq(itemWarehouseStockTable.itemId, itemsTable.id),
+            warehouseId !== undefined
+              ? eq(itemWarehouseStockTable.warehouseId, warehouseId)
+              : undefined,
+          ),
+        )
+        .where(
+          and(
+            eq(itemsTable.organizationId, orgId),
+            sql`${itemsTable.archivedAt} IS NULL`,
+            warehouseId !== undefined
+              ? sql`${itemWarehouseStockTable.quantity} > 0`
+              : undefined,
+          ),
         ),
-      );
-    // Only flag an item as low-stock when it has an explicit reorder level and
-    // on-hand stock has dropped to or below that level.  The previous condition
-    // also triggered on items with onHand <= 0 regardless of reorder level,
-    // which inflated the count with every unstocked catalog item.
-    const lowStockCount = lowStockRows.filter(
-      (r) => toNum(r.reorder) > 0 && toNum(r.onHand) <= toNum(r.reorder),
-    ).length;
 
-    const openSO = await db
-      .select({ c: sql<string>`COUNT(*)` })
-      .from(salesOrdersTable)
-      .where(
-        and(
-          eq(salesOrdersTable.organizationId, orgId),
-          sql`${salesOrdersTable.status} NOT IN ('delivered','cancelled')`,
+      // 2. Total stock value (excludes virtual/job-worker warehouses)
+      db
+        .select({
+          totalValue: sql<string>`COALESCE(SUM(${itemWarehouseStockTable.quantity} * ${itemsTable.purchasePrice}), 0)`,
+        })
+        .from(itemWarehouseStockTable)
+        .innerJoin(itemsTable, eq(itemsTable.id, itemWarehouseStockTable.itemId))
+        .innerJoin(
+          warehousesTable,
+          and(
+            eq(warehousesTable.id, itemWarehouseStockTable.warehouseId),
+            eq(warehousesTable.isVirtual, false),
+          ),
+        )
+        .where(
+          and(
+            eq(itemWarehouseStockTable.organizationId, orgId),
+            sql`${itemsTable.archivedAt} IS NULL`,
+            warehouseId !== undefined
+              ? eq(itemWarehouseStockTable.warehouseId, warehouseId)
+              : undefined,
+          ),
         ),
-      );
-    const openSalesOrders = Number(openSO[0]?.c ?? 0);
 
-    const openPO = await db
-      .select({ c: sql<string>`COUNT(*)` })
-      .from(purchaseOrdersTable)
-      .where(
-        and(
-          eq(purchaseOrdersTable.organizationId, orgId),
-          sql`${purchaseOrdersTable.status} NOT IN ('received','cancelled')`,
+      // 3. Low-stock rows — correlated subquery excludes virtual warehouses
+      db
+        .select({
+          itemId: itemsTable.id,
+          reorder: itemsTable.reorderLevel,
+          onHand: sql<string>`COALESCE((
+            SELECT SUM(iws.quantity)
+            FROM item_warehouse_stock iws
+            INNER JOIN warehouses w ON w.id = iws.warehouse_id AND w.is_virtual = false
+            WHERE iws.item_id = "items"."id"
+              AND iws.organization_id = ${orgId}
+              ${warehouseFilter}
+          ), 0)`,
+        })
+        .from(itemsTable)
+        .where(
+          and(
+            eq(itemsTable.organizationId, orgId),
+            sql`${itemsTable.archivedAt} IS NULL`,
+          ),
         ),
-      );
-    const openPurchaseOrders = Number(openPO[0]?.c ?? 0);
 
-    // Compute the comparison (previous) period: same duration, shifted back by
-    // one period so e.g. "This Month" compares against the prior calendar month.
-    const fromDateMs = new Date(fromISO + "T00:00:00").getTime();
-    const toDateMs   = new Date(toISO   + "T00:00:00").getTime();
-    const periodDays = Math.round((toDateMs - fromDateMs) / 86_400_000) + 1;
-    const prevToDate   = new Date(fromDateMs - 86_400_000); // day before fromISO
-    const prevFromDate = new Date(prevToDate.getTime() - (periodDays - 1) * 86_400_000);
-    const prevFromISO  = prevFromDate.toISOString().slice(0, 10);
-    const prevToISO    = prevToDate.toISOString().slice(0, 10);
+      // 4. Open sales orders
+      db
+        .select({ c: sql<string>`COUNT(*)` })
+        .from(salesOrdersTable)
+        .where(
+          and(
+            eq(salesOrdersTable.organizationId, orgId),
+            sql`${salesOrdersTable.status} NOT IN ('delivered','cancelled')`,
+          ),
+        ),
 
-    // Revenue for the selected period (from → to, inclusive) and the prior period.
-    // Also snapshot receivables/payables outstanding as-of end of prior period.
-    const [salesMonth, salesPrevMonth, purchasesMonth, purchasesPrevMonth,
-           recvSnapshotPrev, paySnapshotPrev] =
-      await Promise.all([
-        db
-          .select({ s: sql<string>`COALESCE(SUM(${salesOrdersTable.total}), 0)` })
-          .from(salesOrdersTable)
-          .where(
-            and(
-              eq(salesOrdersTable.organizationId, orgId),
-              gte(salesOrdersTable.orderDate, fromISO),
-              lte(salesOrdersTable.orderDate, toISO),
-            ),
+      // 5. Open purchase orders
+      db
+        .select({ c: sql<string>`COUNT(*)` })
+        .from(purchaseOrdersTable)
+        .where(
+          and(
+            eq(purchaseOrdersTable.organizationId, orgId),
+            sql`${purchaseOrdersTable.status} NOT IN ('received','cancelled')`,
           ),
-        db
-          .select({ s: sql<string>`COALESCE(SUM(${salesOrdersTable.total}), 0)` })
-          .from(salesOrdersTable)
-          .where(
-            and(
-              eq(salesOrdersTable.organizationId, orgId),
-              gte(salesOrdersTable.orderDate, prevFromISO),
-              lte(salesOrdersTable.orderDate, prevToISO),
-            ),
-          ),
-        db
-          .select({ s: sql<string>`COALESCE(SUM(${purchaseOrdersTable.total}), 0)` })
-          .from(purchaseOrdersTable)
-          .where(
-            and(
-              eq(purchaseOrdersTable.organizationId, orgId),
-              gte(purchaseOrdersTable.orderDate, fromISO),
-              lte(purchaseOrdersTable.orderDate, toISO),
-            ),
-          ),
-        db
-          .select({ s: sql<string>`COALESCE(SUM(${purchaseOrdersTable.total}), 0)` })
-          .from(purchaseOrdersTable)
-          .where(
-            and(
-              eq(purchaseOrdersTable.organizationId, orgId),
-              gte(purchaseOrdersTable.orderDate, prevFromISO),
-              lte(purchaseOrdersTable.orderDate, prevToISO),
-            ),
-          ),
-        // Snapshot of outstanding receivables as-of end of prior period:
-        // sum of balance_due on all non-draft/cancelled SOs whose orderDate falls
-        // on or before prevToISO. This gives a like-for-like comparison against
-        // the current outstandingReceivables (which has no date cap), using the
-        // same balanceDue values — the best proxy available without event-sourcing.
-        db
-          .select({ s: sql<string>`COALESCE(SUM(${salesOrdersTable.balanceDue}), 0)` })
-          .from(salesOrdersTable)
-          .where(
-            and(
-              eq(salesOrdersTable.organizationId, orgId),
-              sql`${salesOrdersTable.status} NOT IN ('draft','cancelled')`,
-              lte(salesOrdersTable.orderDate, prevToISO),
-            ),
-          ),
-        // Same snapshot for payables.
-        db
-          .select({ s: sql<string>`COALESCE(SUM(${purchaseOrdersTable.balanceDue}), 0)` })
-          .from(purchaseOrdersTable)
-          .where(
-            and(
-              eq(purchaseOrdersTable.organizationId, orgId),
-              sql`${purchaseOrdersTable.status} NOT IN ('draft','cancelled')`,
-              lte(purchaseOrdersTable.orderDate, prevToISO),
-            ),
-          ),
-      ]);
-    const salesThisMonth    = toNum(salesMonth[0]?.s);
-    const salesPrevPeriod   = toNum(salesPrevMonth[0]?.s);
-    const purchasesThisMonth  = toNum(purchasesMonth[0]?.s);
-    const purchasesPrevPeriod = toNum(purchasesPrevMonth[0]?.s);
-    const receivablesPrevPeriod = toNum(recvSnapshotPrev[0]?.s);
-    const payablesPrevPeriod    = toNum(paySnapshotPrev[0]?.s);
+        ),
 
-    // New (opened) sales orders in each period — counts non-cancelled SOs whose
-    // orderDate falls within the selected and comparison windows respectively.
-    // Low-stock prev-period count: reconstruct stock-at-prevToISO by subtracting
-    // net stock movements that occurred since the start of the current period
-    // from the current on-hand values already fetched in lowStockRows.
-    const [newSOThis, newSOPrev, movementsSincePeriodStart] = await Promise.all([
+      // 6. Sales revenue — current period
+      db
+        .select({ s: sql<string>`COALESCE(SUM(${salesOrdersTable.total}), 0)` })
+        .from(salesOrdersTable)
+        .where(
+          and(
+            eq(salesOrdersTable.organizationId, orgId),
+            gte(salesOrdersTable.orderDate, fromISO),
+            lte(salesOrdersTable.orderDate, toISO),
+          ),
+        ),
+
+      // 7. Sales revenue — previous period
+      db
+        .select({ s: sql<string>`COALESCE(SUM(${salesOrdersTable.total}), 0)` })
+        .from(salesOrdersTable)
+        .where(
+          and(
+            eq(salesOrdersTable.organizationId, orgId),
+            gte(salesOrdersTable.orderDate, prevFromISO),
+            lte(salesOrdersTable.orderDate, prevToISO),
+          ),
+        ),
+
+      // 8. Purchase spend — current period
+      db
+        .select({ s: sql<string>`COALESCE(SUM(${purchaseOrdersTable.total}), 0)` })
+        .from(purchaseOrdersTable)
+        .where(
+          and(
+            eq(purchaseOrdersTable.organizationId, orgId),
+            gte(purchaseOrdersTable.orderDate, fromISO),
+            lte(purchaseOrdersTable.orderDate, toISO),
+          ),
+        ),
+
+      // 9. Purchase spend — previous period
+      db
+        .select({ s: sql<string>`COALESCE(SUM(${purchaseOrdersTable.total}), 0)` })
+        .from(purchaseOrdersTable)
+        .where(
+          and(
+            eq(purchaseOrdersTable.organizationId, orgId),
+            gte(purchaseOrdersTable.orderDate, prevFromISO),
+            lte(purchaseOrdersTable.orderDate, prevToISO),
+          ),
+        ),
+
+      // 10. Outstanding receivables snapshot as-of end of prior period
+      db
+        .select({ s: sql<string>`COALESCE(SUM(${salesOrdersTable.balanceDue}), 0)` })
+        .from(salesOrdersTable)
+        .where(
+          and(
+            eq(salesOrdersTable.organizationId, orgId),
+            sql`${salesOrdersTable.status} NOT IN ('draft','cancelled')`,
+            lte(salesOrdersTable.orderDate, prevToISO),
+          ),
+        ),
+
+      // 11. Outstanding payables snapshot as-of end of prior period
+      db
+        .select({ s: sql<string>`COALESCE(SUM(${purchaseOrdersTable.balanceDue}), 0)` })
+        .from(purchaseOrdersTable)
+        .where(
+          and(
+            eq(purchaseOrdersTable.organizationId, orgId),
+            sql`${purchaseOrdersTable.status} NOT IN ('draft','cancelled')`,
+            lte(purchaseOrdersTable.orderDate, prevToISO),
+          ),
+        ),
+
+      // 12. New (non-cancelled) sales orders — current period
       db
         .select({ c: sql<string>`COUNT(*)` })
         .from(salesOrdersTable)
@@ -350,6 +363,8 @@ router.get("/dashboard/summary", async (req, res, next) => {
             lte(salesOrdersTable.orderDate, toISO),
           ),
         ),
+
+      // 13. New (non-cancelled) sales orders — previous period
       db
         .select({ c: sql<string>`COUNT(*)` })
         .from(salesOrdersTable)
@@ -361,8 +376,8 @@ router.get("/dashboard/summary", async (req, res, next) => {
             lte(salesOrdersTable.orderDate, prevToISO),
           ),
         ),
-      // Net quantity moved per item since period start (inclusive). Subtracting
-      // this from current on-hand gives the approximate stock-at-prevToISO.
+
+      // 14. Net stock movements since period start (for low-stock prev-period delta)
       db
         .select({
           itemId: stockMovementsTable.itemId,
@@ -379,127 +394,222 @@ router.get("/dashboard/summary", async (req, res, next) => {
           ),
         )
         .groupBy(stockMovementsTable.itemId),
+
+      // 15. Current outstanding receivables (all active SOs)
+      db
+        .select({
+          s: sql<string>`COALESCE(SUM(${salesOrdersTable.balanceDue}), 0)`,
+        })
+        .from(salesOrdersTable)
+        .where(
+          and(
+            eq(salesOrdersTable.organizationId, orgId),
+            sql`${salesOrdersTable.status} NOT IN ('draft','cancelled')`,
+          ),
+        ),
+
+      // 16. Overdue receivables
+      db
+        .select({
+          s: sql<string>`COALESCE(SUM(${salesOrdersTable.balanceDue}), 0)`,
+        })
+        .from(salesOrdersTable)
+        .where(
+          and(
+            eq(salesOrdersTable.organizationId, orgId),
+            sql`${salesOrdersTable.status} IN ('confirmed','partially_shipped','shipped','delivered','invoiced')`,
+            sql`${salesOrdersTable.balanceDue} > 0`,
+            lt(salesOrdersTable.orderDate, thirtyDaysAgoISO),
+          ),
+        ),
+
+      // 17. Overdue payables
+      db
+        .select({
+          s: sql<string>`COALESCE(SUM(${purchaseOrdersTable.balanceDue}), 0)`,
+        })
+        .from(purchaseOrdersTable)
+        .where(
+          and(
+            eq(purchaseOrdersTable.organizationId, orgId),
+            sql`${purchaseOrdersTable.status} IN ('ordered','partially_received','received','billed')`,
+            sql`${purchaseOrdersTable.balanceDue} > 0`,
+            lt(purchaseOrdersTable.orderDate, thirtyDaysAgoISO),
+          ),
+        ),
+
+      // 18. Current outstanding payables (all active POs)
+      db
+        .select({
+          s: sql<string>`COALESCE(SUM(${purchaseOrdersTable.balanceDue}), 0)`,
+        })
+        .from(purchaseOrdersTable)
+        .where(
+          and(
+            eq(purchaseOrdersTable.organizationId, orgId),
+            sql`${purchaseOrdersTable.status} NOT IN ('draft','cancelled')`,
+          ),
+        ),
+
+      // 19. Daily sales by orderDate (for revenue trend)
+      db
+        .select({
+          d: salesOrdersTable.orderDate,
+          s: sql<string>`COALESCE(SUM(${salesOrdersTable.total}), 0)`,
+        })
+        .from(salesOrdersTable)
+        .where(
+          and(
+            eq(salesOrdersTable.organizationId, orgId),
+            gte(salesOrdersTable.orderDate, fromISO),
+            lte(salesOrdersTable.orderDate, toISO),
+          ),
+        )
+        .groupBy(salesOrdersTable.orderDate),
+
+      // 20. Daily purchases by orderDate (for revenue trend)
+      db
+        .select({
+          d: purchaseOrdersTable.orderDate,
+          s: sql<string>`COALESCE(SUM(${purchaseOrdersTable.total}), 0)`,
+        })
+        .from(purchaseOrdersTable)
+        .where(
+          and(
+            eq(purchaseOrdersTable.organizationId, orgId),
+            gte(purchaseOrdersTable.orderDate, fromISO),
+            lte(purchaseOrdersTable.orderDate, toISO),
+          ),
+        )
+        .groupBy(purchaseOrdersTable.orderDate),
+
+      // 21. Top 5 items by revenue in the selected period
+      db
+        .select({
+          itemId: itemsTable.id,
+          name: itemsTable.name,
+          sku: itemsTable.sku,
+          qty: sql<string>`COALESCE(SUM(${salesOrderLinesTable.quantity}), 0)`,
+          revenue: sql<string>`COALESCE(SUM(${salesOrderLinesTable.lineTotal}), 0)`,
+        })
+        .from(salesOrderLinesTable)
+        .innerJoin(itemsTable, eq(itemsTable.id, salesOrderLinesTable.itemId))
+        .innerJoin(
+          salesOrdersTable,
+          eq(salesOrdersTable.id, salesOrderLinesTable.salesOrderId),
+        )
+        .where(
+          and(
+            eq(salesOrdersTable.organizationId, orgId),
+            gte(salesOrdersTable.orderDate, fromISO),
+            lte(salesOrdersTable.orderDate, toISO),
+          ),
+        )
+        .groupBy(itemsTable.id, itemsTable.name, itemsTable.sku)
+        .orderBy(desc(sql`SUM(${salesOrderLinesTable.lineTotal})`))
+        .limit(5),
+
+      // 22. 5 most recent sales orders (for activity feed)
+      db
+        .select({
+          id: salesOrdersTable.id,
+          orderNumber: salesOrdersTable.orderNumber,
+          total: salesOrdersTable.total,
+          createdAt: salesOrdersTable.createdAt,
+          customerName: customersTable.name,
+        })
+        .from(salesOrdersTable)
+        .innerJoin(customersTable, eq(customersTable.id, salesOrdersTable.customerId))
+        .where(eq(salesOrdersTable.organizationId, orgId))
+        .orderBy(desc(salesOrdersTable.createdAt))
+        .limit(5),
+
+      // 23. 5 most recent purchase orders (for activity feed)
+      db
+        .select({
+          id: purchaseOrdersTable.id,
+          orderNumber: purchaseOrdersTable.orderNumber,
+          total: purchaseOrdersTable.total,
+          createdAt: purchaseOrdersTable.createdAt,
+          supplierName: suppliersTable.name,
+        })
+        .from(purchaseOrdersTable)
+        .innerJoin(suppliersTable, eq(suppliersTable.id, purchaseOrdersTable.supplierId))
+        .where(eq(purchaseOrdersTable.organizationId, orgId))
+        .orderBy(desc(purchaseOrdersTable.createdAt))
+        .limit(5),
+
+      // 24. Failed IRP submissions (e-invoice errors)
+      db
+        .select({
+          id: salesOrdersTable.id,
+          orderNumber: salesOrdersTable.orderNumber,
+          customerId: salesOrdersTable.customerId,
+          customerName: customersTable.name,
+          irpError: salesOrdersTable.irpError,
+          irpErrorCode: salesOrdersTable.irpErrorCode,
+          irpErrorContext: salesOrdersTable.irpErrorContext,
+          updatedAt: salesOrdersTable.updatedAt,
+        })
+        .from(salesOrdersTable)
+        .innerJoin(
+          customersTable,
+          eq(customersTable.id, salesOrdersTable.customerId),
+        )
+        .where(
+          and(
+            eq(salesOrdersTable.organizationId, orgId),
+            eq(salesOrdersTable.irpStatus, "failed"),
+            isNotNull(salesOrdersTable.irpError),
+          ),
+        )
+        .orderBy(desc(salesOrdersTable.updatedAt))
+        .limit(FAILED_EINVOICES_LIMIT),
     ]);
-    const newSalesOrdersThisPeriod = Number(newSOThis[0]?.c ?? 0);
-    const newSalesOrdersPrevPeriod = Number(newSOPrev[0]?.c ?? 0);
+
+    // ── Derive scalar values from query results ──────────────────────────────
+
+    const totalItems      = Number(itemsAggResult[0]?.totalItems ?? 0);
+    const totalStockValue = toNum(stockAggResult[0]?.totalValue);
+
+    // Only flag an item as low-stock when it has an explicit reorder level and
+    // on-hand stock has dropped to or below that level.
+    const lowStockCount = lowStockRowsResult.filter(
+      (r) => toNum(r.reorder) > 0 && toNum(r.onHand) <= toNum(r.reorder),
+    ).length;
+
+    const openSalesOrders    = Number(openSOResult[0]?.c ?? 0);
+    const openPurchaseOrders = Number(openPOResult[0]?.c ?? 0);
+
+    const salesThisMonth      = toNum(salesMonthResult[0]?.s);
+    const salesPrevPeriod     = toNum(salesPrevMonthResult[0]?.s);
+    const purchasesThisMonth  = toNum(purchasesMonthResult[0]?.s);
+    const purchasesPrevPeriod = toNum(purchasesPrevMonthResult[0]?.s);
+
+    const receivablesPrevPeriod = toNum(recvSnapshotPrevResult[0]?.s);
+    const payablesPrevPeriod    = toNum(paySnapshotPrevResult[0]?.s);
+
+    const newSalesOrdersThisPeriod = Number(newSOThisResult[0]?.c ?? 0);
+    const newSalesOrdersPrevPeriod = Number(newSOPrevResult[0]?.c ?? 0);
 
     // Build item → period-delta map then compute low-stock count as of prevToISO.
     const movementDeltaByItem = new Map<number, number>();
-    for (const row of movementsSincePeriodStart) {
+    for (const row of movementsSincePeriodStartResult) {
       movementDeltaByItem.set(row.itemId, toNum(row.delta));
     }
-    const lowStockCountPrevPeriod = lowStockRows.filter((r) => {
+    const lowStockCountPrevPeriod = lowStockRowsResult.filter((r) => {
       const currentOnHand = toNum(r.onHand);
       const delta = movementDeltaByItem.get(r.itemId) ?? 0;
       const prevOnHand = currentOnHand - delta;
       return toNum(r.reorder) > 0 && prevOnHand <= toNum(r.reorder);
     }).length;
 
-    // Derive receivables from open sales orders' balance_due rather
-    // than reading the cached customers.outstanding_balance column —
-    // that column can drift if a payment / cancellation path forgot
-    // to decrement it. The actual liability is the sum of balances
-    // on every non-draft, non-cancelled SO.
-    const recvAgg = await db
-      .select({
-        s: sql<string>`COALESCE(SUM(${salesOrdersTable.balanceDue}), 0)`,
-      })
-      .from(salesOrdersTable)
-      .where(
-        and(
-          eq(salesOrdersTable.organizationId, orgId),
-          sql`${salesOrdersTable.status} NOT IN ('draft','cancelled')`,
-        ),
-      );
-    const outstandingReceivables = toNum(recvAgg[0]?.s);
+    const outstandingReceivables = toNum(recvAggResult[0]?.s);
+    const overdueReceivables     = toNum(overdueRecvAggResult[0]?.s);
+    const overduePayables        = toNum(overduePayAggResult[0]?.s);
+    const outstandingPayables    = toNum(payAggResult[0]?.s);
 
-    // Overdue receivables: sales orders in a payable status whose derived
-    // due date has passed. Since the schema has no explicit dueDate column,
-    // we derive: dueDate = orderDate + paymentTermsDays, so
-    // dueDate < today ⟺ orderDate < today - paymentTermsDays.
-    // Payable statuses mirror the AR aging report in reports.ts.
-    const overdueThreshold = new Date();
-    overdueThreshold.setDate(overdueThreshold.getDate() - paymentTermsDays);
-    const thirtyDaysAgoISO = overdueThreshold.toISOString().slice(0, 10);
-    const overdueRecvAgg = await db
-      .select({
-        s: sql<string>`COALESCE(SUM(${salesOrdersTable.balanceDue}), 0)`,
-      })
-      .from(salesOrdersTable)
-      .where(
-        and(
-          eq(salesOrdersTable.organizationId, orgId),
-          sql`${salesOrdersTable.status} IN ('confirmed','partially_shipped','shipped','delivered','invoiced')`,
-          sql`${salesOrdersTable.balanceDue} > 0`,
-          lt(salesOrdersTable.orderDate, thirtyDaysAgoISO),
-        ),
-      );
-    const overdueReceivables = toNum(overdueRecvAgg[0]?.s);
-
-    // Overdue payables: purchase orders in a payable status whose derived
-    // due date has passed. Mirrors the overdueReceivables logic above.
-    const overduePayAgg = await db
-      .select({
-        s: sql<string>`COALESCE(SUM(${purchaseOrdersTable.balanceDue}), 0)`,
-      })
-      .from(purchaseOrdersTable)
-      .where(
-        and(
-          eq(purchaseOrdersTable.organizationId, orgId),
-          sql`${purchaseOrdersTable.status} IN ('ordered','partially_received','received','billed')`,
-          sql`${purchaseOrdersTable.balanceDue} > 0`,
-          lt(purchaseOrdersTable.orderDate, thirtyDaysAgoISO),
-        ),
-      );
-    const overduePayables = toNum(overduePayAgg[0]?.s);
-
-    // Same derivation for payables: sum balance_due on every
-    // non-draft, non-cancelled PO.
-    const payAgg = await db
-      .select({
-        s: sql<string>`COALESCE(SUM(${purchaseOrdersTable.balanceDue}), 0)`,
-      })
-      .from(purchaseOrdersTable)
-      .where(
-        and(
-          eq(purchaseOrdersTable.organizationId, orgId),
-          sql`${purchaseOrdersTable.status} NOT IN ('draft','cancelled')`,
-        ),
-      );
-    const outstandingPayables = toNum(payAgg[0]?.s);
-
-    // Build daily trend series for the selected date range.
-    const dailySales = await db
-      .select({
-        d: salesOrdersTable.orderDate,
-        s: sql<string>`COALESCE(SUM(${salesOrdersTable.total}), 0)`,
-      })
-      .from(salesOrdersTable)
-      .where(
-        and(
-          eq(salesOrdersTable.organizationId, orgId),
-          gte(salesOrdersTable.orderDate, fromISO),
-          lte(salesOrdersTable.orderDate, toISO),
-        ),
-      )
-      .groupBy(salesOrdersTable.orderDate);
-
-    const dailyPurchases = await db
-      .select({
-        d: purchaseOrdersTable.orderDate,
-        s: sql<string>`COALESCE(SUM(${purchaseOrdersTable.total}), 0)`,
-      })
-      .from(purchaseOrdersTable)
-      .where(
-        and(
-          eq(purchaseOrdersTable.organizationId, orgId),
-          gte(purchaseOrdersTable.orderDate, fromISO),
-          lte(purchaseOrdersTable.orderDate, toISO),
-        ),
-      )
-      .groupBy(purchaseOrdersTable.orderDate);
-
-    // Fill every day in [fromISO, toISO] with zeros, then overlay actuals.
+    // ── Build daily trend series ─────────────────────────────────────────────
     const trendMap = new Map<string, { sales: number; purchases: number }>();
     const trendCursor = new Date(fromISO + "T00:00:00Z");
     const trendEnd = new Date(toISO + "T00:00:00Z");
@@ -507,11 +617,11 @@ router.get("/dashboard/summary", async (req, res, next) => {
       trendMap.set(trendCursor.toISOString().slice(0, 10), { sales: 0, purchases: 0 });
       trendCursor.setUTCDate(trendCursor.getUTCDate() + 1);
     }
-    for (const row of dailySales) {
+    for (const row of dailySalesResult) {
       const e = trendMap.get(row.d);
       if (e) e.sales = toNum(row.s);
     }
-    for (const row of dailyPurchases) {
+    for (const row of dailyPurchasesResult) {
       const e = trendMap.get(row.d);
       if (e) e.purchases = toNum(row.s);
     }
@@ -521,31 +631,8 @@ router.get("/dashboard/summary", async (req, res, next) => {
       purchases: v.purchases,
     }));
 
-    const topItemsRows = await db
-      .select({
-        itemId: itemsTable.id,
-        name: itemsTable.name,
-        sku: itemsTable.sku,
-        qty: sql<string>`COALESCE(SUM(${salesOrderLinesTable.quantity}), 0)`,
-        revenue: sql<string>`COALESCE(SUM(${salesOrderLinesTable.lineTotal}), 0)`,
-      })
-      .from(salesOrderLinesTable)
-      .innerJoin(itemsTable, eq(itemsTable.id, salesOrderLinesTable.itemId))
-      .innerJoin(
-        salesOrdersTable,
-        eq(salesOrdersTable.id, salesOrderLinesTable.salesOrderId),
-      )
-      .where(
-        and(
-          eq(salesOrdersTable.organizationId, orgId),
-          gte(salesOrdersTable.orderDate, fromISO),
-          lte(salesOrdersTable.orderDate, toISO),
-        ),
-      )
-      .groupBy(itemsTable.id, itemsTable.name, itemsTable.sku)
-      .orderBy(desc(sql`SUM(${salesOrderLinesTable.lineTotal})`))
-      .limit(5);
-    const topItems = topItemsRows.map((r) => ({
+    // ── Top selling items ────────────────────────────────────────────────────
+    const topItems = topItemsRowsResult.map((r) => ({
       itemId: r.itemId,
       name: r.name,
       sku: r.sku,
@@ -553,36 +640,9 @@ router.get("/dashboard/summary", async (req, res, next) => {
       revenue: toNum(r.revenue),
     }));
 
-    const recentSO = await db
-      .select({
-        id: salesOrdersTable.id,
-        orderNumber: salesOrdersTable.orderNumber,
-        total: salesOrdersTable.total,
-        createdAt: salesOrdersTable.createdAt,
-        customerName: customersTable.name,
-      })
-      .from(salesOrdersTable)
-      .innerJoin(customersTable, eq(customersTable.id, salesOrdersTable.customerId))
-      .where(eq(salesOrdersTable.organizationId, orgId))
-      .orderBy(desc(salesOrdersTable.createdAt))
-      .limit(5);
-
-    const recentPO = await db
-      .select({
-        id: purchaseOrdersTable.id,
-        orderNumber: purchaseOrdersTable.orderNumber,
-        total: purchaseOrdersTable.total,
-        createdAt: purchaseOrdersTable.createdAt,
-        supplierName: suppliersTable.name,
-      })
-      .from(purchaseOrdersTable)
-      .innerJoin(suppliersTable, eq(suppliersTable.id, purchaseOrdersTable.supplierId))
-      .where(eq(purchaseOrdersTable.organizationId, orgId))
-      .orderBy(desc(purchaseOrdersTable.createdAt))
-      .limit(5);
-
+    // ── Recent activity feed (merge SO + PO, newest first) ──────────────────
     const recentActivity = [
-      ...recentSO.map((r) => ({
+      ...recentSOResult.map((r) => ({
         id: `so-${r.id}`,
         kind: "sales_order",
         title: r.orderNumber,
@@ -590,7 +650,7 @@ router.get("/dashboard/summary", async (req, res, next) => {
         amount: toNum(r.total),
         timestamp: r.createdAt.toISOString(),
       })),
-      ...recentPO.map((r) => ({
+      ...recentPOResult.map((r) => ({
         id: `po-${r.id}`,
         kind: "purchase_order",
         title: r.orderNumber,
@@ -602,37 +662,8 @@ router.get("/dashboard/summary", async (req, res, next) => {
       .sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1))
       .slice(0, 8);
 
-    // Failed IRP submissions surfaced on the dashboard with the same
-    // friendly "what to fix" treatment as the SalesOrderDetail panel.
-    // We rely on `irpStatus = 'failed'` (set by the single-order route
-    // and the bulk worker) and ignore rows without an error message —
-    // there's nothing actionable to show without one.
-    const failedRows = await db
-      .select({
-        id: salesOrdersTable.id,
-        orderNumber: salesOrdersTable.orderNumber,
-        customerId: salesOrdersTable.customerId,
-        customerName: customersTable.name,
-        irpError: salesOrdersTable.irpError,
-        irpErrorCode: salesOrdersTable.irpErrorCode,
-        irpErrorContext: salesOrdersTable.irpErrorContext,
-        updatedAt: salesOrdersTable.updatedAt,
-      })
-      .from(salesOrdersTable)
-      .innerJoin(
-        customersTable,
-        eq(customersTable.id, salesOrdersTable.customerId),
-      )
-      .where(
-        and(
-          eq(salesOrdersTable.organizationId, orgId),
-          eq(salesOrdersTable.irpStatus, "failed"),
-          isNotNull(salesOrdersTable.irpError),
-        ),
-      )
-      .orderBy(desc(salesOrdersTable.updatedAt))
-      .limit(FAILED_EINVOICES_LIMIT);
-    const failedEinvoices = failedRows.map((r) => ({
+    // ── Failed e-invoices ────────────────────────────────────────────────────
+    const failedEinvoices = failedRowsResult.map((r) => ({
       salesOrderId: r.id,
       orderNumber: r.orderNumber,
       customerId: r.customerId,

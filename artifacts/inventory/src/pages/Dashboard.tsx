@@ -73,6 +73,12 @@ function useDashboardSummary(warehouseId: number | undefined, range: { from: str
   return useQuery<DashboardSummary>({
     queryKey: ["/api/dashboard/summary", warehouseId ?? null, range.from, range.to],
     queryFn: ({ signal }) => customFetch<DashboardSummary>(`/api/dashboard/summary?${params}`, { signal }),
+    // Keep data from the previous query key as a placeholder so that
+    // changing the warehouse/date filter doesn't blank the screen.
+    placeholderData: (prev) => prev,
+    // Treat data as fresh for 5 minutes — navigating away and back within
+    // that window serves the cached result instantly without a refetch.
+    staleTime: 5 * 60_000,
   });
 }
 
@@ -463,7 +469,7 @@ export default function Dashboard() {
   const [range, setRange] = useState<{ from: string; to: string }>(() => loadPersistedRange());
 
   const { data: warehouses } = useListWarehouses();
-  const { data: summary, isLoading, refetch } = useDashboardSummary(warehouseId, range);
+  const { data: summary, isLoading, isFetching, refetch } = useDashboardSummary(warehouseId, range);
   const visibleWarehouses = (warehouses ?? []).filter((w) => !w.isVirtual);
 
   function handleRangeChange(from: string, to: string) {
@@ -498,7 +504,7 @@ export default function Dashboard() {
 
   // ── Skeleton ──────────────────────────────────────────────────────────────
 
-  if (isLoading || !summary) {
+  if (!summary) {
     return (
       <div className="space-y-6">
         <div className="flex items-start justify-between">
@@ -583,10 +589,11 @@ export default function Dashboard() {
             size="sm"
             className="h-8 gap-1.5 text-xs"
             onClick={() => refetch()}
+            disabled={isFetching}
             data-testid="btn-dashboard-refresh"
           >
-            <RefreshCw className="h-3.5 w-3.5" />
-            Refresh
+            <RefreshCw className={cn("h-3.5 w-3.5", isFetching && "animate-spin")} />
+            {isFetching ? "Loading…" : "Refresh"}
           </Button>
 
           <Button asChild size="sm" className="h-8 gap-1.5 text-xs font-semibold">
