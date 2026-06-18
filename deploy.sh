@@ -23,19 +23,23 @@ echo -e "${CYAN}═════════════════════�
 echo -e "${CYAN}  Deploying MysticsInventory → $APP  ${NC}"
 echo -e "${CYAN}═══════════════════════════════════════════${NC}"
 
-info "Step 1/4 — Install packages"
+info "Step 1/5 — Install packages"
 pnpm install --frozen-lockfile --ignore-scripts
 ok "Packages up to date"
 
-info "Step 2/4 — Build API server"
+info "Step 2/5 — Push DB schema (add missing columns/tables)"
+pnpm --filter @workspace/db run push-force
+ok "DB schema up to date"
+
+info "Step 3/5 — Build API server"
 pnpm --filter @workspace/api-server run build
 ok "API server built"
 
-info "Step 3/4 — Build frontend (Vite)"
+info "Step 4/5 — Build frontend (Vite)"
 pnpm --filter @workspace/inventory run build
 ok "Frontend built → artifacts/inventory/dist/public/"
 
-info "Step 4/4 — Start/Restart PM2: $APP"
+info "Step 5/5 — Start/Restart PM2: $APP"
 pm2 startOrRestart ecosystem.config.cjs --update-env || fail "Could not start '$APP' — check: pm2 list"
 pm2 save
 
