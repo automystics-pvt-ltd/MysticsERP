@@ -103,6 +103,7 @@ export default function StockTransferDetail() {
       queryKey: getListStockMovementsQueryKey(),
     });
     queryClient.invalidateQueries({ queryKey: getListItemsQueryKey() });
+    queryClient.invalidateQueries({ queryKey: ["warehouses", "stock-summaries"] });
   };
 
   const dispatchMutation = useDispatchStockTransfer({
@@ -150,6 +151,7 @@ export default function StockTransferDetail() {
         queryClient.invalidateQueries({
           queryKey: getListStockTransfersQueryKey(),
         });
+        queryClient.invalidateQueries({ queryKey: ["warehouses", "stock-summaries"] });
         toast({ title: "Transfer deleted" });
         setLocation(`/warehouses/${transfer.fromWarehouseId}?tab=transfers`);
       },

@@ -9,6 +9,7 @@ import {
   useCancelGoodsReceipt,
   useListStockMovements,
   getGetPurchaseOrderQueryKey,
+  getListPurchaseOrdersQueryKey,
   getListPurchaseOrderGoodsReceiptsQueryKey,
   getListStockMovementsQueryKey,
   getListItemsQueryKey,
@@ -156,6 +157,7 @@ export default function PurchaseOrderDetail() {
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: getGetPurchaseOrderQueryKey(orderId) });
+    queryClient.invalidateQueries({ queryKey: getListPurchaseOrdersQueryKey() });
     queryClient.invalidateQueries({
       queryKey: getListPurchaseOrderGoodsReceiptsQueryKey(orderId),
     });
@@ -163,6 +165,8 @@ export default function PurchaseOrderDetail() {
       queryKey: getListStockMovementsQueryKey({ purchaseOrderId: orderId }),
     });
     queryClient.invalidateQueries({ queryKey: getListItemsQueryKey() });
+    queryClient.invalidateQueries({ queryKey: ["warehouses", "stock-summaries"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/dashboard/summary"] });
   };
 
   const updateStatusMutation = useUpdatePurchaseOrderStatus({

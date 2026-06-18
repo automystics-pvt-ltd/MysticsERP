@@ -113,6 +113,7 @@ export default function SalesOrderNew() {
     mutation: {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListSalesOrdersQueryKey() });
+        queryClient.invalidateQueries({ queryKey: ["/api/dashboard/summary"] });
         toast({ title: "Sales order created successfully" });
         setLocation("/sales-orders");
       },

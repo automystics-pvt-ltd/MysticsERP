@@ -136,6 +136,8 @@ export function NewShipmentDialog({
           queryKey: getListStockMovementsQueryKey(),
         });
         queryClient.invalidateQueries({ queryKey: getListItemsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: ["warehouses", "stock-summaries"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/dashboard/summary"] });
         toast({ title: "Shipment recorded" });
         onOpenChange(false);
       },

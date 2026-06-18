@@ -79,6 +79,7 @@ export default function PurchaseOrderNew() {
     mutation: {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListPurchaseOrdersQueryKey() });
+        queryClient.invalidateQueries({ queryKey: ["/api/dashboard/summary"] });
         toast({ title: "Purchase order created successfully" });
         setLocation("/purchase-orders");
       },

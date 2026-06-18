@@ -122,6 +122,7 @@ export default function StockTransferNew() {
         queryClient.invalidateQueries({
           queryKey: getListStockTransfersQueryKey(),
         });
+        queryClient.invalidateQueries({ queryKey: ["warehouses", "stock-summaries"] });
         toast({ title: "Transfer created" });
         setLocation(`/transfers/${detail.transfer.id}`);
       },

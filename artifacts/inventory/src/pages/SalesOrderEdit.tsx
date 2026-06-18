@@ -93,6 +93,7 @@ export default function SalesOrderEdit() {
         queryClient.invalidateQueries({
           queryKey: getListSalesOrderShipmentsQueryKey(orderId),
         });
+        queryClient.invalidateQueries({ queryKey: ["/api/dashboard/summary"] });
         toast({ title: "Sales order updated" });
         setLocation(`/sales-orders/${orderId}`);
       },

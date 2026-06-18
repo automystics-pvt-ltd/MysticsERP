@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/PageHeader";
 import {
   useListWarehouses,
   fetchWriteOffMovements,
+  getListItemsQueryKey,
   getListStockMovementsQueryKey,
 } from "@/lib/queryKeys";
 import { WriteOffDialog } from "@/components/WriteOffDialog";
@@ -613,6 +614,9 @@ export default function WriteOffs() {
                   onApproved={() => {
                     void refetchPending();
                     void queryClient.invalidateQueries({ queryKey: ["write-offs"] });
+                    void queryClient.invalidateQueries({ queryKey: ["warehouses", "stock-summaries"] });
+                    void queryClient.invalidateQueries({ queryKey: getListItemsQueryKey() });
+                    void queryClient.invalidateQueries({ queryKey: ["/api/dashboard/summary"] });
                   }}
                   onRejected={() => {
                     void refetchPending();

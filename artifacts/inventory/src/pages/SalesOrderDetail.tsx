@@ -11,6 +11,7 @@ import {
   downloadSalesOrderInvoice,
   downloadSalesOrderAck,
   getGetSalesOrderQueryKey,
+  getListSalesOrdersQueryKey,
   getListStockMovementsQueryKey,
   getListSalesOrderShipmentsQueryKey,
   getListSalesOrderEmailLogQueryKey,
@@ -125,6 +126,7 @@ export default function SalesOrderDetail() {
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: getGetSalesOrderQueryKey(orderId) });
+    queryClient.invalidateQueries({ queryKey: getListSalesOrdersQueryKey() });
     queryClient.invalidateQueries({
       queryKey: getListStockMovementsQueryKey({ salesOrderId: orderId }),
     });
@@ -133,9 +135,11 @@ export default function SalesOrderDetail() {
       queryKey: getListSalesOrderShipmentsQueryKey(orderId),
     });
     queryClient.invalidateQueries({ queryKey: getListItemsQueryKey() });
+    queryClient.invalidateQueries({ queryKey: ["warehouses", "stock-summaries"] });
     queryClient.invalidateQueries({
       queryKey: getListCustomerPaymentsQueryKey({ salesOrderId: orderId }),
     });
+    queryClient.invalidateQueries({ queryKey: ["/api/dashboard/summary"] });
   };
 
   const updateStatusMutation = useUpdateSalesOrderStatus({
@@ -184,6 +188,8 @@ export default function SalesOrderDetail() {
   const deleteMutation = useDeleteSalesOrder({
     mutation: {
       onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListSalesOrdersQueryKey() });
+        queryClient.invalidateQueries({ queryKey: ["/api/dashboard/summary"] });
         toast({ title: "Bill deleted" });
         setLocation("/sales-orders");
       },

@@ -152,6 +152,7 @@ export default function JobWorkOrderDetail() {
     queryClient.invalidateQueries({
       queryKey: getListSuppliersQueryKey(),
     });
+    queryClient.invalidateQueries({ queryKey: ["warehouses", "stock-summaries"] });
   };
 
   const cancelMutation = useCancelJobWorkOrder({

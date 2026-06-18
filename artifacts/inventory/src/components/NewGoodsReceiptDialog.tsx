@@ -152,6 +152,8 @@ export function NewGoodsReceiptDialog({
           queryKey: getListStockMovementsQueryKey(),
         });
         queryClient.invalidateQueries({ queryKey: getListItemsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: ["warehouses", "stock-summaries"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/dashboard/summary"] });
         toast({ title: "Receipt recorded" });
         onOpenChange(false);
       },
