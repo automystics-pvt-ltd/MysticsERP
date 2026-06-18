@@ -93,7 +93,7 @@ function warehouseToParty(w: JwoOrderWarehouse, label?: string): DocParty {
 
 const COLUMNS: Column[] = [
   { label: "#", width: 28, align: "right" },
-  { label: "Component / Raw material", width: 240 },
+  { label: "Component / Raw material", width: 210 },
   { label: "SKU", width: 110 },
   { label: "Per unit", width: 80, align: "right" },
   { label: "Total needed", width: 95, align: "right" },

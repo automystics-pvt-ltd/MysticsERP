@@ -87,7 +87,7 @@ function customerToParty(c: SalesOrderAckCustomer, ship = false): DocParty {
 
 const COLUMNS: Column[] = [
   { label: "#", width: 22, align: "right" },
-  { label: "Item", width: 168 },
+  { label: "Item", width: 128 },
   { label: "HSN", width: 48 },
   { label: "Qty", width: 38, align: "right" },
   { label: "Rate", width: 58, align: "right" },

@@ -186,7 +186,7 @@ function makeColumns(intra: boolean): Column[] {
   if (intra) {
     return [
       { label: "#", width: 22, align: "right" },
-      { label: "Item", width: 168 },
+      { label: "Item", width: 139 },
       { label: "HSN", width: 50 },
       { label: "Qty", width: 36, align: "right" },
       { label: "Rate", width: 52, align: "right" },
@@ -198,7 +198,7 @@ function makeColumns(intra: boolean): Column[] {
   }
   return [
     { label: "#", width: 22, align: "right" },
-    { label: "Item", width: 188 },
+    { label: "Item", width: 159 },
     { label: "HSN", width: 55 },
     { label: "Qty", width: 40, align: "right" },
     { label: "Rate", width: 56, align: "right" },

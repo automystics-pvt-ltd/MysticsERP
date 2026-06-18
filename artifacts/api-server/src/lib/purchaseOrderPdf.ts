@@ -94,7 +94,7 @@ function warehouseToParty(w: PurchaseOrderPdfWarehouse): DocParty {
 
 const COLUMNS: Column[] = [
   { label: "#", width: 22, align: "right" },
-  { label: "Item", width: 200 },
+  { label: "Item", width: 160 },
   { label: "HSN", width: 50 },
   { label: "Qty", width: 40, align: "right" },
   { label: "Rate", width: 60, align: "right" },
