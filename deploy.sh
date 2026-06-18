@@ -5,11 +5,11 @@
 # Usage:
 #   bash deploy.sh [pm2-app-name]
 #
-# pm2-app-name defaults to "mmwearerp-api" — change to match your pm2 list.
+# pm2-app-name defaults to "mmwear-erp" (matches ecosystem.config.cjs) — override if needed.
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-APP="${1:-mmwearerp-api}"
+APP="${1:-mmwear-erp}"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; NC='\033[0m'
 ok()   { echo -e "${GREEN}✔  $*${NC}"; }
@@ -35,8 +35,8 @@ info "Step 3/4 — Build frontend (Vite)"
 pnpm --filter @workspace/inventory run build
 ok "Frontend built → artifacts/inventory/dist/public/"
 
-info "Step 4/4 — Restart PM2: $APP"
-pm2 restart "$APP" || fail "Could not restart '$APP' — check: pm2 list"
+info "Step 4/4 — Start/Restart PM2: $APP"
+pm2 startOrRestart ecosystem.config.cjs --update-env || fail "Could not start '$APP' — check: pm2 list"
 pm2 save
 
 echo ""
