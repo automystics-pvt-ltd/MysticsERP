@@ -236,6 +236,7 @@ export default function ItemDetail() {
         queryClient.invalidateQueries({
           queryKey: getGetItemQueryKey(itemId),
         });
+        queryClient.invalidateQueries({ queryKey: ["warehouses", "stock-summaries"] });
         setDialogOpen(false);
         form.reset();
         toast({ title: "Stock adjusted successfully" });
@@ -291,6 +292,7 @@ export default function ItemDetail() {
           queryKey: getGetItemQueryKey(itemId),
         });
         queryClient.invalidateQueries({ queryKey: getListItemsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: ["warehouses", "stock-summaries"] });
         toast({ title: "Variant deleted" });
       },
       onError: (err: unknown) => {

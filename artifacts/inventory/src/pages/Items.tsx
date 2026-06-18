@@ -749,6 +749,7 @@ export default function Items() {
         queryClient.invalidateQueries({ queryKey: getListItemsQueryKey() });
         queryClient.invalidateQueries({ queryKey: ["items-paginated"] });
         queryClient.invalidateQueries({ queryKey: ["items-facets"] });
+        queryClient.invalidateQueries({ queryKey: ["warehouses", "stock-summaries"] });
         setVariantsByParent({});
         setDeleteDialogItem(null);
         toast({ title: "Item deleted successfully" });
@@ -774,6 +775,7 @@ export default function Items() {
       (results) => {
         queryClient.invalidateQueries({ queryKey: getListItemsQueryKey() });
         queryClient.invalidateQueries({ queryKey: ["items-paginated"] });
+        queryClient.invalidateQueries({ queryKey: ["warehouses", "stock-summaries"] });
         setVariantsByParent({});
         const failed = results.filter((r) => r.status === "rejected").length;
         const succeeded = ids.length - failed;
