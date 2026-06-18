@@ -87,6 +87,16 @@ router.get("/warehouses/stock-summaries", async (req, res, next) => {
         totalUnits: sum(itemWarehouseStockTable.quantity),
       })
       .from(itemWarehouseStockTable)
+      // Only count stock belonging to active (non-archived) items.
+      // Without this join, soft-deleted items' quantities remain in the
+      // aggregate and inflate the warehouse totals shown on the dashboard.
+      .innerJoin(
+        itemsTable,
+        and(
+          eq(itemsTable.id, itemWarehouseStockTable.itemId),
+          isNull(itemsTable.archivedAt),
+        ),
+      )
       .where(
         and(
           eq(itemWarehouseStockTable.organizationId, t.organizationId),

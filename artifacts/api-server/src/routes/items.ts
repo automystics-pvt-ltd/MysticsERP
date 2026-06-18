@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq, ilike, or, sql, asc, desc, inArray } from "drizzle-orm";
+import { and, eq, ilike, or, sql, asc, desc, inArray, gt } from "drizzle-orm";
 import {
   db,
   itemsTable,
@@ -2541,21 +2541,99 @@ router.delete("/items/:id", async (req, res, next) => {
         return;
       }
     }
+    // Block if this item is a component inside any active (non-archived) bundle.
+    // Removing it would leave the bundle unable to compute its stock.
+    const bundleUsage = await db
+      .select({ parentItemId: itemBundleComponentsTable.parentItemId })
+      .from(itemBundleComponentsTable)
+      .innerJoin(
+        itemsTable,
+        and(
+          eq(itemsTable.id, itemBundleComponentsTable.parentItemId),
+          eq(itemsTable.organizationId, t.organizationId),
+          sql`${itemsTable.archivedAt} IS NULL`,
+        ),
+      )
+      .where(
+        and(
+          eq(itemBundleComponentsTable.organizationId, t.organizationId),
+          eq(itemBundleComponentsTable.componentItemId, id),
+        ),
+      )
+      .limit(1);
+    if (bundleUsage.length > 0) {
+      res.status(400).json({
+        error:
+          "This item is used as a component in one or more active bundles. Remove it from those bundles first, then delete it.",
+      });
+      return;
+    }
     // Soft delete: stamp archived_at instead of issuing DELETE. The
     // row stays in place so historical sales orders, purchase orders,
     // stock transfers, job-work orders, shipments, and bundles that
     // reference this item continue to resolve correctly. The catalog
     // list, lookup, and pickers all filter on archived_at IS NULL,
     // so the user sees the item disappear from their working surfaces.
-    await db
-      .update(itemsTable)
-      .set({ archivedAt: new Date() })
-      .where(
-        and(
-          eq(itemsTable.id, id),
-          eq(itemsTable.organizationId, t.organizationId),
-        ),
-      );
+    //
+    // Wrap everything in a transaction: zero out the item's warehouse
+    // stock (inserting write-off movements for the audit trail) and
+    // stamp archivedAt atomically so the warehouse totals never show
+    // stock for an item that no longer exists in the active catalog.
+    await db.transaction(async (tx) => {
+      const now = new Date();
+      // All non-zero stock rows for this item.
+      const stockRows = await tx
+        .select({
+          warehouseId: itemWarehouseStockTable.warehouseId,
+          quantity: itemWarehouseStockTable.quantity,
+        })
+        .from(itemWarehouseStockTable)
+        .where(
+          and(
+            eq(itemWarehouseStockTable.organizationId, t.organizationId),
+            eq(itemWarehouseStockTable.itemId, id),
+            gt(itemWarehouseStockTable.quantity, "0"),
+          ),
+        );
+      // Write a write_off movement per warehouse so stock history is complete.
+      for (const sr of stockRows) {
+        const qty = toNum(sr.quantity);
+        if (qty > 0) {
+          await tx.insert(stockMovementsTable).values({
+            organizationId: t.organizationId,
+            itemId: id,
+            warehouseId: sr.warehouseId,
+            movementType: "write_off",
+            quantity: toStr(-qty),
+            notes: "Item deleted — stock written off",
+          });
+        }
+      }
+      // Zero out all warehouse stock rows for this item so warehouse
+      // totals (stock-summaries, reports, reorder alerts) drop to zero
+      // immediately — even before the soft-delete filter kicks in.
+      if (stockRows.length > 0) {
+        await tx
+          .update(itemWarehouseStockTable)
+          .set({ quantity: "0" })
+          .where(
+            and(
+              eq(itemWarehouseStockTable.organizationId, t.organizationId),
+              eq(itemWarehouseStockTable.itemId, id),
+            ),
+          );
+      }
+      // Soft-delete the item.
+      await tx
+        .update(itemsTable)
+        .set({ archivedAt: now })
+        .where(
+          and(
+            eq(itemsTable.id, id),
+            eq(itemsTable.organizationId, t.organizationId),
+          ),
+        );
+    });
     res.status(204).send();
   } catch (err) {
     next(err);
@@ -2919,17 +2997,85 @@ router.delete(
         res.status(204).send();
         return;
       }
-      // Soft delete the variant for the same reason as the parent
-      // delete: variants may be referenced by historical orders.
-      await db
-        .update(itemsTable)
-        .set({ archivedAt: new Date() })
+      // Block if this variant is a component inside any active bundle.
+      const variantBundleUsage = await db
+        .select({ parentItemId: itemBundleComponentsTable.parentItemId })
+        .from(itemBundleComponentsTable)
+        .innerJoin(
+          itemsTable,
+          and(
+            eq(itemsTable.id, itemBundleComponentsTable.parentItemId),
+            eq(itemsTable.organizationId, t.organizationId),
+            sql`${itemsTable.archivedAt} IS NULL`,
+          ),
+        )
         .where(
           and(
-            eq(itemsTable.id, variantId),
-            eq(itemsTable.organizationId, t.organizationId),
+            eq(itemBundleComponentsTable.organizationId, t.organizationId),
+            eq(itemBundleComponentsTable.componentItemId, variantId),
           ),
-        );
+        )
+        .limit(1);
+      if (variantBundleUsage.length > 0) {
+        res.status(400).json({
+          error:
+            "This variant is used as a component in one or more active bundles. Remove it from those bundles first, then delete it.",
+        });
+        return;
+      }
+      // Soft delete the variant for the same reason as the parent
+      // delete: variants may be referenced by historical orders.
+      // Zero out warehouse stock atomically and record write-off movements
+      // so warehouse totals stay accurate after deletion.
+      await db.transaction(async (tx) => {
+        const now = new Date();
+        const stockRows = await tx
+          .select({
+            warehouseId: itemWarehouseStockTable.warehouseId,
+            quantity: itemWarehouseStockTable.quantity,
+          })
+          .from(itemWarehouseStockTable)
+          .where(
+            and(
+              eq(itemWarehouseStockTable.organizationId, t.organizationId),
+              eq(itemWarehouseStockTable.itemId, variantId),
+              gt(itemWarehouseStockTable.quantity, "0"),
+            ),
+          );
+        for (const sr of stockRows) {
+          const qty = toNum(sr.quantity);
+          if (qty > 0) {
+            await tx.insert(stockMovementsTable).values({
+              organizationId: t.organizationId,
+              itemId: variantId,
+              warehouseId: sr.warehouseId,
+              movementType: "write_off",
+              quantity: toStr(-qty),
+              notes: "Variant deleted — stock written off",
+            });
+          }
+        }
+        if (stockRows.length > 0) {
+          await tx
+            .update(itemWarehouseStockTable)
+            .set({ quantity: "0" })
+            .where(
+              and(
+                eq(itemWarehouseStockTable.organizationId, t.organizationId),
+                eq(itemWarehouseStockTable.itemId, variantId),
+              ),
+            );
+        }
+        await tx
+          .update(itemsTable)
+          .set({ archivedAt: now })
+          .where(
+            and(
+              eq(itemsTable.id, variantId),
+              eq(itemsTable.organizationId, t.organizationId),
+            ),
+          );
+      });
       res.status(204).send();
     } catch (err) {
       next(err);
