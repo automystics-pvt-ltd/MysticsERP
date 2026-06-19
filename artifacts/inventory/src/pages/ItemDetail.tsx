@@ -1173,7 +1173,8 @@ interface VariantsCardProps {
   showMaxDiscountAmount: boolean;
 }
 
-const variantEditSchema = z.object({
+const variantEditSchema = z
+  .object({
   name: z.string().min(1, "Name is required"),
   sku: z.string().min(1, "SKU is required"),
   salePrice: z.coerce.number().min(0),
@@ -1208,7 +1209,11 @@ const variantEditSchema = z.object({
     z.number().min(0).nullable(),
   ),
   dimensionUnit: z.string(),
-});
+})
+.refine(
+  (v) => v.purchasePrice <= 0 || v.salePrice <= v.purchasePrice,
+  { path: ["salePrice"], message: "Sale price must not exceed MRP" },
+);
 type VariantEditFormValues = z.infer<typeof variantEditSchema>;
 
 function VariantThumb({ imageUrl, name }: { imageUrl: string | null; name: string }) {
@@ -1494,8 +1499,24 @@ function VariantsCard({
     return errs;
   }, [preview, rowDrafts]);
 
+  const mrpErrors = useMemo(() => {
+    const errs: Record<string, string> = {};
+    for (const p of preview) {
+      const draft = rowDrafts[p.key];
+      if (!draft) continue;
+      const sale = Number(draft.salePrice || "0");
+      const mrp = Number(draft.purchasePrice || "0");
+      if (mrp > 0 && sale > mrp) {
+        errs[p.key] = "Sale price must not exceed MRP";
+      }
+    }
+    return errs;
+  }, [preview, rowDrafts]);
+
   const hasErrors =
-    Object.keys(skuErrors).length > 0 || Object.keys(stockErrors).length > 0;
+    Object.keys(skuErrors).length > 0 ||
+    Object.keys(stockErrors).length > 0 ||
+    Object.keys(mrpErrors).length > 0;
 
   const handleSubmit = () => {
     if (preview.length === 0 || hasErrors) return;
@@ -1623,6 +1644,7 @@ function VariantsCard({
                         if (!d) return null;
                         const skuErr = skuErrors[p.key];
                         const stockErr = stockErrors[p.key];
+                        const mrpErr = mrpErrors[p.key];
                         return (
                           <TableRow key={p.key}>
                             {axes.map((a) => (
@@ -1663,7 +1685,8 @@ function VariantsCard({
                               <Input
                                 type="text"
                                 inputMode="decimal"
-                                className="text-right"
+                                className={`text-right${mrpErr ? " border-destructive" : ""}`}
+                                aria-invalid={mrpErr ? true : undefined}
                                 value={d.salePrice}
                                 onChange={(e) =>
                                   updateRow(p.key, {
@@ -1672,6 +1695,11 @@ function VariantsCard({
                                 }
                                 data-testid={`input-variant-sale-${p.key}`}
                               />
+                              {mrpErr && (
+                                <p className="mt-1 text-xs text-destructive">
+                                  {mrpErr}
+                                </p>
+                              )}
                             </TableCell>
                             <TableCell>
                               <Input
