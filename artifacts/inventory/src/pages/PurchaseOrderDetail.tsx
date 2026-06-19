@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, CheckCircle2, PackagePlus, XCircle, Undo2, IndianRupee, FileDown, Building2, Scissors, AlertTriangle, Printer } from "lucide-react";
+import { ArrowLeft, CheckCircle2, PackagePlus, XCircle, Undo2, IndianRupee, FileDown, Building2, Scissors, AlertTriangle, Printer, Pencil } from "lucide-react";
 import { useState, type ReactElement } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { RecordSupplierPaymentDialog } from "@/components/RecordSupplierPaymentDialog";
@@ -312,6 +312,15 @@ export default function PurchaseOrderDetail() {
           <FileDown className="mr-2 h-4 w-4" />
           {downloading ? "Preparing..." : "Download PDF"}
         </Button>
+        <Can module="purchase_orders" action="edit">
+          {order.status === "draft" && !isJobWorkBill && (
+            <Button variant="outline" asChild data-testid="btn-edit-po">
+              <Link href={`/purchase-orders/${orderId}/edit`}>
+                <Pencil className="mr-2 h-4 w-4" /> Edit
+              </Link>
+            </Button>
+          )}
+        </Can>
         <Can module="purchase_orders" action="approve">
           {order.status === "draft" && wrapJwoLock(
             <Button 

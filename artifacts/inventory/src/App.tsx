@@ -59,6 +59,7 @@ const Payments = lazy(() => import("@/pages/Payments"));
 const PaymentDetail = lazy(() => import("@/pages/PaymentDetail"));
 const PurchaseOrders = lazy(() => import("@/pages/PurchaseOrders"));
 const PurchaseOrderNew = lazy(() => import("@/pages/PurchaseOrderNew"));
+const PurchaseOrderEdit = lazy(() => import("@/pages/PurchaseOrderEdit"));
 const PurchaseOrderDetail = lazy(() => import("@/pages/PurchaseOrderDetail"));
 const Reports = lazy(() => import("@/pages/Reports"));
 const ReportInventoryValuation = lazy(() => import("@/pages/ReportInventoryValuation"));
@@ -235,6 +236,7 @@ function ProtectedRoutes() {
           <Route path="/payments/:id" component={PaymentDetail} />
           <Route path="/purchase-orders" component={PurchaseOrders} />
           <Route path="/purchase-orders/new" component={PurchaseOrderNew} />
+          <Route path="/purchase-orders/:id/edit" component={PurchaseOrderEdit} />
           <Route path="/purchase-orders/:id" component={PurchaseOrderDetail} />
           <Route path="/supplier-payments" component={SupplierPayments} />
           <Route path="/supplier-payments/:id" component={SupplierPaymentDetail} />

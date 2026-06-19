@@ -1249,6 +1249,12 @@ function VariantsCard({
   const [editingVariant, setEditingVariant] = useState<VariantStockEntry | null>(null);
   const [deletingVariant, setDeletingVariant] = useState<VariantStockEntry | null>(null);
   const [warehouseStocks, setWarehouseStocks] = useState<Record<number, string>>({});
+  const [createWarehouseId, setCreateWarehouseId] = useState<number>(warehouses[0]?.id ?? 0);
+  useEffect(() => {
+    if (createWarehouseId === 0 && warehouses.length > 0) {
+      setCreateWarehouseId(warehouses[0]!.id);
+    }
+  }, [warehouses, createWarehouseId]);
 
   const editVariantForm = useForm<VariantEditFormValues>({
     resolver: zodResolver(variantEditSchema),
@@ -1503,7 +1509,12 @@ function VariantsCard({
           options: p.options,
           salePrice: Number(d.salePrice) || 0,
           purchasePrice: Number(d.purchasePrice) || 0,
-          ...(stock > 0 ? { openingStock: stock } : {}),
+          ...(stock > 0
+            ? {
+                openingStock: stock,
+                openingWarehouseId: createWarehouseId > 0 ? createWarehouseId : null,
+              }
+            : {}),
         };
       }),
     });
@@ -1538,6 +1549,29 @@ function VariantsCard({
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
+              {warehouses.length > 0 && (
+                <div>
+                  <label className="text-sm font-medium">Opening stock warehouse</label>
+                  <Select
+                    value={createWarehouseId ? createWarehouseId.toString() : ""}
+                    onValueChange={(v) => setCreateWarehouseId(Number(v))}
+                  >
+                    <SelectTrigger className="mt-1" data-testid="select-create-warehouse">
+                      <SelectValue placeholder="Select warehouse" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {warehouses.map((w) => (
+                        <SelectItem key={w.id} value={w.id.toString()}>
+                          {w.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Opening stock quantities will be credited to this warehouse.
+                  </p>
+                </div>
+              )}
               {axes.map((a) => (
                 <div key={a}>
                   <label className="text-sm font-medium">{a} values</label>
