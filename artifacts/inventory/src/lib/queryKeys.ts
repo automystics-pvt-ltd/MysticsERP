@@ -53,9 +53,14 @@ export async function fetchItemsFacets(): Promise<ItemsFacets> {
   return customFetch<ItemsFacets>("/api/items/facets");
 }
 
-export async function fetchItemVariants(parentItemId: number): Promise<Item[]> {
+export async function fetchItemVariants(
+  parentItemId: number,
+  opts?: { warehouseId?: number },
+): Promise<Item[]> {
   const qs = new URLSearchParams();
   qs.set("parentItemId", String(parentItemId));
+  qs.set("includeWarehouseBreakdown", "true");
+  if (opts?.warehouseId != null) qs.set("warehouseId", String(opts.warehouseId));
   return customFetch<Item[]>(`/api/items?${qs}`);
 }
 

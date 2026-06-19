@@ -551,7 +551,9 @@ export default function Items() {
     const willExpand = !expanded[parentId];
     setExpanded((m) => ({ ...m, [parentId]: !m[parentId] }));
     if (willExpand && !variantsByParent[parentId]) {
-      fetchItemVariants(parentId)
+      fetchItemVariants(parentId, {
+        warehouseId: warehouseFilter !== "all" ? warehouseFilter : undefined,
+      })
         .then((variants) => setVariantsByParent((prev) => ({ ...prev, [parentId]: variants })))
         .catch(() => {});
     }
@@ -574,6 +576,9 @@ export default function Items() {
   useEffect(() => {
     setPage(1);
     setSelectedIds(new Set());
+    // Stale variant rows may have been fetched with a different warehouseId —
+    // clear them so they are re-fetched with the current filter on next expand.
+    setVariantsByParent({});
   }, [filterValues.cat, filterValues.brand, filterValues.stock, debouncedPriceMin, debouncedPriceMax, debouncedSearch, warehouseFilter]);
 
   // search/cat/brand/stock are synced by useListFilters; warehouseFilter stays in localStorage.
