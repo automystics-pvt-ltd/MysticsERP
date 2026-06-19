@@ -18,6 +18,7 @@ import {
   type ShopifyOrder,
   type ShopifyRefund,
 } from "../lib/shopify";
+import { generateUniqueBarcode } from "../lib/barcodeGen";
 import { importShopifyOrder } from "../lib/shopifyOrderImport";
 import { cancelOrderShipments } from "../lib/cancelShipment";
 import { pushStockToShopify } from "../lib/shopifyOutbound";
@@ -400,8 +401,9 @@ router.post("/webhooks/shopify", async (req, res, next) => {
         break;
       }
 
+      case "products/create":
       case "products/update": {
-        // Fetch only the changed product (efficient: one API call vs all-products).
+        // Fetch only the changed/created product (one API call vs all-products).
         const productId = String(body["id"] ?? "");
         if (!productId || !org.shopifyAccessToken || !org.shopifyShopDomain) {
           break;
@@ -416,6 +418,9 @@ router.post("/webhooks/shopify", async (req, res, next) => {
             const variant = fresh.variants[0];
             if (variant) {
               const variantIdStr = String(variant.id);
+              const sku =
+                (variant.sku && variant.sku.trim()) || `SHOPIFY-${fresh.id}`;
+
               // Prefer to match by stable shopifyVariantId so SKU renames
               // in Shopify still land on the right inventory row.
               let matchRows = await db
@@ -431,8 +436,6 @@ router.post("/webhooks/shopify", async (req, res, next) => {
               if (!matchRows[0]) {
                 // Fall back to SKU match for items that were imported
                 // before shopifyVariantId was recorded.
-                const sku =
-                  (variant.sku && variant.sku.trim()) || `SHOPIFY-${fresh.id}`;
                 matchRows = await db
                   .select({ id: itemsTable.id })
                   .from(itemsTable)
@@ -444,43 +447,123 @@ router.post("/webhooks/shopify", async (req, res, next) => {
                   )
                   .limit(1);
               }
+
+              // Map Shopify status → inventory active/inactive.
+              // active → unarchive; draft/archived → archive.
+              const shopifyStatus = fresh.status ?? "active";
+              const archivedAtValue =
+                shopifyStatus === "active" ? null : new Date();
+              const commonFields = {
+                name: fresh.title,
+                description: fresh.body_html,
+                category: fresh.product_type,
+                salePrice: variant.price ?? "0",
+                barcode: variant.barcode ?? null,
+                archivedAt: archivedAtValue,
+                shopifyProductId: String(fresh.id),
+                shopifyVariantId: variantIdStr,
+                shopifyInventoryItemId: variant.inventory_item_id
+                  ? String(variant.inventory_item_id)
+                  : null,
+                imageUrl: fresh.image?.src ?? null,
+              };
+
               const itemId = matchRows[0]?.id;
               if (itemId) {
-                // Map Shopify status → inventory active/inactive.
-                // active → unarchive; draft/archived → archive.
-                const shopifyStatus = fresh.status ?? "active";
-                const archivedAtValue =
-                  shopifyStatus === "active" ? null : new Date();
-
+                // Update existing item.
                 await db
                   .update(itemsTable)
-                  .set({
-                    name: fresh.title,
-                    description: fresh.body_html,
-                    category: fresh.product_type,
-                    salePrice: variant.price ?? "0",
-                    barcode: variant.barcode ?? null,
-                    archivedAt: archivedAtValue,
-                    shopifyProductId: String(fresh.id),
-                    shopifyVariantId: variantIdStr,
-                    shopifyInventoryItemId: variant.inventory_item_id
-                      ? String(variant.inventory_item_id)
-                      : null,
-                    imageUrl: fresh.image?.src ?? null,
-                  })
+                  .set(commonFields)
                   .where(
                     and(
                       eq(itemsTable.organizationId, org.id),
                       eq(itemsTable.id, itemId),
                     ),
                   );
+              } else if (topic === "products/create") {
+                // New product in Shopify → create a local item.
+                // Stock starts at 0; inventory_levels/update will correct it.
+                const autoBarcode = await generateUniqueBarcode(org.id);
+                await db.insert(itemsTable).values({
+                  organizationId: org.id,
+                  sku,
+                  unit: "pcs",
+                  barcode: autoBarcode,
+                  barcodeSource: "auto",
+                  purchasePrice: "0",
+                  taxRate: "0",
+                  reorderLevel: "0",
+                  hasVariants: false,
+                  name: fresh.title,
+                  description: fresh.body_html,
+                  category: fresh.product_type,
+                  salePrice: variant.price ?? "0",
+                  archivedAt: archivedAtValue,
+                  shopifyProductId: String(fresh.id),
+                  shopifyVariantId: variantIdStr,
+                  shopifyInventoryItemId: variant.inventory_item_id
+                    ? String(variant.inventory_item_id)
+                    : null,
+                  imageUrl: fresh.image?.src ?? null,
+                });
               }
             }
           }
         } catch (err) {
           req.log?.warn(
             { err: err instanceof Error ? err.message : String(err) },
-            "products/update refresh failed",
+            `${topic} refresh failed`,
+          );
+        }
+        await db
+          .update(organizationsTable)
+          .set({ shopifyLastWebhookAt: new Date() })
+          .where(eq(organizationsTable.id, org.id));
+        break;
+      }
+
+      case "products/delete": {
+        // Shopify sends { id: <numeric product id> } on hard delete.
+        // Archive the matching local item and clear Shopify mapping IDs so
+        // a future reinstall / reimport can re-link it cleanly.
+        const deletedProductId = String(body["id"] ?? "");
+        if (!deletedProductId) break;
+        try {
+          const matchRows = await db
+            .select({ id: itemsTable.id })
+            .from(itemsTable)
+            .where(
+              and(
+                eq(itemsTable.organizationId, org.id),
+                eq(itemsTable.shopifyProductId, deletedProductId),
+              ),
+            )
+            .limit(1); // org-scope-allow: matched by shopifyProductId (globally unique Shopify id)
+          const itemId = matchRows[0]?.id;
+          if (itemId) {
+            await db
+              .update(itemsTable)
+              .set({
+                archivedAt: new Date(),
+                shopifyProductId: null,
+                shopifyVariantId: null,
+                shopifyInventoryItemId: null,
+              })
+              .where(
+                and(
+                  eq(itemsTable.organizationId, org.id),
+                  eq(itemsTable.id, itemId),
+                ),
+              );
+            req.log?.info(
+              { orgId: org.id, itemId, shopifyProductId: deletedProductId },
+              "products/delete: archived local item",
+            );
+          }
+        } catch (err) {
+          req.log?.warn(
+            { err: err instanceof Error ? err.message : String(err) },
+            "products/delete handler failed",
           );
         }
         await db

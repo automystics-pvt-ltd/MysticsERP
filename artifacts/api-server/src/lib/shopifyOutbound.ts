@@ -8,7 +8,12 @@ import {
   warehousesTable,
 } from "@workspace/db";
 import { logger } from "./logger";
-import { createShopifyFulfillment, setInventoryLevel, updateShopifyProduct } from "./shopify";
+import {
+  createShopifyProduct,
+  createShopifyFulfillment,
+  setInventoryLevel,
+  updateShopifyProduct,
+} from "./shopify";
 import { computeBundleStockByWarehouse } from "./bundles";
 
 /**
@@ -130,6 +135,84 @@ async function pushProductFieldsToShopifyAsync(
     category: item.category,
     status,
   });
+}
+
+// ─── New product create push ──────────────────────────────────────────────────
+
+/**
+ * Fire-and-forget: create a new Shopify product for a locally-created item,
+ * then write the returned shopifyProductId / shopifyVariantId /
+ * shopifyInventoryItemId back to the item row and push opening stock.
+ *
+ * No-op when:
+ *   - the org isn't connected to Shopify, OR
+ *   - the item already has a shopifyProductId (already mapped — e.g. it was
+ *     imported from Shopify originally or a race condition already linked it).
+ */
+export function createProductInShopify(orgId: number, itemId: number): void {
+  createProductInShopifyAsync(orgId, itemId).catch((err) => {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err), orgId, itemId },
+      "Shopify outbound create product failed",
+    );
+  });
+}
+
+async function createProductInShopifyAsync(
+  orgId: number,
+  itemId: number,
+): Promise<void> {
+  const orgRows = await db
+    .select({
+      shopDomain: organizationsTable.shopifyShopDomain,
+      accessToken: organizationsTable.shopifyAccessToken,
+    })
+    .from(organizationsTable)
+    .where(eq(organizationsTable.id, orgId))
+    .limit(1);
+  const org = orgRows[0];
+  if (!org || !org.shopDomain || !org.accessToken) return;
+
+  const itemRows = await db
+    .select({
+      name: itemsTable.name,
+      sku: itemsTable.sku,
+      barcode: itemsTable.barcode,
+      salePrice: itemsTable.salePrice,
+      category: itemsTable.category,
+      shopifyProductId: itemsTable.shopifyProductId,
+      isBundle: itemsTable.isBundle,
+      hasVariants: itemsTable.hasVariants,
+      parentItemId: itemsTable.parentItemId,
+    })
+    .from(itemsTable)
+    .where(and(eq(itemsTable.id, itemId), eq(itemsTable.organizationId, orgId)))
+    .limit(1);
+  const item = itemRows[0];
+  if (!item) return;
+  // Already mapped, or is a bundle/variant parent (no physical stock of its own).
+  if (item.shopifyProductId) return;
+  if (item.hasVariants || item.isBundle) return;
+
+  const ids = await createShopifyProduct(org.shopDomain, org.accessToken, {
+    title: item.name,
+    sku: item.sku,
+    price: item.salePrice ?? "0",
+    barcode: item.barcode,
+    category: item.category,
+  });
+
+  await db
+    .update(itemsTable)
+    .set({
+      shopifyProductId: ids.productId,
+      shopifyVariantId: ids.variantId,
+      shopifyInventoryItemId: ids.inventoryItemId || null,
+    })
+    .where(and(eq(itemsTable.id, itemId), eq(itemsTable.organizationId, orgId)));
+
+  // Push current stock to the new Shopify product so it isn't stuck at 0.
+  pushStockToShopify(orgId, itemId);
 }
 
 // ─── Fulfillment push ─────────────────────────────────────────────────────────

@@ -23,7 +23,7 @@ import {
   serializeStockMovement,
 } from "../lib/serializers";
 import { toNum, toStr } from "../lib/numeric";
-import { pushStockToShopify, pushProductFieldsToShopify } from "../lib/shopifyOutbound";
+import { pushStockToShopify, pushProductFieldsToShopify, createProductInShopify } from "../lib/shopifyOutbound";
 import {
   generateUniqueBarcode,
   findBarcodeOwner,
@@ -886,6 +886,11 @@ router.post("/items", async (req, res, next) => {
     }
     if (!hasVariants && !isBundle && openingStock > 0) {
       pushStockToShopify(t.organizationId, item.id);
+    }
+    // Fire-and-forget: create the product in Shopify if the org is connected.
+    // No-op for bundle/variant-parent items (no physical stock to track).
+    if (!hasVariants && !isBundle) {
+      createProductInShopify(t.organizationId, item.id);
     }
 
     res.status(201).json(serializeItem(item, openingStock));
@@ -2634,6 +2639,10 @@ router.delete("/items/:id", async (req, res, next) => {
           ),
         );
     });
+    // Fire-and-forget: set the Shopify product to draft so it's hidden
+    // from the storefront. pushProductFieldsToShopify reads archivedAt
+    // and maps it to status:"draft" before calling Shopify.
+    pushProductFieldsToShopify(t.organizationId, id);
     res.status(204).send();
   } catch (err) {
     next(err);

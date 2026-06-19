@@ -38,7 +38,9 @@ const WEBHOOK_TOPICS = [
   "orders/fulfilled",
   "orders/cancelled",
   "refunds/create",
+  "products/create",
   "products/update",
+  "products/delete",
   "inventory_levels/update",
   "app/uninstalled",
 ];
@@ -426,6 +428,58 @@ export interface UpdateShopifyProductFields {
  * Only the fields explicitly present in `fields` are sent so callers
  * can do partial updates without clobbering unrelated Shopify data.
  */
+export interface CreateShopifyProductResult {
+  productId: string;
+  variantId: string;
+  inventoryItemId: string;
+}
+
+/**
+ * Create a new Shopify product from a local inventory item.
+ * Sets inventory_management to "shopify" so Shopify tracks stock.
+ * Returns the stable IDs we persist back to the item row.
+ */
+export async function createShopifyProduct(
+  shopDomain: string,
+  accessToken: string,
+  fields: {
+    title: string;
+    sku: string;
+    price: string;
+    barcode?: string | null;
+    category?: string | null;
+  },
+): Promise<CreateShopifyProductResult> {
+  const variant: Record<string, unknown> = {
+    price: fields.price,
+    sku: fields.sku,
+    inventory_management: "shopify",
+  };
+  if (fields.barcode) variant["barcode"] = fields.barcode;
+
+  const product: Record<string, unknown> = {
+    title: fields.title,
+    status: "active",
+    variants: [variant],
+  };
+  if (fields.category) product["product_type"] = fields.category;
+
+  const data = await shopifyPost<{ product: ShopifyProductFull }>(
+    shopDomain,
+    accessToken,
+    "/products.json",
+    { product },
+  );
+  const created = data.product;
+  const v = created.variants[0];
+  if (!v) throw new Error("Shopify returned product with no variants");
+  return {
+    productId: String(created.id),
+    variantId: String(v.id),
+    inventoryItemId: String(v.inventory_item_id ?? ""),
+  };
+}
+
 export async function updateShopifyProduct(
   shopDomain: string,
   accessToken: string,
