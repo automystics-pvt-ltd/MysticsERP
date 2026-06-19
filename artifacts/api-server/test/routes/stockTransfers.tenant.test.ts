@@ -47,6 +47,8 @@ vi.mock("../../src/lib/tenant", async () => {
 });
 vi.mock("../../src/lib/shopifyOutbound", () => ({
   pushStockToShopify: vi.fn(),
+  pushProductFieldsToShopify: vi.fn(),
+  createProductInShopify: vi.fn(),
 }));
 // The cross-tenant tests never reach the per-batch fan-out, but the route
 // imports these eagerly so we stub them with safe no-ops.

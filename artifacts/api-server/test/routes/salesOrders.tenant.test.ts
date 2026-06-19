@@ -48,6 +48,8 @@ vi.mock("../../src/lib/tenant", async () => {
 });
 vi.mock("../../src/lib/shopifyOutbound", () => ({
   pushStockToShopify: vi.fn(),
+  pushProductFieldsToShopify: vi.fn(),
+  createProductInShopify: vi.fn(),
 }));
 // `shipments` is imported eagerly via `loadShipmentsForOrder`. It in turn
 // imports lib/batches, so we stub batches with safe no-ops too.

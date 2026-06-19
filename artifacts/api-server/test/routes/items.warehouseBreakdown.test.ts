@@ -54,6 +54,8 @@ vi.mock("../../src/lib/tenant", async () => {
 });
 vi.mock("../../src/lib/shopifyOutbound", () => ({
   pushStockToShopify: vi.fn(),
+  pushProductFieldsToShopify: vi.fn(),
+  createProductInShopify: vi.fn(),
 }));
 
 import itemsRouter from "../../src/routes/items";

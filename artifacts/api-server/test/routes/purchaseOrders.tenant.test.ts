@@ -46,6 +46,8 @@ vi.mock("../../src/lib/tenant", async () => {
 });
 vi.mock("../../src/lib/shopifyOutbound", () => ({
   pushStockToShopify: vi.fn(),
+  pushProductFieldsToShopify: vi.fn(),
+  createProductInShopify: vi.fn(),
 }));
 // `goodsReceipts` is imported eagerly for `loadGoodsReceiptsForOrder`,
 // which in turn imports lib/batches.
