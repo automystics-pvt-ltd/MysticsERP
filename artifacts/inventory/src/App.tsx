@@ -96,6 +96,7 @@ const IntegrationEinvoice = lazy(() => import("@/pages/IntegrationEinvoice"));
 const AdminOrganizations = lazy(() => import("@/pages/AdminOrganizations"));
 const Settings = lazy(() => import("@/pages/Settings"));
 const AppearanceSettings = lazy(() => import("@/pages/AppearanceSettings"));
+const NotificationSettings = lazy(() => import("@/pages/NotificationSettings"));
 const EmailSettingsPage = lazy(() => import("@/pages/EmailSettings"));
 const Team = lazy(() => import("@/pages/Team"));
 const AcceptInvitation = lazy(() => import("@/pages/AcceptInvitation"));
@@ -279,6 +280,7 @@ function ProtectedRoutes() {
           <Route path="/accept-invitation" component={AcceptInvitation} />
           <Route path="/settings/barcode" component={BarcodeSettings} />
           <Route path="/settings/appearance" component={AppearanceSettings} />
+          <Route path="/settings/notifications" component={NotificationSettings} />
           <Route path="/settings/roles" component={lazy(() => import("@/pages/RolePermissionsPage"))} />
           <Route path="/approvals" component={PendingApprovals} />
           <Route path="/settings/approval-workflows" component={ApprovalWorkflows} />

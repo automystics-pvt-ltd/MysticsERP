@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Palette, Type, Image, Monitor, PanelLeft, Globe, Bell, Shield,
-  Users, Building2, ChevronRight, Check, Sun, Moon, Laptop,
-  Upload, RotateCcw, Save, ScanLine, Mail,
+  ChevronRight, Check, Sun, Moon, Laptop,
+  RotateCcw, Save,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -24,12 +24,9 @@ import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 
 const SIDEBAR_NAV = [
-  { icon: Building2, label: "Organization", href: "/settings" },
   { icon: Palette,   label: "Appearance",   href: "/settings/appearance" },
   { icon: Globe,     label: "Localization",  href: null },
-  { icon: Bell,      label: "Notifications", href: "/settings/email" },
-  { icon: Users,     label: "Team & Roles",  href: "/team" },
-  { icon: ScanLine,  label: "Barcode",       href: "/settings/barcode" },
+  { icon: Bell,      label: "Notifications", href: "/settings/notifications" },
   { icon: Shield,    label: "Security",      href: null },
 ];
 
@@ -121,16 +118,16 @@ export default function AppearanceSettings() {
         </div>
         <nav className="flex-1 px-2 py-2 space-y-0.5 overflow-y-auto">
           {SIDEBAR_NAV.map(({ icon: Icon, label, href }) => {
-            const isActive = href === location || (href === "/settings/appearance" && location === "/settings/appearance");
+            const isActive = href !== null && location.startsWith(href);
             const inner = (
               <div
                 className={cn(
-                  "flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer select-none",
+                  "flex items-center justify-between py-2 rounded-r-lg text-sm transition-colors cursor-pointer select-none",
                   isActive
-                    ? "bg-primary/10 text-primary font-medium"
+                    ? "border-l-2 border-primary text-primary font-medium pl-[10px] pr-3 bg-primary/5"
                     : href
-                    ? "text-muted-foreground hover:text-foreground hover:bg-accent"
-                    : "text-muted-foreground/50 cursor-default",
+                    ? "border-l-2 border-transparent text-muted-foreground hover:text-foreground hover:bg-accent pl-[10px] pr-3"
+                    : "border-l-2 border-transparent text-muted-foreground/40 cursor-default pl-[10px] pr-3",
                 )}
               >
                 <div className="flex items-center gap-2.5">
