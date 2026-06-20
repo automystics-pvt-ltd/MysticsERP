@@ -45,8 +45,6 @@ import {
   Clock,
   Layers,
   CheckSquare,
-  ClipboardCheck,
-  ListChecks,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -551,35 +549,6 @@ export default function PendingApprovals() {
         title="Approvals"
         description="Review and act on approval requests across all modules."
       />
-
-      {/* Summary stat strip */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4">
-        <div className="rounded-lg border bg-card px-4 py-3">
-          <div className="flex items-center gap-2 text-muted-foreground mb-1">
-            <ClipboardCheck className="h-4 w-4 shrink-0" />
-            <span className="text-xs font-medium">My Queue</span>
-          </div>
-          <p
-            className="text-2xl font-bold tabular-nums"
-            data-testid="text-stat-value-my-queue"
-          >
-            {mineLoading ? "—" : mineRequests.length}
-          </p>
-        </div>
-
-        <div className="rounded-lg border bg-card px-4 py-3">
-          <div className="flex items-center gap-2 text-muted-foreground mb-1">
-            <ListChecks className="h-4 w-4 shrink-0" />
-            <span className="text-xs font-medium">All Pending</span>
-          </div>
-          <p
-            className="text-2xl font-bold tabular-nums"
-            data-testid="text-stat-value-all-pending"
-          >
-            {allLoading ? "—" : allRequests.length}
-          </p>
-        </div>
-      </div>
 
       {/* Overdue banner */}
       {overdueCount > 0 && (
