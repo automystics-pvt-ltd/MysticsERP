@@ -33,7 +33,7 @@ router.get("/suppliers", async (req, res, next) => {
           SELECT 1 FROM purchase_orders po
           WHERE po.supplier_id = ${suppliersTable.id}
             AND po.organization_id = ${t.organizationId}
-            AND po.status NOT IN ('draft', 'cancelled')
+            AND po.status NOT IN ('draft', 'cancelled', 'returned')
             AND po.balance_due > 0
         )`,
       );
@@ -89,7 +89,7 @@ router.get("/suppliers", async (req, res, next) => {
             FROM purchase_orders po
             WHERE po.supplier_id = ${suppliersTable.id}
               AND po.organization_id = ${t.organizationId}
-              AND po.status NOT IN ('draft', 'cancelled')
+              AND po.status NOT IN ('draft', 'cancelled', 'returned')
               AND po.balance_due > 0
           ), '0')`,
         })
@@ -156,7 +156,7 @@ router.get("/suppliers/:id", async (req, res, next) => {
           FROM purchase_orders po
           WHERE po.supplier_id = ${suppliersTable.id}
             AND po.organization_id = ${t.organizationId}
-            AND po.status NOT IN ('draft', 'cancelled')
+            AND po.status NOT IN ('draft', 'cancelled', 'returned')
             AND po.balance_due > 0
         ), '0')`,
       })
