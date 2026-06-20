@@ -85,6 +85,7 @@ export default function PurchaseOrderEdit() {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getGetPurchaseOrderQueryKey(orderId) });
         queryClient.invalidateQueries({ queryKey: getListPurchaseOrdersQueryKey() });
+        queryClient.invalidateQueries({ queryKey: ["purchase-orders-paginated"] });
         queryClient.invalidateQueries({ queryKey: ["/api/dashboard/summary"] });
         toast({ title: "Purchase order updated" });
         setLocation(`/purchase-orders/${orderId}`);

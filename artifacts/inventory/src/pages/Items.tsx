@@ -532,10 +532,15 @@ export default function Items() {
   });
   // Full item list (no breakdown) — still needed for parentInfoMap + CSV export.
   const { data: allItemsForOptions } = useListItems({});
-  const categoryOptions = useMemo(
-    () => facets?.categories ?? [],
-    [facets],
-  );
+  const categoryOptions = useMemo(() => {
+    const DEFAULT_CATEGORIES = ["Accessories", "Raw Materials"];
+    const fetched = facets?.categories ?? [];
+    const merged = [...DEFAULT_CATEGORIES];
+    for (const c of fetched) {
+      if (!merged.includes(c)) merged.push(c);
+    }
+    return merged;
+  }, [facets]);
   const brandOptions = useMemo(
     () => facets?.brands ?? [],
     [facets],

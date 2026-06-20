@@ -74,7 +74,7 @@ export default function JobWorkOrderEdit() {
   const params = useParams<{ id: string }>();
   const orderId = Number(params.id ?? 0);
   const [, setLocation] = useLocation();
-  const canEdit = useCanI("job_work", "update");
+  const canEdit = useCanI("job_work", "edit");
   const queryClient = useQueryClient();
   const { toast } = useToast();
 

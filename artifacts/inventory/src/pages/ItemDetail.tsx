@@ -948,7 +948,7 @@ export default function ItemDetail() {
                         {stock.warehouseName}
                         {stock.isVirtual && (
                           <Badge variant="secondary" className="text-xs font-normal">
-                            Job Work
+                            Material
                           </Badge>
                         )}
                       </span>

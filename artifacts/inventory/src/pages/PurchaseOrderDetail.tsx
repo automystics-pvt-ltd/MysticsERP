@@ -158,6 +158,7 @@ export default function PurchaseOrderDetail() {
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: getGetPurchaseOrderQueryKey(orderId) });
     queryClient.invalidateQueries({ queryKey: getListPurchaseOrdersQueryKey() });
+    queryClient.invalidateQueries({ queryKey: ["purchase-orders-paginated"] });
     queryClient.invalidateQueries({
       queryKey: getListPurchaseOrderGoodsReceiptsQueryKey(orderId),
     });

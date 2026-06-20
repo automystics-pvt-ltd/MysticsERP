@@ -153,6 +153,7 @@ export function NewGoodsReceiptDialog({
         });
         queryClient.invalidateQueries({ queryKey: getListItemsQueryKey() });
         queryClient.invalidateQueries({ queryKey: ["warehouses", "stock-summaries"] });
+        queryClient.invalidateQueries({ queryKey: ["purchase-orders-paginated"] });
         queryClient.invalidateQueries({ queryKey: ["/api/dashboard/summary"] });
         toast({ title: "Receipt recorded" });
         onOpenChange(false);

@@ -159,10 +159,16 @@ export function RecordSupplierPaymentDialog({
           queryKey: getListSupplierPaymentsQueryKey(),
         });
         queryClient.invalidateQueries({
+          queryKey: ["supplier-payments-paginated"],
+        });
+        queryClient.invalidateQueries({
           queryKey: getListSuppliersQueryKey(),
         });
         queryClient.invalidateQueries({
           queryKey: getListPurchaseOrdersQueryKey(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: ["purchase-orders-paginated"],
         });
         queryClient.invalidateQueries({
           queryKey: getGetPayablesAgingReportQueryKey(),

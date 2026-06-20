@@ -38,11 +38,11 @@ export function useMyPermissions() {
 
 /**
  * Returns true if the current user can perform `action` on `module`.
- * Returns true while permissions are still loading (optimistic — server enforces).
+ * Returns false while permissions are loading so restricted UI stays hidden.
  */
 export function useCanI(module: string, action: string): boolean {
   const { data, isLoading } = useMyPermissions();
-  if (isLoading || !data) return true;
+  if (isLoading || !data) return false;
   if (data.isSuperAdmin) return true;
   return data.permissions[module]?.includes(action) ?? false;
 }
