@@ -4,6 +4,7 @@ import { Link } from "wouter";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/StatusBadge";
 import {
   Table,
   TableBody,
@@ -12,14 +13,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { TableSkeleton } from "@/components/TableSkeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -30,6 +25,14 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { FilterBar } from "@/components/FilterBar";
+import { TablePagination } from "@/components/TablePagination";
+import { useListFilters } from "@/hooks/use-list-filters";
 import { useToast } from "@/hooks/use-toast";
 import { customFetch } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
@@ -42,6 +45,9 @@ import {
   Clock,
   Layers,
   CheckSquare,
+  ClipboardCheck,
+  Timer,
+  ListChecks,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -57,16 +63,11 @@ const MODULE_HREFS: Record<string, (id: number) => string> = {
   purchase_orders: (id) => `/purchase-orders/${id}`,
   stock_transfers: (id) => `/transfers/${id}`,
   supplier_payments: (id) => `/supplier-payments/${id}`,
-  write_offs: (id) => `/write-offs`,
-  goods_receipts: (id) => `/purchase-orders`, // GRN links back to PO list
+  write_offs: () => `/write-offs`,
+  goods_receipts: () => `/purchase-orders`,
 };
 
-const STATUS_BADGE: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  pending: { label: "Pending", variant: "secondary" },
-  approved: { label: "Approved", variant: "default" },
-  rejected: { label: "Rejected", variant: "destructive" },
-  sent_back: { label: "Sent Back", variant: "outline" },
-};
+const PAGE_SIZE_OPTIONS = [15, 25, 50];
 
 interface ApprovalRequest {
   id: number;
@@ -90,7 +91,7 @@ function useApprovalRequests(tab: string, moduleFilter: string) {
   return useQuery<{ requests: ApprovalRequest[]; total: number }>({
     queryKey: ["approval-requests", tab, moduleFilter],
     queryFn: () => {
-      const params = new URLSearchParams({ pageSize: "100" });
+      const params = new URLSearchParams({ pageSize: "500" });
       if (statusParam) params.set("status", statusParam);
       if (assigneeParam) params.set("assignee", assigneeParam);
       if (moduleFilter && moduleFilter !== "all") params.set("module", moduleFilter);
@@ -128,12 +129,17 @@ function ApproveDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Approve Request</DialogTitle>
-          <DialogDescription>This will approve the request and advance it to the next level (or fully approve if it's the last level).</DialogDescription>
+          <DialogDescription>
+            This will approve the request and advance it to the next level (or
+            fully approve if it is the last level).
+          </DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
           <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
-            {mutation.isPending ? "Approving..." : "Approve"}
+            {mutation.isPending ? "Approving…" : "Approve"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -176,22 +182,27 @@ function ActionDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{label} Request</DialogTitle>
-          <DialogDescription>A comment is required to {action === "reject" ? "reject" : "send back"} this request.</DialogDescription>
+          <DialogDescription>
+            A comment is required to{" "}
+            {action === "reject" ? "reject" : "send back"} this request.
+          </DialogDescription>
         </DialogHeader>
         <Textarea
-          placeholder="Enter reason..."
+          placeholder="Enter reason…"
           value={comment}
           onChange={(e) => setComment(e.target.value)}
           rows={3}
         />
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
           <Button
             variant={action === "reject" ? "destructive" : "outline"}
             onClick={() => mutation.mutate()}
             disabled={mutation.isPending || !comment.trim()}
           >
-            {mutation.isPending ? `${label}ing...` : label}
+            {mutation.isPending ? `${label}ing…` : label}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -199,21 +210,29 @@ function ActionDialog({
   );
 }
 
+const COL_COUNT_WITH_ACTIONS = 7;
+const COL_COUNT_NO_ACTIONS = 6;
+
 function RequestTable({
   requests,
   isLoading,
   showActions,
-  onRefetch,
+  search,
 }: {
   requests: ApprovalRequest[];
   isLoading: boolean;
   showActions: boolean;
-  onRefetch: () => void;
+  search: string;
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [dialog, setDialog] = useState<{ requestId: number; type: "approve" | "reject" | "send_back" } | null>(null);
+  const [dialog, setDialog] = useState<{
+    requestId: number;
+    type: "approve" | "reject" | "send_back";
+  } | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
 
   const bulkApprove = useMutation({
     mutationFn: (ids: number[]) =>
@@ -230,9 +249,24 @@ function RequestTable({
     onError: (err: Error) => toast({ title: err.message, variant: "destructive" }),
   });
 
+  const q = search.toLowerCase().trim();
+  const filtered = q
+    ? requests.filter(
+        (r) =>
+          r.recordRef.toLowerCase().includes(q) ||
+          (MODULE_LABELS[r.module] ?? r.module).toLowerCase().includes(q),
+      )
+    : requests;
+
+  const total = filtered.length;
+  const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
+
+  const pendingIds = filtered.filter((r) => r.status === "pending").map((r) => r.id);
+  const allPendingSelected =
+    pendingIds.length > 0 && pendingIds.every((id) => selected.has(id));
+
   const toggleAll = () => {
-    const pendingIds = requests.filter((r) => r.status === "pending").map((r) => r.id);
-    if (selected.size === pendingIds.length) setSelected(new Set());
+    if (allPendingSelected) setSelected(new Set());
     else setSelected(new Set(pendingIds));
   };
 
@@ -243,52 +277,47 @@ function RequestTable({
     setSelected(next);
   };
 
-  if (isLoading) {
-    return (
-      <div className="py-16 text-center text-muted-foreground text-sm">Loading...</div>
-    );
-  }
-
-  if (requests.length === 0) {
-    return (
-      <div className="py-16 text-center text-muted-foreground text-sm">
-        No approval requests found.
-      </div>
-    );
-  }
-
-  const pendingCount = requests.filter((r) => r.status === "pending").length;
+  const colSpan = showActions ? COL_COUNT_WITH_ACTIONS : COL_COUNT_NO_ACTIONS;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {showActions && selected.size > 0 && (
         <Can module="approvals" action="approve">
-          <div className="flex items-center gap-3 rounded-lg bg-muted px-4 py-2">
-            <span className="text-sm font-medium">{selected.size} selected</span>
+          <div className="flex items-center gap-3 rounded-lg bg-muted px-4 py-2.5">
+            <span className="text-sm font-medium text-foreground">
+              {selected.size} selected
+            </span>
             <Button
               size="sm"
               onClick={() => bulkApprove.mutate([...selected])}
               disabled={bulkApprove.isPending}
+              data-testid="btn-bulk-approve"
             >
               <CheckSquare className="h-4 w-4 mr-1.5" />
-              {bulkApprove.isPending ? "Approving..." : "Bulk Approve"}
+              {bulkApprove.isPending ? "Approving…" : "Bulk Approve"}
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
-              Clear
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setSelected(new Set())}
+            >
+              Clear selection
             </Button>
           </div>
         </Can>
       )}
-      <div className="rounded-lg border overflow-hidden">
+
+      <div className="rounded-md border bg-card">
         <Table>
           <TableHeader>
             <TableRow>
               {showActions && (
                 <TableHead className="w-10">
                   <Checkbox
-                    checked={selected.size === pendingCount && pendingCount > 0}
+                    checked={allPendingSelected}
                     onCheckedChange={toggleAll}
-                    aria-label="Select all"
+                    aria-label="Select all pending"
+                    disabled={pendingIds.length === 0}
                   />
                 </TableHead>
               )}
@@ -297,100 +326,180 @@ function RequestTable({
               <TableHead>Level</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Age</TableHead>
-              {showActions && <TableHead>Actions</TableHead>}
+              {showActions && <TableHead className="w-28">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {requests.map((r) => {
-              const sb = STATUS_BADGE[r.status] ?? { label: r.status, variant: "outline" as const };
-              const href = MODULE_HREFS[r.module]?.(r.recordId) ?? "#";
-              return (
-                <TableRow key={r.id} className={cn(r.isOverdue && "bg-red-50/50 dark:bg-red-950/20")}>
-                  {showActions && (
-                    <TableCell>
-                      {r.status === "pending" && (
-                        <Checkbox
-                          checked={selected.has(r.id)}
-                          onCheckedChange={() => toggleOne(r.id)}
-                          aria-label={`Select ${r.recordRef}`}
-                        />
-                      )}
-                    </TableCell>
-                  )}
-                  <TableCell>
-                    <Link href={href} className="font-medium text-primary hover:underline">
-                      {r.recordRef}
-                    </Link>
-                    {r.isOverdue && (
-                      <span className="ml-2 inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
-                        <AlertCircle className="h-3 w-3" />
-                        Overdue
-                      </span>
+            {isLoading ? (
+              <TableSkeleton rows={8} cols={colSpan} />
+            ) : paginated.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={colSpan}
+                  className="h-24 text-center text-muted-foreground"
+                >
+                  {q
+                    ? "No requests match the current search."
+                    : "No approval requests found."}
+                </TableCell>
+              </TableRow>
+            ) : (
+              paginated.map((r) => {
+                const href = MODULE_HREFS[r.module]?.(r.recordId) ?? "#";
+                return (
+                  <TableRow
+                    key={r.id}
+                    data-testid={`row-approval-${r.id}`}
+                    className={cn(
+                      r.isOverdue &&
+                        "bg-red-50/50 dark:bg-red-950/20",
                     )}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {MODULE_LABELS[r.module] ?? r.module}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Layers className="h-3 w-3" />
-                      {r.currentLevel + 1}/{r.totalLevels}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={sb.variant}>{sb.label}</Badge>
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    <div className="flex items-center gap-1">
-                      <Clock className="h-3 w-3" />
-                      {formatDistanceToNow(new Date(r.createdAt), { addSuffix: true })}
-                    </div>
-                  </TableCell>
-                  {showActions && r.status === "pending" && (
+                  >
+                    {showActions && (
+                      <TableCell>
+                        {r.status === "pending" && (
+                          <Checkbox
+                            checked={selected.has(r.id)}
+                            onCheckedChange={() => toggleOne(r.id)}
+                            aria-label={`Select ${r.recordRef}`}
+                          />
+                        )}
+                      </TableCell>
+                    )}
+
                     <TableCell>
-                      <Can module="approvals" action="approve">
-                        <div className="flex items-center gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 text-green-600 hover:text-green-700 hover:bg-green-50"
-                            onClick={() => setDialog({ requestId: r.id, type: "approve" })}
-                            title="Approve"
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Link
+                          href={href}
+                          className="font-mono font-medium text-primary hover:underline"
+                        >
+                          {r.recordRef}
+                        </Link>
+                        {r.isOverdue && (
+                          <Badge
+                            variant="destructive"
+                            className="text-[10px] px-1.5 py-0 font-semibold"
                           >
-                            <CheckCircle2 className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
-                            onClick={() => setDialog({ requestId: r.id, type: "send_back" })}
-                            title="Send Back"
-                          >
-                            <CornerDownLeft className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 text-red-600 hover:text-red-700 hover:bg-red-50"
-                            onClick={() => setDialog({ requestId: r.id, type: "reject" })}
-                            title="Reject"
-                          >
-                            <XCircle className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </Can>
+                            <AlertCircle className="h-2.5 w-2.5 mr-0.5" />
+                            Overdue
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
-                  )}
-                  {showActions && r.status !== "pending" && <TableCell />}
-                </TableRow>
-              );
-            })}
+
+                    <TableCell className="text-sm text-muted-foreground">
+                      {MODULE_LABELS[r.module] ?? r.module}
+                    </TableCell>
+
+                    <TableCell>
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Layers className="h-3 w-3 shrink-0" />
+                        <span>
+                          {r.currentLevel + 1}/{r.totalLevels}
+                        </span>
+                      </div>
+                    </TableCell>
+
+                    <TableCell>
+                      <StatusBadge status={r.status} />
+                    </TableCell>
+
+                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                      <div className="flex items-center gap-1">
+                        <Clock className="h-3 w-3 shrink-0" />
+                        {formatDistanceToNow(new Date(r.createdAt), {
+                          addSuffix: true,
+                        })}
+                      </div>
+                    </TableCell>
+
+                    {showActions && (
+                      <TableCell>
+                        {r.status === "pending" ? (
+                          <Can module="approvals" action="approve">
+                            <div className="flex items-center gap-0.5">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-8 w-8 p-0 text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-950/30"
+                                    onClick={() =>
+                                      setDialog({ requestId: r.id, type: "approve" })
+                                    }
+                                    data-testid={`btn-approve-${r.id}`}
+                                  >
+                                    <CheckCircle2 className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Approve</TooltipContent>
+                              </Tooltip>
+
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-8 w-8 p-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                                    onClick={() =>
+                                      setDialog({ requestId: r.id, type: "send_back" })
+                                    }
+                                    data-testid={`btn-send-back-${r.id}`}
+                                  >
+                                    <CornerDownLeft className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Send Back</TooltipContent>
+                              </Tooltip>
+
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
+                                    onClick={() =>
+                                      setDialog({ requestId: r.id, type: "reject" })
+                                    }
+                                    data-testid={`btn-reject-${r.id}`}
+                                  >
+                                    <XCircle className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Reject</TooltipContent>
+                              </Tooltip>
+                            </div>
+                          </Can>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                    )}
+                  </TableRow>
+                );
+              })
+            )}
           </TableBody>
         </Table>
       </div>
 
+      {total > pageSize && (
+        <TablePagination
+          total={total}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          pageSizeOptions={PAGE_SIZE_OPTIONS}
+          onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
+          itemLabel="requests"
+        />
+      )}
+
       {dialog?.type === "approve" && (
-        <ApproveDialog requestId={dialog.requestId} onClose={() => setDialog(null)} />
+        <ApproveDialog
+          requestId={dialog.requestId}
+          onClose={() => setDialog(null)}
+        />
       )}
       {(dialog?.type === "reject" || dialog?.type === "send_back") && (
         <ActionDialog
@@ -405,95 +514,200 @@ function RequestTable({
 
 export default function PendingApprovals() {
   const [tab, setTab] = useState("mine");
-  const [moduleFilter, setModuleFilter] = useState("all");
-  const { data, isLoading, refetch } = useApprovalRequests(tab, moduleFilter);
+  const { values, set, reset } = useListFilters({ search: "", module: "all" });
 
-  const requests = data?.requests ?? [];
+  const { data: mineData, isLoading: mineLoading } = useApprovalRequests(
+    "mine",
+    values.module,
+  );
+  const { data: allData, isLoading: allLoading } = useApprovalRequests(
+    "all",
+    values.module,
+  );
+  const { data: historyData, isLoading: historyLoading } = useQuery<{
+    requests: ApprovalRequest[];
+    total: number;
+  }>({
+    queryKey: ["approval-requests-history", values.module],
+    queryFn: () => {
+      const params = new URLSearchParams({ pageSize: "500" });
+      if (values.module && values.module !== "all")
+        params.set("module", values.module);
+      return customFetch(`/api/approval-requests?${params}`);
+    },
+  });
 
-  const overdueCount = requests.filter((r) => r.isOverdue).length;
+  const mineRequests = mineData?.requests ?? [];
+  const allRequests = allData?.requests ?? [];
+  const historyResolved = (historyData?.requests ?? []).filter(
+    (r) => r.status !== "pending",
+  );
+
+  const overdueCount =
+    tab === "mine"
+      ? mineRequests.filter((r) => r.isOverdue).length
+      : allRequests.filter((r) => r.isOverdue).length;
+
+  const isLoading =
+    tab === "mine" ? mineLoading : tab === "all" ? allLoading : historyLoading;
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Pending Approvals"
+        title="Approvals"
         description="Review and act on approval requests across all modules."
       />
 
+      {/* Summary stat strip */}
+      <div className="grid grid-cols-3 gap-3 sm:gap-4">
+        <div className="rounded-lg border bg-card px-4 py-3">
+          <div className="flex items-center gap-2 text-muted-foreground mb-1">
+            <ClipboardCheck className="h-4 w-4 shrink-0" />
+            <span className="text-xs font-medium">My Queue</span>
+          </div>
+          <p
+            className="text-2xl font-bold tabular-nums"
+            data-testid="text-stat-value-my-queue"
+          >
+            {mineLoading ? "—" : mineRequests.length}
+          </p>
+        </div>
+
+        <div className="rounded-lg border bg-card px-4 py-3">
+          <div className="flex items-center gap-2 text-muted-foreground mb-1">
+            <ListChecks className="h-4 w-4 shrink-0" />
+            <span className="text-xs font-medium">All Pending</span>
+          </div>
+          <p
+            className="text-2xl font-bold tabular-nums"
+            data-testid="text-stat-value-all-pending"
+          >
+            {allLoading ? "—" : allRequests.length}
+          </p>
+        </div>
+
+        <div className="rounded-lg border bg-card px-4 py-3">
+          <div className="flex items-center gap-2 mb-1">
+            <Timer
+              className={cn(
+                "h-4 w-4 shrink-0",
+                overdueCount > 0
+                  ? "text-red-500"
+                  : "text-muted-foreground",
+              )}
+            />
+            <span
+              className={cn(
+                "text-xs font-medium",
+                overdueCount > 0
+                  ? "text-red-600 dark:text-red-400"
+                  : "text-muted-foreground",
+              )}
+            >
+              Overdue
+            </span>
+          </div>
+          <p
+            className={cn(
+              "text-2xl font-bold tabular-nums",
+              overdueCount > 0 && "text-red-600 dark:text-red-500",
+            )}
+            data-testid="text-stat-value-overdue"
+          >
+            {isLoading ? "—" : overdueCount}
+          </p>
+        </div>
+      </div>
+
+      {/* Overdue banner */}
       {overdueCount > 0 && (
         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-900/40 px-4 py-3 text-sm text-red-700 dark:text-red-400">
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span>
-            <strong>{overdueCount}</strong> request{overdueCount > 1 ? "s are" : " is"} overdue based on SLA thresholds.
+            <strong>{overdueCount}</strong> request
+            {overdueCount !== 1 ? "s are" : " is"} overdue based on SLA
+            thresholds.
           </span>
         </div>
       )}
 
-      <div className="flex items-center gap-3">
-        <Select value={moduleFilter} onValueChange={setModuleFilter}>
-          <SelectTrigger className="w-48">
-            <SelectValue placeholder="All modules" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Modules</SelectItem>
-            {Object.entries(MODULE_LABELS).map(([value, label]) => (
-              <SelectItem key={value} value={value}>{label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      <FilterBar
+        search={values.search}
+        onSearchChange={(v) => set("search", v)}
+        searchPlaceholder="Search by reference or module…"
+        filterDefs={[
+          {
+            key: "module",
+            label: "Module",
+            type: "select",
+            options: Object.entries(MODULE_LABELS).map(([value, label]) => ({
+              value,
+              label,
+            })),
+          },
+        ]}
+        filterValues={values}
+        onFilterChange={(k, v) => set(k, v)}
+        onReset={reset}
+        data-testid="filter-bar-approvals"
+      />
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
-          <TabsTrigger value="mine">My Queue</TabsTrigger>
-          <TabsTrigger value="all">All Pending</TabsTrigger>
-          <TabsTrigger value="history">History</TabsTrigger>
+          <TabsTrigger value="mine" data-testid="tab-mine">
+            My Queue
+            {!mineLoading && mineRequests.length > 0 && (
+              <Badge
+                variant="secondary"
+                className="ml-2 h-5 px-1.5 text-[10px] font-semibold"
+              >
+                {mineRequests.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="all" data-testid="tab-all">
+            All Pending
+            {!allLoading && allRequests.length > 0 && (
+              <Badge
+                variant="secondary"
+                className="ml-2 h-5 px-1.5 text-[10px] font-semibold"
+              >
+                {allRequests.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="history" data-testid="tab-history">
+            History
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="mine" className="mt-4">
           <RequestTable
-            requests={requests}
-            isLoading={isLoading}
+            requests={mineRequests}
+            isLoading={mineLoading}
             showActions
-            onRefetch={refetch}
+            search={values.search}
           />
         </TabsContent>
 
         <TabsContent value="all" className="mt-4">
           <RequestTable
-            requests={requests}
-            isLoading={isLoading}
+            requests={allRequests}
+            isLoading={allLoading}
             showActions
-            onRefetch={refetch}
+            search={values.search}
           />
         </TabsContent>
 
         <TabsContent value="history" className="mt-4">
-          <HistoryTab moduleFilter={moduleFilter} />
+          <RequestTable
+            requests={historyResolved}
+            isLoading={historyLoading}
+            showActions={false}
+            search={values.search}
+          />
         </TabsContent>
       </Tabs>
     </div>
-  );
-}
-
-function HistoryTab({ moduleFilter }: { moduleFilter: string }) {
-  const { data, isLoading } = useQuery<{ requests: ApprovalRequest[]; total: number }>({
-    queryKey: ["approval-requests-history", moduleFilter],
-    queryFn: () => {
-      const params = new URLSearchParams({ pageSize: "100" });
-      if (moduleFilter && moduleFilter !== "all") params.set("module", moduleFilter);
-      return customFetch(`/api/approval-requests?${params}`);
-    },
-  });
-
-  const allRequests = data?.requests ?? [];
-  const resolved = allRequests.filter((r) => r.status !== "pending");
-
-  return (
-    <RequestTable
-      requests={resolved}
-      isLoading={isLoading}
-      showActions={false}
-      onRefetch={() => {}}
-    />
   );
 }
