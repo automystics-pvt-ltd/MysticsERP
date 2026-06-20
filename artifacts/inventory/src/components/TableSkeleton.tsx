@@ -1,5 +1,5 @@
 import { Skeleton } from "@/components/ui/skeleton";
-import { TableBody, TableCell, TableRow } from "@/components/ui/table";
+import { TableCell, TableRow } from "@/components/ui/table";
 
 interface TableSkeletonProps {
   rows?: number;
@@ -10,7 +10,7 @@ interface TableSkeletonProps {
 
 export function TableSkeleton({ rows = 8, cols = 5, colWidths }: TableSkeletonProps) {
   return (
-    <TableBody>
+    <>
       {Array.from({ length: rows }).map((_, ri) => (
         <TableRow key={ri} className="hover:bg-transparent">
           {Array.from({ length: cols }).map((_, ci) => (
@@ -23,6 +23,6 @@ export function TableSkeleton({ rows = 8, cols = 5, colWidths }: TableSkeletonPr
           ))}
         </TableRow>
       ))}
-    </TableBody>
+    </>
   );
 }
