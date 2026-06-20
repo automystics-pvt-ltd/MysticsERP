@@ -6165,6 +6165,10 @@ components:
         jobChargeRate: { type: number }
         expectedReturnDate: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
+        additionalMaterials:
+          type: array
+          items: { $ref: "#/components/schemas/AdditionalMaterial" }
+          description: Free-form materials not tracked in inventory. Appear on challans but do not create stock movements.
         status: { type: string }
         createdAt: { type: string }
         receivedQuantity:
@@ -6336,6 +6340,9 @@ components:
           type: array
           items: { $ref: "#/components/schemas/CreateJobWorkOrderComponentPayload" }
           description: When omitted, the BOM is copied from the output item's bundle definition.
+        additionalMaterials:
+          type: array
+          items: { $ref: "#/components/schemas/AdditionalMaterial" }
       required: [supplierId, outputItemId, outputQuantity, sourceWarehouseId, destWarehouseId]
 
     UpdateJobWorkOrderPayload:
@@ -6356,6 +6363,17 @@ components:
         components:
           type: array
           items: { $ref: "#/components/schemas/CreateJobWorkOrderComponentPayload" }
+        additionalMaterials:
+          type: array
+          items: { $ref: "#/components/schemas/AdditionalMaterial" }
+
+    AdditionalMaterial:
+      type: object
+      properties:
+        name: { type: string }
+        quantity: { type: number }
+        unit: { type: ["string", "null"] }
+      required: [name, quantity]
 
     IssueJobWorkLinePayload:
       type: object

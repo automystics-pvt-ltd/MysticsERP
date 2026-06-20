@@ -5,6 +5,7 @@
  * Mystics Inventory API — multi-tenant inventory SaaS
  * OpenAPI spec version: 0.1.0
  */
+import type { AdditionalMaterial } from './additionalMaterial';
 import type { CreateJobWorkOrderComponentPayload } from './createJobWorkOrderComponentPayload';
 
 export interface CreateJobWorkOrderPayload {
@@ -21,4 +22,5 @@ export interface CreateJobWorkOrderPayload {
   notes?: string | null;
   /** When omitted, the BOM is copied from the output item's bundle definition. */
   components?: CreateJobWorkOrderComponentPayload[];
+  additionalMaterials?: AdditionalMaterial[];
 }

@@ -298,6 +298,14 @@ export default function JobWorkOrderDetail() {
         breadcrumbs={[{ label: "Job Work Orders", href: "/job-work" }, { label: order.jwoNumber }]}
         actions={
           <div className="flex flex-wrap gap-2">
+            {order.status === "draft" && (
+              <Button variant="outline" asChild data-testid="btn-edit-jwo">
+                <Link href={`/job-work/${orderId}/edit`}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Edit
+                </Link>
+              </Button>
+            )}
             <Button
               variant="outline"
               onClick={downloadOrderPdf}
@@ -581,10 +589,10 @@ export default function JobWorkOrderDetail() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="components" className="mt-4">
+        <TabsContent value="components" className="mt-4 space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Raw materials</CardTitle>
+              <CardTitle className="text-base">Raw materials (inventory-tracked)</CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
@@ -639,6 +647,34 @@ export default function JobWorkOrderDetail() {
               </Table>
             </CardContent>
           </Card>
+
+          {(order.additionalMaterials?.length ?? 0) > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Additional raw materials (not in inventory)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Material</TableHead>
+                      <TableHead className="text-right">Quantity</TableHead>
+                      <TableHead>Unit</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {order.additionalMaterials!.map((m, i) => (
+                      <TableRow key={i} data-testid={`row-am-${i}`}>
+                        <TableCell>{m.name}</TableCell>
+                        <TableCell className="text-right">{m.quantity}</TableCell>
+                        <TableCell className="text-muted-foreground text-xs">{m.unit ?? "—"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="issues" className="mt-4 space-y-4">

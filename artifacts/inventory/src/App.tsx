@@ -46,6 +46,7 @@ const StockTransferEdit = lazy(() => import("@/pages/StockTransferEdit"));
 const StockTransferDetail = lazy(() => import("@/pages/StockTransferDetail"));
 const JobWorkOrders = lazy(() => import("@/pages/JobWorkOrders"));
 const JobWorkOrderNew = lazy(() => import("@/pages/JobWorkOrderNew"));
+const JobWorkOrderEdit = lazy(() => import("@/pages/JobWorkOrderEdit"));
 const JobWorkOrderDetail = lazy(() => import("@/pages/JobWorkOrderDetail"));
 const POS = lazy(() => import("@/pages/POS"));
 const PosSessionList = lazy(() => import("@/pages/PosSessionList"));
@@ -223,6 +224,7 @@ function ProtectedRoutes() {
           <Route path="/transfers/:id" component={StockTransferDetail} />
           <Route path="/job-work" component={JobWorkOrders} />
           <Route path="/job-work/new" component={JobWorkOrderNew} />
+          <Route path="/job-work/:id/edit" component={JobWorkOrderEdit} />
           <Route path="/job-work/:id" component={JobWorkOrderDetail} />
           <Route path="/pos" component={POS} />
           <Route path="/pos/sessions/new" component={PosSessionNew} />

@@ -5,6 +5,7 @@
  * Mystics Inventory API — multi-tenant inventory SaaS
  * OpenAPI spec version: 0.1.0
  */
+import type { AdditionalMaterial } from './additionalMaterial';
 
 export interface JobWorkOrder {
   id: number;
@@ -29,6 +30,8 @@ export interface JobWorkOrder {
   expectedReturnDate: string | null;
   /** @nullable */
   notes: string | null;
+  /** Free-form materials not tracked in inventory. Appear on challans but do not create stock movements. */
+  additionalMaterials?: AdditionalMaterial[];
   status: string;
   createdAt: string;
   /** Cumulative finished quantity received against this order. Optional — populated on list rows for at-a-glance progress. */

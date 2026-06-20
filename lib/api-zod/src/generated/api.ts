@@ -4273,6 +4273,11 @@ export const ListJobWorkOrdersResponse = zod.object({
   "jobChargeRate": zod.number(),
   "expectedReturnDate": zod.string().nullable(),
   "notes": zod.string().nullable(),
+  "additionalMaterials": zod.array(zod.object({
+  "name": zod.string(),
+  "quantity": zod.number(),
+  "unit": zod.string().nullish()
+})).optional().describe('Free-form materials not tracked in inventory. Appear on challans but do not create stock movements.'),
   "status": zod.string(),
   "createdAt": zod.string(),
   "receivedQuantity": zod.number().optional().describe('Cumulative finished quantity received against this order. Optional — populated on list rows for at-a-glance progress.'),
@@ -4297,7 +4302,12 @@ export const CreateJobWorkOrderBody = zod.object({
   "components": zod.array(zod.object({
   "componentItemId": zod.number(),
   "quantityPerOutput": zod.number()
-})).optional().describe('When omitted, the BOM is copied from the output item\'s bundle definition.')
+})).optional().describe('When omitted, the BOM is copied from the output item\'s bundle definition.'),
+  "additionalMaterials": zod.array(zod.object({
+  "name": zod.string(),
+  "quantity": zod.number(),
+  "unit": zod.string().nullish()
+})).optional()
 })
 
 export const CreateJobWorkOrderResponse = zod.void()
@@ -4326,6 +4336,11 @@ export const GetJobWorkOrderResponse = zod.object({
   "jobChargeRate": zod.number(),
   "expectedReturnDate": zod.string().nullable(),
   "notes": zod.string().nullable(),
+  "additionalMaterials": zod.array(zod.object({
+  "name": zod.string(),
+  "quantity": zod.number(),
+  "unit": zod.string().nullish()
+})).optional().describe('Free-form materials not tracked in inventory. Appear on challans but do not create stock movements.'),
   "status": zod.string(),
   "createdAt": zod.string(),
   "receivedQuantity": zod.number().optional().describe('Cumulative finished quantity received against this order. Optional — populated on list rows for at-a-glance progress.'),
@@ -4398,6 +4413,11 @@ export const UpdateJobWorkOrderBody = zod.object({
   "components": zod.array(zod.object({
   "componentItemId": zod.number(),
   "quantityPerOutput": zod.number()
+})).optional(),
+  "additionalMaterials": zod.array(zod.object({
+  "name": zod.string(),
+  "quantity": zod.number(),
+  "unit": zod.string().nullish()
 })).optional()
 }).describe('Patch a job-work order. Full edits (outputQuantity, components)\nare accepted only while the order is in draft. Once it is open\n(issued or partially_received), only jobChargeRate,\nexpectedReturnDate and notes may be sent —\ncompleted\/cancelled orders cannot be edited at all. Existing\nreceipts and their auto-generated bills keep their original\nper-unit charge; only future receipts pick up the new rate.\n')
 
@@ -4420,6 +4440,11 @@ export const UpdateJobWorkOrderResponse = zod.object({
   "jobChargeRate": zod.number(),
   "expectedReturnDate": zod.string().nullable(),
   "notes": zod.string().nullable(),
+  "additionalMaterials": zod.array(zod.object({
+  "name": zod.string(),
+  "quantity": zod.number(),
+  "unit": zod.string().nullish()
+})).optional().describe('Free-form materials not tracked in inventory. Appear on challans but do not create stock movements.'),
   "status": zod.string(),
   "createdAt": zod.string(),
   "receivedQuantity": zod.number().optional().describe('Cumulative finished quantity received against this order. Optional — populated on list rows for at-a-glance progress.'),
@@ -4503,6 +4528,11 @@ export const CancelJobWorkOrderResponse = zod.object({
   "jobChargeRate": zod.number(),
   "expectedReturnDate": zod.string().nullable(),
   "notes": zod.string().nullable(),
+  "additionalMaterials": zod.array(zod.object({
+  "name": zod.string(),
+  "quantity": zod.number(),
+  "unit": zod.string().nullish()
+})).optional().describe('Free-form materials not tracked in inventory. Appear on challans but do not create stock movements.'),
   "status": zod.string(),
   "createdAt": zod.string(),
   "receivedQuantity": zod.number().optional().describe('Cumulative finished quantity received against this order. Optional — populated on list rows for at-a-glance progress.'),
@@ -4625,6 +4655,11 @@ export const CancelJobWorkReceiptResponse = zod.object({
   "jobChargeRate": zod.number(),
   "expectedReturnDate": zod.string().nullable(),
   "notes": zod.string().nullable(),
+  "additionalMaterials": zod.array(zod.object({
+  "name": zod.string(),
+  "quantity": zod.number(),
+  "unit": zod.string().nullish()
+})).optional().describe('Free-form materials not tracked in inventory. Appear on challans but do not create stock movements.'),
   "status": zod.string(),
   "createdAt": zod.string(),
   "receivedQuantity": zod.number().optional().describe('Cumulative finished quantity received against this order. Optional — populated on list rows for at-a-glance progress.'),

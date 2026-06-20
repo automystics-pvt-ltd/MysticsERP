@@ -8,6 +8,7 @@ import {
   date,
   index,
   uniqueIndex,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { organizationsTable } from "./organizations";
 import { suppliersTable } from "./suppliers";
@@ -67,6 +68,12 @@ export const jobWorkOrdersTable = pgTable(
       .default("0"),
     expectedReturnDate: date("expected_return_date"),
     notes: text("notes"),
+    // Free-form raw materials that are NOT tracked in the items catalog.
+    // Appear on delivery challans but do not create stock movements.
+    additionalMaterials: jsonb("additional_materials")
+      .$type<Array<{ name: string; quantity: number; unit?: string }>>()
+      .notNull()
+      .default([]),
     // draft | issued | partially_received | completed | cancelled
     status: text("status").notNull().default("draft"),
     createdAt: timestamp("created_at", { withTimezone: true })

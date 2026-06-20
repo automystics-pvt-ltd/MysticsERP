@@ -8,6 +8,7 @@
 
 export * from './acceptInvitationPayload';
 export * from './activityEntry';
+export * from './additionalMaterial';
 export * from './adjustStockBody';
 export * from './adminOrganizationSummary';
 export * from './adminPlatformStats';

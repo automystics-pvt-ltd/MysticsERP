@@ -176,6 +176,31 @@ async function loadOrderRow(orgId: number, id: number) {
   return rows[0] ?? null;
 }
 
+function parseAdditionalMaterials(
+  raw: unknown,
+): Array<{ name: string; quantity: number; unit?: string }> {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(
+      (m): m is Record<string, unknown> =>
+        typeof m === "object" && m !== null,
+    )
+    .filter(
+      (m) =>
+        typeof m.name === "string" &&
+        m.name.trim() !== "" &&
+        Number.isFinite(Number(m.quantity)) &&
+        Number(m.quantity) > 0,
+    )
+    .map((m) => ({
+      name: String(m.name).trim(),
+      quantity: Number(m.quantity),
+      ...(typeof m.unit === "string" && m.unit.trim()
+        ? { unit: m.unit.trim() }
+        : {}),
+    }));
+}
+
 function serializeOrder(
   o: typeof jobWorkOrdersTable.$inferSelect,
   supplierName: string,
@@ -202,6 +227,7 @@ function serializeOrder(
     jobChargeRate: toNum(o.jobChargeRate),
     expectedReturnDate: o.expectedReturnDate ?? null,
     notes: o.notes,
+    additionalMaterials: (o.additionalMaterials ?? []) as Array<{ name: string; quantity: number; unit?: string }>,
     status: o.status,
     createdAt: o.createdAt.toISOString(),
   };
@@ -914,6 +940,8 @@ router.post("/job-work-orders", async (req, res, next) => {
         ? String(b.notes).trim()
         : null;
 
+    const additionalMaterials = parseAdditionalMaterials(b.additionalMaterials);
+
     const createdId = await db.transaction(async (tx) => {
       const vendorWarehouseId = await ensureVendorWarehouse(
         tx,
@@ -939,6 +967,7 @@ router.post("/job-work-orders", async (req, res, next) => {
               ? b.expectedReturnDate
               : null,
           notes,
+          additionalMaterials,
           status: STATUS_DRAFT,
         })
         .returning({ id: jobWorkOrdersTable.id });
@@ -1007,6 +1036,7 @@ router.patch("/job-work-orders/:id", async (req, res, next) => {
         "jobChargeRate",
         "expectedReturnDate",
         "notes",
+        "additionalMaterials",
       ]);
       const otherKeys = Object.keys(b).filter(
         (k) => !allowedKeys.has(k) && b[k] !== undefined,
@@ -1014,7 +1044,7 @@ router.patch("/job-work-orders/:id", async (req, res, next) => {
       if (otherKeys.length > 0) {
         res.status(400).json({
           error:
-            "Once a job-work order has been issued, only the per-unit job charge rate, expected return date and notes can be edited. Cancel and recreate to change other fields.",
+            "Once a job-work order has been issued, only the per-unit job charge rate, expected return date, notes and additional materials can be edited. Cancel and recreate to change other fields.",
         });
         return;
       }
@@ -1053,10 +1083,15 @@ router.patch("/job-work-orders/:id", async (req, res, next) => {
         updates.notes =
           b.notes === null || b.notes === "" ? null : (b.notes as string);
       }
+      if (b.additionalMaterials !== undefined) {
+        updates.additionalMaterials = parseAdditionalMaterials(
+          b.additionalMaterials,
+        );
+      }
       if (Object.keys(updates).length === 0) {
         res.status(400).json({
           error:
-            "Provide at least one of jobChargeRate, expectedReturnDate or notes.",
+            "Provide at least one of jobChargeRate, expectedReturnDate, notes or additionalMaterials.",
         });
         return;
       }
@@ -1171,6 +1206,10 @@ router.patch("/job-work-orders/:id", async (req, res, next) => {
                 ? null
                 : b.expectedReturnDate,
           notes: b.notes === undefined ? existing.notes : b.notes,
+          additionalMaterials:
+            b.additionalMaterials === undefined
+              ? (existing.additionalMaterials as Array<{ name: string; quantity: number; unit?: string }> ?? [])
+              : parseAdditionalMaterials(b.additionalMaterials),
         })
         .where(
           and(

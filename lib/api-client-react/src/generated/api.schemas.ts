@@ -2955,6 +2955,13 @@ export interface ErrorEnvelope {
   error: string;
 }
 
+export interface AdditionalMaterial {
+  name: string;
+  quantity: number;
+  /** @nullable */
+  unit?: string | null;
+}
+
 export interface JobWorkOrder {
   id: number;
   jwoNumber: string;
@@ -2978,6 +2985,8 @@ export interface JobWorkOrder {
   expectedReturnDate: string | null;
   /** @nullable */
   notes: string | null;
+  /** Free-form materials not tracked in inventory. Appear on challans but do not create stock movements. */
+  additionalMaterials?: AdditionalMaterial[];
   status: string;
   createdAt: string;
   /** Cumulative finished quantity received against this order. Optional — populated on list rows for at-a-glance progress. */
@@ -3079,6 +3088,7 @@ export interface CreateJobWorkOrderPayload {
   notes?: string | null;
   /** When omitted, the BOM is copied from the output item's bundle definition. */
   components?: CreateJobWorkOrderComponentPayload[];
+  additionalMaterials?: AdditionalMaterial[];
 }
 
 /**
@@ -3098,6 +3108,7 @@ export interface UpdateJobWorkOrderPayload {
   /** @nullable */
   notes?: string | null;
   components?: CreateJobWorkOrderComponentPayload[];
+  additionalMaterials?: AdditionalMaterial[];
 }
 
 export interface IssueJobWorkLinePayload {
