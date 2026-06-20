@@ -46,7 +46,6 @@ import {
   Layers,
   CheckSquare,
   ClipboardCheck,
-  Timer,
   ListChecks,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -483,17 +482,15 @@ function RequestTable({
         </Table>
       </div>
 
-      {total > pageSize && (
-        <TablePagination
-          total={total}
-          page={page}
-          pageSize={pageSize}
-          onPageChange={setPage}
-          pageSizeOptions={PAGE_SIZE_OPTIONS}
-          onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
-          itemLabel="requests"
-        />
-      )}
+      <TablePagination
+        total={total}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        pageSizeOptions={PAGE_SIZE_OPTIONS}
+        onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
+        itemLabel="requests"
+      />
 
       {dialog?.type === "approve" && (
         <ApproveDialog
@@ -548,9 +545,6 @@ export default function PendingApprovals() {
       ? mineRequests.filter((r) => r.isOverdue).length
       : allRequests.filter((r) => r.isOverdue).length;
 
-  const isLoading =
-    tab === "mine" ? mineLoading : tab === "all" ? allLoading : historyLoading;
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -559,7 +553,7 @@ export default function PendingApprovals() {
       />
 
       {/* Summary stat strip */}
-      <div className="grid grid-cols-3 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <div className="rounded-lg border bg-card px-4 py-3">
           <div className="flex items-center gap-2 text-muted-foreground mb-1">
             <ClipboardCheck className="h-4 w-4 shrink-0" />
@@ -583,38 +577,6 @@ export default function PendingApprovals() {
             data-testid="text-stat-value-all-pending"
           >
             {allLoading ? "—" : allRequests.length}
-          </p>
-        </div>
-
-        <div className="rounded-lg border bg-card px-4 py-3">
-          <div className="flex items-center gap-2 mb-1">
-            <Timer
-              className={cn(
-                "h-4 w-4 shrink-0",
-                overdueCount > 0
-                  ? "text-red-500"
-                  : "text-muted-foreground",
-              )}
-            />
-            <span
-              className={cn(
-                "text-xs font-medium",
-                overdueCount > 0
-                  ? "text-red-600 dark:text-red-400"
-                  : "text-muted-foreground",
-              )}
-            >
-              Overdue
-            </span>
-          </div>
-          <p
-            className={cn(
-              "text-2xl font-bold tabular-nums",
-              overdueCount > 0 && "text-red-600 dark:text-red-500",
-            )}
-            data-testid="text-stat-value-overdue"
-          >
-            {isLoading ? "—" : overdueCount}
           </p>
         </div>
       </div>
