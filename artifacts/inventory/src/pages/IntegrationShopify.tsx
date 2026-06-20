@@ -82,8 +82,9 @@ const customSchema = z.object({
   accessToken: z
     .string()
     .min(1, "Access token is required")
-    .refine((v) => v.trim().startsWith("shpat_") || v.trim().length >= 20, {
-      message: "Paste the Admin API access token from your Shopify custom app",
+    .refine((v) => v.trim().startsWith("shpat_"), {
+      message:
+        'Wrong token type — this must be the Admin API access token, which starts with "shpat_". Do not use storefront, session, or private-app tokens.',
     }),
 });
 
