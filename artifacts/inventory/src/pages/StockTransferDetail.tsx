@@ -58,6 +58,7 @@ import {
   Trash2,
   FileDown,
   Circle,
+  Pencil,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { downloadStockTransferPdf } from "@workspace/api-client-react";
@@ -186,6 +187,7 @@ export default function StockTransferDetail() {
 
   const { transfer, lines } = data;
   const status = transfer.status;
+  const canEdit = status === "draft" && canTransferPerm;
   const canDispatch = status === "draft" && canTransferPerm;
   const canComplete = status === "in_transit" && canTransferPerm;
   const canCancel = (status === "draft" || status === "in_transit" || status === "pending_approval") && canDeletePerm;
@@ -292,6 +294,16 @@ export default function StockTransferDetail() {
         ]}
         actions={
           <div className="flex items-center gap-2">
+          {canEdit && (
+            <Button
+              variant="outline"
+              onClick={() => setLocation(`/transfers/${id}/edit`)}
+              data-testid="btn-edit-transfer"
+            >
+              <Pencil className="mr-2 h-4 w-4" />
+              Edit
+            </Button>
+          )}
           <Button
             variant="outline"
             onClick={async () => {
