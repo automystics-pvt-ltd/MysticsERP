@@ -125,6 +125,7 @@ export class PosApiError extends Error {
     this.name = "PosApiError";
     this.status = status;
     this.data = data;
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }
 

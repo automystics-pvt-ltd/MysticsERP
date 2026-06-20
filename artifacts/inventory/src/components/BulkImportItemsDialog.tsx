@@ -459,7 +459,13 @@ function parseCsvFile(
           reject(err);
         }
       },
-      error: (err) => reject(err),
+      error: (err) =>
+        reject(
+          new Error(
+            (err as { message?: string })?.message ??
+              "Failed to parse CSV file.",
+          ),
+        ),
     });
   });
 }

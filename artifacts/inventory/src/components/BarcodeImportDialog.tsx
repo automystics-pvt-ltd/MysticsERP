@@ -175,7 +175,13 @@ function parseCsv(file: File): Promise<{ rows: ParsedRow[]; warnings: string[] }
         if ("error" in out) { reject(new Error(out.error)); return; }
         resolve(out);
       },
-      error: (err) => reject(err),
+      error: (err) =>
+        reject(
+          new Error(
+            (err as { message?: string })?.message ??
+              "Failed to parse CSV file.",
+          ),
+        ),
     });
   });
 }
