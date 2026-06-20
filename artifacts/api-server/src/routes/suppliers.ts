@@ -1,8 +1,9 @@
 import { Router, type IRouter } from "express";
-import { and, asc, desc, eq, gt, ilike, isNotNull, lt, notInArray, or, sql, sum } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gt, ilike, isNotNull, lt, notInArray, or, sql, sum } from "drizzle-orm";
 import { db, purchaseOrdersTable, suppliersTable } from "@workspace/db";
 import { tenantMiddleware } from "../lib/tenant";
 import { serializeSupplier } from "../lib/serializers";
+import { toNum } from "../lib/numeric";
 
 const router: IRouter = Router();
 router.use(tenantMiddleware);
@@ -27,7 +28,15 @@ router.get("/suppliers", async (req, res, next) => {
       );
     }
     if (hasBalance) {
-      conds.push(gt(suppliersTable.outstandingPayable, "0"));
+      conds.push(
+        sql`EXISTS (
+          SELECT 1 FROM purchase_orders po
+          WHERE po.supplier_id = ${suppliersTable.id}
+            AND po.organization_id = ${t.organizationId}
+            AND po.status NOT IN ('draft', 'cancelled')
+            AND po.balance_due > 0
+        )`,
+      );
     }
     if (overdueOnly) {
       // Limit to suppliers that have at least one overdue PO for this org.
@@ -73,7 +82,17 @@ router.get("/suppliers", async (req, res, next) => {
           ),
         ),
       db
-        .select()
+        .select({
+          ...getTableColumns(suppliersTable),
+          computedPayable: sql<string>`COALESCE((
+            SELECT SUM(po.balance_due)
+            FROM purchase_orders po
+            WHERE po.supplier_id = ${suppliersTable.id}
+              AND po.organization_id = ${t.organizationId}
+              AND po.status NOT IN ('draft', 'cancelled')
+              AND po.balance_due > 0
+          ), '0')`,
+        })
         .from(suppliersTable)
         .where(and(...conds))
         .orderBy(orderExpr)
@@ -83,7 +102,15 @@ router.get("/suppliers", async (req, res, next) => {
     const total = Number(countRows[0]?.count ?? 0);
     const overduePayablesCount = Number(overdueRows[0]?.count ?? 0);
     const overduePayablesAmount = String(overdueRows[0]?.totalAmount ?? "0");
-    res.json({ suppliers: rows.map(serializeSupplier), total, totalPayable: sumRows[0]?.totalPayable ?? "0", overduePayablesCount, overduePayablesAmount, page, pageSize });
+    res.json({
+      suppliers: rows.map((row) => ({ ...serializeSupplier(row), outstandingPayable: toNum(row.computedPayable) })),
+      total,
+      totalPayable: sumRows[0]?.totalPayable ?? "0",
+      overduePayablesCount,
+      overduePayablesAmount,
+      page,
+      pageSize,
+    });
   } catch (err) {
     next(err);
   }
@@ -122,7 +149,17 @@ router.get("/suppliers/:id", async (req, res, next) => {
     const t = req.tenant!;
     const id = Number(req.params.id);
     const rows = await db
-      .select()
+      .select({
+        ...getTableColumns(suppliersTable),
+        computedPayable: sql<string>`COALESCE((
+          SELECT SUM(po.balance_due)
+          FROM purchase_orders po
+          WHERE po.supplier_id = ${suppliersTable.id}
+            AND po.organization_id = ${t.organizationId}
+            AND po.status NOT IN ('draft', 'cancelled')
+            AND po.balance_due > 0
+        ), '0')`,
+      })
       .from(suppliersTable)
       .where(
         and(eq(suppliersTable.id, id), eq(suppliersTable.organizationId, t.organizationId)),
@@ -132,7 +169,7 @@ router.get("/suppliers/:id", async (req, res, next) => {
       res.status(404).json({ error: "Not found" });
       return;
     }
-    res.json(serializeSupplier(rows[0]));
+    res.json({ ...serializeSupplier(rows[0]), outstandingPayable: toNum(rows[0].computedPayable) });
   } catch (err) {
     next(err);
   }

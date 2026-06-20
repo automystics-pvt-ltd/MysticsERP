@@ -18,7 +18,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/format";
-import { Plus, Search, MoreHorizontal, Edit, Trash2, ArrowUp, ArrowDown, ArrowUpDown, IndianRupee, AlertCircle } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Edit, Trash2, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { TablePagination } from "@/components/TablePagination";
 import { TableSkeleton } from "@/components/TableSkeleton";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -83,9 +83,6 @@ export default function Suppliers() {
 
   const suppliers = data?.suppliers ?? [];
   const total = data?.total ?? 0;
-  const totalPayable = data?.totalPayable ?? "0";
-  const overduePayablesCount = data?.overduePayablesCount ?? 0;
-  const overduePayablesAmount = parseFloat(data?.overduePayablesAmount ?? "0") || 0;
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [deleteDialogSupplier, setDeleteDialogSupplier] = useState<Supplier | null>(null);
@@ -281,52 +278,6 @@ export default function Suppliers() {
         sortDefaultDir="asc"
         onReset={() => { reset(); setPage(1); }}
       />
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div className="rounded-lg border bg-card p-4 flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-100 text-orange-600 shrink-0">
-            <IndianRupee className="h-5 w-5" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm text-muted-foreground" data-testid="text-stat-title-total-payable">
-              {hasBalance || debouncedSearch ? "Payable (filtered)" : "Total Payable"}
-            </p>
-            <p className="text-xl font-semibold text-orange-600 tabular-nums" data-testid="text-stat-value-total-payable">
-              {isLoading ? "—" : formatCurrency(parseFloat(totalPayable) || 0)}
-            </p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => {
-            set("overdue", overdueOnly ? "false" : "true");
-            setPage(1);
-          }}
-          className={`rounded-lg border p-4 flex items-center gap-3 text-left w-full transition-colors ${
-            overdueOnly
-              ? "bg-red-50 border-red-300 ring-2 ring-red-300"
-              : "bg-card hover:bg-muted/50"
-          }`}
-          aria-pressed={overdueOnly}
-          title={overdueOnly ? "Click to clear overdue filter" : "Click to filter by overdue suppliers"}
-        >
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100 text-red-600 shrink-0">
-            <AlertCircle className="h-5 w-5" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm text-muted-foreground" data-testid="text-stat-title-overdue-payables">
-              {overdueOnly ? "Overdue Payables (active)" : hasBalance || debouncedSearch ? "Overdue POs (filtered)" : "Overdue Payables"}
-            </p>
-            <p className="text-xl font-semibold text-red-600 tabular-nums" data-testid="text-stat-value-overdue-payables">
-              {isLoading
-                ? "—"
-                : overduePayablesCount === 0
-                  ? "None"
-                  : `${overduePayablesCount} PO${overduePayablesCount !== 1 ? "s" : ""} • ${formatCurrency(overduePayablesAmount)}`}
-            </p>
-          </div>
-        </button>
-      </div>
 
       <div className="rounded-md border bg-card">
         <Table>
