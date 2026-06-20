@@ -309,11 +309,7 @@ export function RecordSupplierPaymentDialog({
               </div>
               <div className="text-right text-xs">
                 <p className="text-muted-foreground">Allocated</p>
-                <p
-                  className={`font-mono font-medium ${
-                    overAllocated ? "text-destructive" : ""
-                  }`}
-                >
+                <p className="font-mono font-medium">
                   {formatCurrency(totalAllocated)}
                 </p>
               </div>
