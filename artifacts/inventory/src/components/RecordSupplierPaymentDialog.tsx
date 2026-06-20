@@ -74,7 +74,6 @@ export function RecordSupplierPaymentDialog({
   const [paymentDate, setPaymentDate] = useState(() =>
     new Date().toISOString().slice(0, 10),
   );
-  const [amount, setAmount] = useState("");
   const [mode, setMode] = useState<string>("upi");
   const [reference, setReference] = useState("");
   const [bankAccount, setBankAccount] = useState("");
@@ -106,11 +105,6 @@ export function RecordSupplierPaymentDialog({
   useEffect(() => {
     if (!open) return;
     setPaymentDate(new Date().toISOString().slice(0, 10));
-    setAmount(
-      presetPurchaseOrderBalance
-        ? presetPurchaseOrderBalance.toFixed(2)
-        : "",
-    );
     setMode("upi");
     setReference("");
     setBankAccount("");
@@ -131,8 +125,6 @@ export function RecordSupplierPaymentDialog({
     (s, a) => s + (Number(a.amount) || 0),
     0,
   );
-  const amountNum = Number(amount) || 0;
-  const overAllocated = totalAllocated - amountNum > 0.005;
 
   const toggleAllocation = (orderId: number, balance: number) => {
     setAllocations((prev) => {
@@ -145,10 +137,16 @@ export function RecordSupplierPaymentDialog({
     });
   };
 
-  const updateAllocationAmount = (orderId: number, value: string) => {
+  const updateAllocationAmount = (
+    orderId: number,
+    value: string,
+    maxBalance: number,
+  ) => {
+    const capped =
+      Number(value) > maxBalance ? maxBalance.toFixed(2) : value;
     setAllocations((prev) =>
       prev.map((a) =>
-        a.purchaseOrderId === orderId ? { ...a, amount: value } : a,
+        a.purchaseOrderId === orderId ? { ...a, amount: capped } : a,
       ),
     );
   };
@@ -193,13 +191,9 @@ export function RecordSupplierPaymentDialog({
   });
 
   const submit = () => {
-    if (!amountNum || amountNum <= 0) {
-      toast({ title: "Enter a payment amount", variant: "destructive" });
-      return;
-    }
-    if (overAllocated) {
+    if (!totalAllocated || totalAllocated <= 0) {
       toast({
-        title: "Allocations exceed payment amount",
+        title: "Select at least one bill to pay",
         variant: "destructive",
       });
       return;
@@ -214,7 +208,7 @@ export function RecordSupplierPaymentDialog({
       data: {
         supplierId,
         paymentDate,
-        amount: amountNum,
+        amount: totalAllocated,
         mode,
         referenceNumber: reference || null,
         bankAccountLabel: bankAccount || null,
@@ -249,16 +243,10 @@ export function RecordSupplierPaymentDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="payment-amount">Amount</Label>
-              <Input
-                id="payment-amount"
-                type="number"
-                step="0.01"
-                min="0"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                data-testid="input-payment-amount"
-              />
+              <Label>Amount</Label>
+              <div className="flex h-10 items-center rounded-md border bg-muted px-3 text-sm font-mono">
+                {totalAllocated > 0 ? formatCurrency(totalAllocated) : <span className="text-muted-foreground">—</span>}
+              </div>
             </div>
           </div>
 
@@ -382,7 +370,7 @@ export function RecordSupplierPaymentDialog({
                             disabled={!alloc}
                             value={alloc?.amount ?? ""}
                             onChange={(e) =>
-                              updateAllocationAmount(o.id, e.target.value)
+                              updateAllocationAmount(o.id, e.target.value, balance)
                             }
                             className="h-8 w-28 ml-auto text-right"
                             data-testid={`input-alloc-${o.id}`}
@@ -403,7 +391,7 @@ export function RecordSupplierPaymentDialog({
           </Button>
           <Button
             onClick={submit}
-            disabled={createMutation.isPending || overAllocated}
+            disabled={createMutation.isPending || totalAllocated <= 0}
             data-testid="btn-save-payment"
           >
             {createMutation.isPending ? "Saving…" : "Record payment"}
