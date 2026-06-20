@@ -404,6 +404,7 @@ async function pushStockToShopifyAsync(
         warehouseId: warehousesTable.id,
         shopifyLocationId: warehousesTable.shopifyLocationId,
         quantity: itemWarehouseStockTable.quantity,
+        ecReserved: itemWarehouseStockTable.ecReserved,
       })
       .from(warehousesTable)
       .leftJoin(
@@ -425,7 +426,8 @@ async function pushStockToShopifyAsync(
             {
               warehouseId: r.warehouseId,
               shopifyLocationId: r.shopifyLocationId,
-              quantity: Number(r.quantity ?? "0"),
+              // Available = physical stock minus ecommerce reservations
+              quantity: Math.max(0, Number(r.quantity ?? "0") - Number(r.ecReserved ?? "0")),
             },
           ]
         : [],

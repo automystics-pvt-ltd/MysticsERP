@@ -7,6 +7,7 @@ import {
   stockMovementsTable,
   organizationsTable,
   salesOrdersTable,
+  salesOrderLinesTable,
   shopifyWebhookEventsTable,
   warehousesTable,
 } from "@workspace/db";
@@ -189,8 +190,11 @@ router.post("/webhooks/shopify", async (req, res, next) => {
       }
 
       case "orders/fulfilled": {
+        // Shopify fires this when warehouse staff marks an order fulfilled.
+        // Decrement physical stock and clear the ecommerce reservation that
+        // was set when the order was first imported.
         const o = body as unknown as ShopifyOrder;
-        const rows = await db
+        const orderRows = await db
           .select({ id: salesOrdersTable.id, status: salesOrdersTable.status })
           .from(salesOrdersTable)
           .where(
@@ -200,8 +204,109 @@ router.post("/webhooks/shopify", async (req, res, next) => {
             ),
           )
           .limit(1);
-        const order = rows[0];
+        const order = orderRows[0];
+
         if (order) {
+          // Resolve location→warehouse map for this org
+          const mappedWhs = await db
+            .select({ id: warehousesTable.id, shopifyLocationId: warehousesTable.shopifyLocationId })
+            .from(warehousesTable)
+            .where(and(eq(warehousesTable.organizationId, org.id)));
+          const locToWh = new Map<string, number>();
+          for (const w of mappedWhs) {
+            if (w.shopifyLocationId) locToWh.set(w.shopifyLocationId, w.id);
+          }
+          const fallbackWarehouseId = await getDefaultWarehouseId(org.id);
+
+          // Process each fulfillment's line items — decrement physical stock
+          // and release the corresponding ecommerce reservation.
+          const touchedItemIds = new Set<number>();
+          const fulfillments = (o.fulfillments ?? []) as Array<{
+            line_items?: Array<{ variant_id?: number | null; quantity: number; origin_location?: { id?: number } }>;
+            location_id?: number | null;
+          }>;
+
+          for (const fulfillment of fulfillments) {
+            const fulfillLocId = fulfillment.location_id != null ? String(fulfillment.location_id) : null;
+            for (const li of (fulfillment.line_items ?? [])) {
+              const qty = li.quantity;
+              if (qty <= 0) continue;
+
+              // Find the local item by variant_id
+              if (!li.variant_id) continue;
+              const itemRows = await db
+                .select({ id: itemsTable.id })
+                .from(itemsTable)
+                .where(
+                  and(
+                    eq(itemsTable.organizationId, org.id),
+                    eq(itemsTable.shopifyVariantId, String(li.variant_id)),
+                  ),
+                )
+                .limit(1);
+              const item = itemRows[0];
+              if (!item) continue;
+
+              const liLocId = li.origin_location?.id != null ? String(li.origin_location.id) : null;
+              const warehouseId =
+                (liLocId && locToWh.get(liLocId)) ||
+                (fulfillLocId && locToWh.get(fulfillLocId)) ||
+                fallbackWarehouseId;
+
+              await db.transaction(async (tx) => {
+                const stockRows = await tx
+                  .select({ id: itemWarehouseStockTable.id, quantity: itemWarehouseStockTable.quantity, ecReserved: itemWarehouseStockTable.ecReserved })
+                  .from(itemWarehouseStockTable) // org-scope-allow: orders/fulfilled webhook, org resolved from shop domain
+                  .where(
+                    and(
+                      eq(itemWarehouseStockTable.organizationId, org.id),
+                      eq(itemWarehouseStockTable.itemId, item.id),
+                      eq(itemWarehouseStockTable.warehouseId, warehouseId),
+                    ),
+                  )
+                  .for("update")
+                  .limit(1);
+
+                if (stockRows[0]) {
+                  const currentQty = toNum(stockRows[0].quantity);
+                  const currentReserved = toNum(stockRows[0].ecReserved);
+                  const newQty = Math.max(0, currentQty - qty);
+                  const newReserved = Math.max(0, currentReserved - qty);
+                  await tx
+                    .update(itemWarehouseStockTable)
+                    .set({ quantity: toStr(newQty), ecReserved: toStr(newReserved) }) // org-scope-allow: orders/fulfilled webhook, org resolved from shop domain
+                    .where(
+                      and(
+                        eq(itemWarehouseStockTable.id, stockRows[0].id),
+                        eq(itemWarehouseStockTable.organizationId, org.id),
+                      ),
+                    );
+                } else {
+                  await tx.insert(itemWarehouseStockTable).values({
+                    organizationId: org.id,
+                    itemId: item.id,
+                    warehouseId,
+                    quantity: "0",
+                    ecReserved: "0",
+                  });
+                }
+                await tx.insert(stockMovementsTable).values({
+                  organizationId: org.id,
+                  itemId: item.id,
+                  warehouseId,
+                  movementType: "shopify_order",
+                  quantity: toStr(-qty),
+                  referenceType: "shopify_order",
+                  referenceId: order.id,
+                  notes: `Shopify fulfillment (${o.name})`,
+                });
+              });
+
+              touchedItemIds.add(item.id);
+            }
+          }
+
+          // Update order status
           const PAST_SHIPPED = new Set([
             "delivered", "invoiced", "paid", "returned", "refunded", "cancelled",
           ]);
@@ -229,7 +334,13 @@ router.post("/webhooks/shopify", async (req, res, next) => {
                 ),
               );
           }
+
+          // Push updated stock back to Shopify for each touched item
+          for (const itemId of touchedItemIds) {
+            pushStockToShopify(org.id, itemId);
+          }
         }
+
         await db
           .update(organizationsTable)
           .set({ shopifyLastWebhookAt: new Date() })
@@ -252,6 +363,45 @@ router.post("/webhooks/shopify", async (req, res, next) => {
         const order = rows[0];
         if (order && order.status !== "cancelled") {
           const newPaymentStatus = mapShopifyPaymentStatus(o.financial_status);
+          // Release any ecommerce reservation on the order's stock rows
+          // so cancelling a Shopify order immediately frees up available qty.
+          const cancelLineRows = await db
+            .select({ itemId: salesOrderLinesTable.itemId, quantity: salesOrderLinesTable.quantity, warehouseId: salesOrdersTable.warehouseId })
+            .from(salesOrderLinesTable)
+            .innerJoin(salesOrdersTable, eq(salesOrdersTable.id, salesOrderLinesTable.salesOrderId))
+            .where(
+              and(
+                eq(salesOrderLinesTable.salesOrderId, order.id),
+                eq(salesOrdersTable.organizationId, org.id),
+              ),
+            );
+          for (const line of cancelLineRows) {
+            const qty = toNum(line.quantity);
+            if (qty <= 0 || !line.warehouseId) continue;
+            const stockRows = await db
+              .select({ id: itemWarehouseStockTable.id, ecReserved: itemWarehouseStockTable.ecReserved })
+              .from(itemWarehouseStockTable) // org-scope-allow: orders/cancelled webhook, org resolved from shop domain
+              .where(
+                and(
+                  eq(itemWarehouseStockTable.organizationId, org.id),
+                  eq(itemWarehouseStockTable.itemId, line.itemId),
+                  eq(itemWarehouseStockTable.warehouseId, line.warehouseId),
+                ),
+              )
+              .limit(1);
+            if (stockRows[0]) {
+              const newReserved = Math.max(0, toNum(stockRows[0].ecReserved) - qty);
+              await db
+                .update(itemWarehouseStockTable)
+                .set({ ecReserved: toStr(newReserved) }) // org-scope-allow: orders/cancelled webhook, org resolved from shop domain
+                .where(
+                  and(
+                    eq(itemWarehouseStockTable.id, stockRows[0].id),
+                    eq(itemWarehouseStockTable.organizationId, org.id),
+                  ),
+                );
+            }
+          }
           // Cancel all active shipments (reverses stock) and set order to
           // cancelled. For draft/confirmed orders with no shipments this is
           // a no-op on the shipment side and just sets the status directly.
@@ -262,6 +412,10 @@ router.post("/webhooks/shopify", async (req, res, next) => {
           );
           for (const itemId of touchedItems) {
             pushStockToShopify(org.id, itemId);
+          }
+          // Push stock for all lines touched by reservation release
+          for (const line of cancelLineRows) {
+            pushStockToShopify(org.id, line.itemId);
           }
         }
         await db

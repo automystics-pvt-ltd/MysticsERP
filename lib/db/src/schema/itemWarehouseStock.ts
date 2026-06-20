@@ -17,6 +17,7 @@ export const itemWarehouseStockTable = pgTable(
       .notNull()
       .references(() => warehousesTable.id, { onDelete: "cascade" }),
     quantity: numeric("quantity", { precision: 14, scale: 2 }).notNull().default("0"),
+    ecReserved: numeric("ec_reserved", { precision: 14, scale: 2 }).notNull().default("0"),
   },
   (t) => ({
     uniq: uniqueIndex("item_warehouse_stock_idx").on(t.itemId, t.warehouseId),

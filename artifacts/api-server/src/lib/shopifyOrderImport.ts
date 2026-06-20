@@ -292,15 +292,14 @@ export async function importShopifyOrder(
         })),
       );
 
-      // Decrement stock + record stock movements per-line, against the
-      // line's own resolved warehouse. (Don't push back to Shopify here
-      // — the order originated in Shopify so its stock is already
-      // reflected upstream for that location.)
+      // Reserve ecommerce stock per-line by incrementing ec_reserved.
+      // Physical warehouse quantity is untouched — it only moves when
+      // Shopify fires the orders/fulfilled webhook (warehouse staff picks).
       for (const l of lineRecords) {
         const qty = toNum(l.quantity);
         if (qty <= 0) continue;
         const stockRows = await tx
-          .select({ id: itemWarehouseStockTable.id, quantity: itemWarehouseStockTable.quantity })
+          .select({ id: itemWarehouseStockTable.id, quantity: itemWarehouseStockTable.quantity, ecReserved: itemWarehouseStockTable.ecReserved })
           .from(itemWarehouseStockTable) // org-scope-allow: inside Shopify import txn, org already validated
           .where(
             and(
@@ -311,15 +310,16 @@ export async function importShopifyOrder(
           )
           .for("update")
           .limit(1);
-        const current = stockRows[0] ? toNum(stockRows[0].quantity) : 0;
-        // Cap at 0 when the org disallows negative stock — the sale already
-        // happened in Shopify so we record it, but we floor the local qty.
-        const rawQty = current - qty;
-        const newQty = allowNegativeStock ? rawQty : Math.max(0, rawQty);
         if (stockRows[0]) {
+          const currentReserved = toNum(stockRows[0].ecReserved);
+          const currentQty = toNum(stockRows[0].quantity);
+          // Cap reservation at available physical stock unless org allows negatives
+          const reserveQty = allowNegativeStock
+            ? qty
+            : Math.min(qty, Math.max(0, currentQty - currentReserved));
           await tx
             .update(itemWarehouseStockTable)
-            .set({ quantity: toStr(newQty) }) // org-scope-allow: inside Shopify import txn, org already validated
+            .set({ ecReserved: toStr(currentReserved + reserveQty) }) // org-scope-allow: inside Shopify import txn, org already validated
             .where(
               and(
                 eq(itemWarehouseStockTable.id, stockRows[0].id),
@@ -331,7 +331,8 @@ export async function importShopifyOrder(
             organizationId,
             itemId: l.itemId,
             warehouseId: l.warehouseId,
-            quantity: toStr(newQty),
+            quantity: "0",
+            ecReserved: "0",
           });
         }
         await tx.insert(stockMovementsTable).values({
@@ -342,7 +343,7 @@ export async function importShopifyOrder(
           quantity: toStr(-qty),
           referenceType: "shopify_order",
           referenceId: orderId,
-          notes: `Shopify order ${o.name}`,
+          notes: `Shopify order ${o.name} (reserved)`,
         });
       }
     }

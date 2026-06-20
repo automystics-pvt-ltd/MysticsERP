@@ -525,12 +525,22 @@ export interface ShopifyOrder {
   location_id?: number | null;
   line_items: Array<{
     id: number;
+    variant_id?: number | null;
     sku: string | null;
     title: string;
     quantity: number;
     price: string;
     origin_location?: { id: number } | null;
     tax_lines: Array<{ rate: number; price: string }>;
+  }>;
+  fulfillments?: Array<{
+    id: number;
+    location_id?: number | null;
+    line_items?: Array<{
+      variant_id?: number | null;
+      quantity: number;
+      origin_location?: { id: number } | null;
+    }>;
   }>;
 }
 
