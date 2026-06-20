@@ -113,6 +113,21 @@ export interface ActiveSession {
   openingCash: string;
 }
 
+export class PosApiError extends Error {
+  readonly status: number;
+  readonly data: unknown;
+  constructor(status: number, data: unknown) {
+    const msg =
+      data && typeof data === "object" && "message" in data
+        ? String((data as Record<string, unknown>).message)
+        : `HTTP ${status}`;
+    super(msg);
+    this.name = "PosApiError";
+    this.status = status;
+    this.data = data;
+  }
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     credentials: "include",
@@ -121,7 +136,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw { status: res.status, data: body };
+    throw new PosApiError(res.status, body);
   }
   if (res.status === 204) return undefined as T;
   return res.json();
