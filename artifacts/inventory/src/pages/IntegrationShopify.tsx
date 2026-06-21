@@ -82,9 +82,9 @@ const customSchema = z.object({
   accessToken: z
     .string()
     .min(1, "Access token is required")
-    .refine((v) => v.trim().startsWith("shpat_"), {
+    .refine((v) => /^shp(at|pa|ss|ca)_/.test(v.trim()), {
       message:
-        'Wrong token type — this must be the Admin API access token, which starts with "shpat_". Do not use storefront, session, or private-app tokens.',
+        "This doesn't look like a Shopify access token. It should start with shpat_, shppa_, or similar. Copy it from your custom app's \"API credentials\" tab.",
     }),
 });
 
@@ -326,8 +326,8 @@ export default function IntegrationShopify() {
                         />
                       </FormControl>
                       <FormDescription>
-                        Paste the token from your custom app's "API credentials" tab.
-                        It starts with <code className="text-xs">shpat_</code>.
+                        Paste the token from your custom app's "API credentials" tab
+                        (starts with <code className="text-xs">shpat_</code> or <code className="text-xs">shppa_</code>).
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
