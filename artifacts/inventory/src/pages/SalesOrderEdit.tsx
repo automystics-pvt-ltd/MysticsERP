@@ -152,14 +152,14 @@ export default function SalesOrderEdit() {
   );
 
   // Only show in-stock items for sales orders.
-  // Accessories and Raw Materials are always shown regardless of stock level.
-  const ALWAYS_SHOW_CATEGORIES = ["Accessories", "Raw Materials"];
+  // Accessories and Raw Materials are excluded — they are not saleable finished goods.
+  const EXCLUDE_CATEGORIES = ["Accessories", "Raw Materials"];
   const inStockItems = useMemo(() => {
-    if (!warehouseIdNum) return items;
     return items.filter((i) => {
+      if (EXCLUDE_CATEGORIES.includes(i.category ?? "")) return false;
       if (i.parentItemId != null) return true;
       if (i.hasVariants) return true;
-      if (ALWAYS_SHOW_CATEGORIES.includes(i.category ?? "")) return true;
+      if (!warehouseIdNum) return true;
       return (i.stockAtWarehouse ?? 0) > 0;
     });
   }, [items, warehouseIdNum]);

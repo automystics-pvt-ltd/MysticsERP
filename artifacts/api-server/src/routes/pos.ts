@@ -224,15 +224,14 @@ router.get("/pos/items/lookup", async (req, res, next) => {
     // Only return items that have available stock in at least one POS warehouse.
     // Items with NO record or quantity=0 are filtered out so the search only
     // surfaces items the cashier can actually sell right now.
-    // Bags and items categorised as Accessories/Raw Materials are always shown
-    // regardless of stock so they can be added to any sale.
-    const POS_ALWAYS_SHOW_CATEGORIES = ["Accessories", "Raw Materials"];
+    // Accessories and Raw Materials are excluded — they are not saleable finished goods.
+    const POS_EXCLUDE_CATEGORIES = ["Accessories", "Raw Materials"];
     const visibleRows = bagsOnly
       ? rows
       : rows.filter(
           (r) =>
-            (stockMap.get(r.id) ?? 0) > 0 ||
-            POS_ALWAYS_SHOW_CATEGORIES.includes(r.category ?? ""),
+            !POS_EXCLUDE_CATEGORIES.includes(r.category ?? "") &&
+            (stockMap.get(r.id) ?? 0) > 0,
         );
 
     res.json({

@@ -200,10 +200,13 @@ export default function JobWorkOrderNew() {
   };
 
   const MATERIAL_CATEGORIES = ["Accessories", "Raw Materials"];
+  // Finished-good output items must not be Accessories or Raw Materials.
+  const outputItems = (items ?? []).filter(
+    (i) => !MATERIAL_CATEGORIES.includes(i.category ?? ""),
+  );
   const componentItems = (items ?? []).filter(
     (i) => !i.hasVariants && !i.isBundle && MATERIAL_CATEGORIES.includes(i.category ?? ""),
   );
-  const outputItems = items ?? [];
 
   const selectedWorkerId = form.watch("supplierId");
   const selectedWorker = jobWorkers.find((s) => s.id === Number(selectedWorkerId)) ?? null;
