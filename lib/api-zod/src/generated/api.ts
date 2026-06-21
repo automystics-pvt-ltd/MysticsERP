@@ -3294,7 +3294,9 @@ export const ListShopifyLocationsResponse = zod.object({
 
 
 export const StartShopifyInstallBody = zod.object({
-  "shopDomain": zod.string()
+  "shopDomain": zod.string(),
+  "apiKey": zod.string(),
+  "apiSecret": zod.string()
 })
 
 export const StartShopifyInstallResponse = zod.object({

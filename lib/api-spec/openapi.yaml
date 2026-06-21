@@ -5020,7 +5020,9 @@ components:
       type: object
       properties:
         shopDomain: { type: string }
-      required: [shopDomain]
+        apiKey: { type: string }
+        apiSecret: { type: string }
+      required: [shopDomain, apiKey, apiSecret]
 
     ConnectShopifyCustomPayload:
       type: object

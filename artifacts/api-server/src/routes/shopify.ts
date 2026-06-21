@@ -56,6 +56,14 @@ router.post("/shopify/oauth/install", async (req, res, next) => {
       res.status(400).json({ error: "shopDomain is required" });
       return;
     }
+    if (!b.apiKey || typeof b.apiKey !== "string") {
+      res.status(400).json({ error: "apiKey is required" });
+      return;
+    }
+    if (!b.apiSecret || typeof b.apiSecret !== "string") {
+      res.status(400).json({ error: "apiSecret is required" });
+      return;
+    }
     const shopDomain = normalizeShopifyDomain(b.shopDomain);
     if (!shopDomain) {
       res.status(400).json({
@@ -63,6 +71,13 @@ router.post("/shopify/oauth/install", async (req, res, next) => {
       });
       return;
     }
+
+    // Persist per-org credentials before starting the OAuth flow so the
+    // callback can look them up when Shopify redirects back.
+    await db
+      .update(organizationsTable)
+      .set({ shopifyApiKey: b.apiKey, shopifyApiSecret: b.apiSecret })
+      .where(eq(organizationsTable.id, t.organizationId));
 
     // GC any expired states for this org (older than 10 minutes)
     const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
@@ -82,7 +97,7 @@ router.post("/shopify/oauth/install", async (req, res, next) => {
       shopDomain,
     });
 
-    const installUrl = buildInstallUrl(shopDomain, state);
+    const installUrl = buildInstallUrl(shopDomain, state, b.apiKey);
     res.json({ installUrl });
   } catch (err) {
     next(err);

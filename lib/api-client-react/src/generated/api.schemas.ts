@@ -1938,6 +1938,8 @@ export interface ShopifyLocationsResult {
 
 export interface StartShopifyInstallPayload {
   shopDomain: string;
+  apiKey: string;
+  apiSecret: string;
 }
 
 export interface ConnectShopifyCustomPayload {

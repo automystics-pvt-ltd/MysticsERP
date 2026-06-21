@@ -84,9 +84,14 @@ export function normalizeShopifyDomain(input: string): string | null {
   return SHOPIFY_DOMAIN_RE.test(cleaned) ? cleaned : null;
 }
 
-export function buildInstallUrl(shopDomain: string, state: string): string {
+export function buildInstallUrl(
+  shopDomain: string,
+  state: string,
+  apiKeyOverride?: string,
+): string {
+  const clientId = apiKeyOverride ?? getShopifyApiKey();
   const params = new URLSearchParams({
-    client_id: getShopifyApiKey(),
+    client_id: clientId,
     scope: REQUIRED_SCOPES.join(","),
     redirect_uri: `${getShopifyAppUrl()}/api/shopify/oauth/callback`,
     state,
@@ -101,15 +106,24 @@ export function buildInstallUrl(shopDomain: string, state: string): string {
  * concatenate as `key=value&key=value`, then HMAC-SHA256 with the
  * app secret and compare to the `hmac` value.
  */
-export function verifyOauthHmac(query: Record<string, string>): boolean {
+export function verifyOauthHmac(
+  query: Record<string, string>,
+  apiSecretOverride?: string,
+): boolean {
   const { hmac, signature: _ignored, ...rest } = query;
   if (!hmac) return false;
+  let secret: string;
+  try {
+    secret = apiSecretOverride ?? getShopifyApiSecret();
+  } catch {
+    return false;
+  }
   const message = Object.keys(rest)
     .sort()
     .map((k) => `${k}=${rest[k]}`)
     .join("&");
   const digest = crypto
-    .createHmac("sha256", getShopifyApiSecret())
+    .createHmac("sha256", secret)
     .update(message)
     .digest("hex");
   return safeEqualHex(digest, hmac);
@@ -179,15 +193,19 @@ export interface TokenExchangeResult {
 export async function exchangeCodeForToken(
   shopDomain: string,
   code: string,
+  apiKeyOverride?: string,
+  apiSecretOverride?: string,
 ): Promise<TokenExchangeResult> {
+  const clientId = apiKeyOverride ?? getShopifyApiKey();
+  const clientSecret = apiSecretOverride ?? getShopifyApiSecret();
   const res = await fetch(
     `https://${shopDomain}/admin/oauth/access_token`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        client_id: getShopifyApiKey(),
-        client_secret: getShopifyApiSecret(),
+        client_id: clientId,
+        client_secret: clientSecret,
         code,
       }),
     },

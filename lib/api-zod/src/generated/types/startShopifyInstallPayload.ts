@@ -8,4 +8,6 @@
 
 export interface StartShopifyInstallPayload {
   shopDomain: string;
+  apiKey: string;
+  apiSecret: string;
 }

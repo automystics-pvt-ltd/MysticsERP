@@ -37,16 +37,14 @@ router.get("/shopify/oauth/callback", async (req, res, next) => {
       res.status(400).send("Missing OAuth parameters");
       return;
     }
-    if (!verifyOauthHmac(query)) {
-      res.status(400).send("Invalid OAuth HMAC");
-      return;
-    }
     const shopDomain = normalizeShopifyDomain(shop);
     if (!shopDomain) {
       res.status(400).send("Invalid shop domain");
       return;
     }
 
+    // Look up the state row first (cryptographically unguessable 48-hex token)
+    // so we can retrieve the org's per-org API credentials before HMAC check.
     const stateRows = await db
       .select()
       // org-scope-allow: pre-auth OAuth callback. The state is a one-time
@@ -66,12 +64,32 @@ router.get("/shopify/oauth/callback", async (req, res, next) => {
       return;
     }
 
+    // Load per-org Shopify credentials (saved by /shopify/oauth/install).
+    const orgRows = await db
+      .select({
+        shopifyApiKey: organizationsTable.shopifyApiKey,
+        shopifyApiSecret: organizationsTable.shopifyApiSecret,
+      })
+      .from(organizationsTable)
+      .where(eq(organizationsTable.id, stateRow.organizationId))
+      .limit(1);
+    const orgCreds = orgRows[0];
+    const orgApiKey = orgCreds?.shopifyApiKey ?? undefined;
+    const orgApiSecret = orgCreds?.shopifyApiSecret ?? undefined;
+
+    // Verify HMAC using the org's own API secret (falls back to global env var
+    // for legacy connections that pre-date per-org credentials).
+    if (!verifyOauthHmac(query, orgApiSecret)) {
+      res.status(400).send("Invalid OAuth HMAC");
+      return;
+    }
+
     await db
       // org-scope-allow: deletes the just-loaded one-time CSRF token row.
       .delete(shopifyOauthStatesTable)
       .where(eq(shopifyOauthStatesTable.id, stateRow.id));
 
-    const token = await exchangeCodeForToken(shopDomain, code);
+    const token = await exchangeCodeForToken(shopDomain, code, orgApiKey, orgApiSecret);
 
     // Log granted scopes and warn on missing ones, but allow connection to proceed.
     const granted = new Set(

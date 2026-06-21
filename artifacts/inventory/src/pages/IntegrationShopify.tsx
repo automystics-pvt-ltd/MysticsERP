@@ -8,12 +8,6 @@ import {
   CardTitle,
   CardFooter,
 } from "@/components/ui/card";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import {
   Form,
@@ -25,7 +19,6 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Badge } from "@/components/ui/badge";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -38,15 +31,13 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Link } from "wouter";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
-  ArrowLeft,
   Loader2,
   RefreshCw,
   Unlink,
-  KeyRound,
   CheckCircle2,
   ExternalLink,
   ArrowLeftRight,
@@ -59,14 +50,13 @@ import {
   useSyncShopify,
   useSyncShopifyOrders,
   usePushShopifyProducts,
-  useConnectShopifyCustom,
   useStartShopifyInstall,
   getGetShopifyConnectionQueryKey,
 } from "@/lib/queryKeys";
 
 const SHOP_DOMAIN_RE = /^[a-z0-9][a-z0-9-]{0,58}[a-z0-9]\.myshopify\.com$/i;
 
-const customSchema = z.object({
+const connectSchema = z.object({
   shopDomain: z
     .string()
     .min(1, "Store domain is required")
@@ -76,32 +66,16 @@ const customSchema = z.object({
     .refine((v) => SHOP_DOMAIN_RE.test(v), {
       message: "Must look like your-store.myshopify.com",
     }),
-  accessToken: z
-    .string()
-    .min(1, "Access token is required")
-    .refine((v) => /^shp(at|pa|ss|ca)_/.test(v.trim()), {
-      message:
-        "This doesn't look like a Shopify access token. It should start with shpat_, shppa_, or similar. Copy it from your custom app's \"API credentials\" tab.",
-    }),
-  apiKey: z.string().optional(),
-  apiSecret: z.string().optional(),
+  apiKey: z.string().min(1, "API Key is required"),
+  apiSecret: z.string().min(1, "API Secret Key is required"),
 });
 
-type CustomValues = z.infer<typeof customSchema>;
+type ConnectValues = z.infer<typeof connectSchema>;
 
 function formatTime(value: string | null | undefined) {
   if (!value) return "Never";
   return format(new Date(value), "MMM d, h:mm a");
 }
-
-const STEPS = [
-  "In your Shopify admin, go to Settings → Apps and sales channels",
-  'Click "Develop apps" → "Create an app" → give it any name',
-  'Go to "API credentials" tab → click "Configure Admin API scopes"',
-  "Enable: read_products, write_products, read_inventory, write_inventory, read_orders, read_customers, read_locations",
-  'Save, then click "Install app" → confirm',
-  'Copy the "Admin API access token" (shown once) and paste it below',
-];
 
 export default function IntegrationShopify() {
   const queryClient = useQueryClient();
@@ -120,23 +94,9 @@ export default function IntegrationShopify() {
       queryKey: getGetShopifyConnectionQueryKey(),
     });
 
-  const [oauthDomain, setOauthDomain] = useState("");
-  const [oauthDomainError, setOauthDomainError] = useState("");
-
-  const customMutation = useConnectShopifyCustom({
-    mutation: {
-      onSuccess: () => {
-        invalidateConnection();
-        toast({ title: "Shopify connected via Custom App" });
-      },
-      onError: (err: unknown) => {
-        toast({
-          title: "Connection failed",
-          description: err instanceof Error ? err.message : "Check your domain and token",
-          variant: "destructive",
-        });
-      },
-    },
+  const connectForm = useForm<ConnectValues>({
+    resolver: zodResolver(connectSchema),
+    defaultValues: { shopDomain: "", apiKey: "", apiSecret: "" },
   });
 
   const oauthMutation = useStartShopifyInstall({
@@ -146,26 +106,16 @@ export default function IntegrationShopify() {
       },
       onError: (err: unknown) => {
         toast({
-          title: "OAuth connect failed",
+          title: "Connection failed",
           description:
             err instanceof Error
               ? err.message
-              : "Could not start Shopify login. Try the Custom App method instead.",
+              : "Could not connect to Shopify. Check your credentials and try again.",
           variant: "destructive",
         });
       },
     },
   });
-
-  function handleOauthConnect() {
-    const raw = oauthDomain.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
-    if (!SHOP_DOMAIN_RE.test(raw)) {
-      setOauthDomainError("Must look like your-store.myshopify.com");
-      return;
-    }
-    setOauthDomainError("");
-    oauthMutation.mutate({ data: { shopDomain: raw } });
-  }
 
   const disconnectMutation = useDeleteShopifyConnection({
     mutation: {
@@ -216,11 +166,6 @@ export default function IntegrationShopify() {
         });
       },
     },
-  });
-
-  const customForm = useForm<CustomValues>({
-    resolver: zodResolver(customSchema),
-    defaultValues: { shopDomain: "", accessToken: "", apiKey: "", apiSecret: "" },
   });
 
   useEffect(() => {
@@ -290,53 +235,95 @@ export default function IntegrationShopify() {
               <div>
                 <CardTitle>Connect your Shopify store</CardTitle>
                 <CardDescription>
-                  Choose how you'd like to connect — Shopify Login (easier) or a Custom App token.
+                  Enter your store domain and Shopify app credentials to connect via OAuth.
                 </CardDescription>
               </div>
             </div>
           </CardHeader>
-          <CardContent className="space-y-5">
-            <Tabs defaultValue="oauth">
-              <TabsList className="w-full">
-                <TabsTrigger value="oauth" className="flex-1">
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  Shopify Login
-                </TabsTrigger>
-                <TabsTrigger value="custom" className="flex-1">
-                  <KeyRound className="mr-2 h-4 w-4" />
-                  Custom App Token
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="oauth" className="space-y-4 pt-2">
-                <p className="text-sm text-muted-foreground">
-                  Enter your store domain and click <strong>Connect with Shopify</strong>. You'll be
-                  redirected to Shopify to authorize the connection — no token copying needed.
-                </p>
-                <div className="space-y-2">
-                  <Label htmlFor="oauth-domain">Shop domain</Label>
-                  <Input
-                    id="oauth-domain"
-                    placeholder="your-store.myshopify.com"
-                    autoComplete="off"
-                    value={oauthDomain}
-                    onChange={(e) => { setOauthDomain(e.target.value); setOauthDomainError(""); }}
-                    onKeyDown={(e) => e.key === "Enter" && handleOauthConnect()}
-                    data-testid="input-shopify-oauth-domain"
-                  />
-                  {oauthDomainError && (
-                    <p className="text-sm text-destructive">{oauthDomainError}</p>
+          <CardContent>
+            <Form {...connectForm}>
+              <form
+                onSubmit={connectForm.handleSubmit((v) =>
+                  oauthMutation.mutate({
+                    data: {
+                      shopDomain: v.shopDomain,
+                      apiKey: v.apiKey,
+                      apiSecret: v.apiSecret,
+                    },
+                  }),
+                )}
+                className="space-y-4"
+              >
+                <FormField
+                  control={connectForm.control}
+                  name="shopDomain"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Shop domain</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="your-store.myshopify.com"
+                          autoComplete="off"
+                          {...field}
+                          data-testid="input-shopify-domain"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
                   )}
-                </div>
+                />
+                <FormField
+                  control={connectForm.control}
+                  name="apiKey"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>API Key</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Shopify app API key"
+                          autoComplete="off"
+                          {...field}
+                          data-testid="input-shopify-api-key"
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Found in your Shopify app's "API credentials" tab.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={connectForm.control}
+                  name="apiSecret"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>API Secret Key</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="password"
+                          placeholder="Shopify app API secret key"
+                          autoComplete="off"
+                          {...field}
+                          data-testid="input-shopify-api-secret"
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Used to verify incoming Shopify webhook signatures.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
                 <Button
-                  onClick={handleOauthConnect}
+                  type="submit"
                   disabled={oauthMutation.isPending}
-                  data-testid="btn-connect-shopify-oauth"
+                  data-testid="btn-connect-shopify"
                 >
                   {oauthMutation.isPending ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Redirecting…
+                      Redirecting to Shopify…
                     </>
                   ) : (
                     <>
@@ -345,150 +332,8 @@ export default function IntegrationShopify() {
                     </>
                   )}
                 </Button>
-              </TabsContent>
-
-              <TabsContent value="custom" className="space-y-5 pt-2">
-                <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
-                  <p className="text-sm font-medium flex items-center gap-2">
-                    <KeyRound className="h-4 w-4 text-muted-foreground" />
-                    How to create your Shopify Custom App:
-                  </p>
-                  <ol className="space-y-2">
-                    {STEPS.map((step, i) => (
-                      <li key={i} className="flex gap-3 text-sm">
-                        <span className="flex-shrink-0 flex h-5 w-5 items-center justify-center rounded-full bg-[#95bf47] text-white text-xs font-bold">
-                          {i + 1}
-                        </span>
-                        <span className="text-muted-foreground">{step}</span>
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-
-                <Form {...customForm}>
-                  <form
-                    onSubmit={customForm.handleSubmit((v) =>
-                      customMutation.mutate({
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        data: { shopDomain: v.shopDomain, accessToken: v.accessToken, ...(v.apiKey && { apiKey: v.apiKey }), ...(v.apiSecret && { apiSecret: v.apiSecret }) } as any,
-                      }),
-                    )}
-                    className="space-y-4"
-                  >
-                    <FormField
-                      control={customForm.control}
-                      name="shopDomain"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Shop domain</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="your-store.myshopify.com"
-                              autoComplete="off"
-                              {...field}
-                              data-testid="input-shopify-custom-domain"
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={customForm.control}
-                      name="accessToken"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Admin API access token</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="shpat_xxxxxxxxxxxxxxxxxxxx"
-                              autoComplete="off"
-                              {...field}
-                              data-testid="input-shopify-access-token"
-                            />
-                          </FormControl>
-                          <FormDescription>
-                            Paste the token from your custom app's "API credentials" tab
-                            (starts with <code className="text-xs">shpat_</code> or <code className="text-xs">shppa_</code>).
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={customForm.control}
-                      name="apiKey"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>
-                            API Key{" "}
-                            <span className="text-muted-foreground text-xs font-normal">
-                              (optional)
-                            </span>
-                          </FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="API key from your custom app"
-                              autoComplete="off"
-                              {...field}
-                              data-testid="input-shopify-api-key"
-                            />
-                          </FormControl>
-                          <FormDescription>
-                            Enables per-store webhook HMAC verification. Found in your custom app's "API credentials" tab.
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={customForm.control}
-                      name="apiSecret"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>
-                            API Secret Key{" "}
-                            <span className="text-muted-foreground text-xs font-normal">
-                              (optional)
-                            </span>
-                          </FormLabel>
-                          <FormControl>
-                            <Input
-                              type="password"
-                              placeholder="API secret key"
-                              autoComplete="off"
-                              {...field}
-                              data-testid="input-shopify-api-secret"
-                            />
-                          </FormControl>
-                          <FormDescription>
-                            Used to verify incoming Shopify webhook signatures for this store.
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <Button
-                      type="submit"
-                      disabled={customMutation.isPending}
-                      data-testid="btn-connect-shopify-custom"
-                    >
-                      {customMutation.isPending ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Connecting…
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle2 className="mr-2 h-4 w-4" />
-                          Connect store
-                        </>
-                      )}
-                    </Button>
-                  </form>
-                </Form>
-              </TabsContent>
-            </Tabs>
+              </form>
+            </Form>
           </CardContent>
         </Card>
       ) : (
@@ -620,7 +465,7 @@ export default function IntegrationShopify() {
                 disabled={syncOrdersMutation.isPending}
                 data-testid="btn-sync-shopify-orders"
               >
-                <RefreshCw
+                <ArrowLeftRight
                   className={`mr-2 h-4 w-4 ${
                     syncOrdersMutation.isPending ? "animate-spin" : ""
                   }`}
@@ -639,69 +484,42 @@ export default function IntegrationShopify() {
   );
 }
 
-
-
-type SyncLog = {
-  id: number;
-  direction: string;
-  entity: string;
-  action: string;
-  status: string;
-  shopifyId: string | null;
-  erpId: string | null;
-  errorMessage: string | null;
-  createdAt: string;
-};
-
 function SyncLogsCard() {
-  const { data, isFetching, refetch } = useQuery<{ logs: SyncLog[] }>({
+  const { data, isLoading } = useQuery<
+    { logs: Array<{ id: number; direction: string; entity: string; action: string; status: string; shopifyId: string | null; erpId: number | null; errorMessage: string | null; createdAt: string }> }
+  >({
     queryKey: ["shopify-sync-logs"],
-    queryFn: () =>
-      fetch("/api/shopify/sync-logs?limit=50", { credentials: "include" }).then(
-        (r) => {
-          if (!r.ok) throw new Error("Failed to load sync logs");
-          return r.json() as Promise<{ logs: SyncLog[] }>;
-        },
-      ),
+    queryFn: async () => {
+      const r = await fetch("/api/shopify/sync-logs");
+      if (!r.ok) throw new Error("Failed to load sync logs");
+      return r.json();
+    },
     refetchInterval: 30_000,
   });
 
-  const logs = data?.logs ?? [];
+  const statusBadge = (s: string) => {
+    if (s === "success") return <Badge variant="outline" className="text-green-600 border-green-300">success</Badge>;
+    if (s === "error") return <Badge variant="destructive">error</Badge>;
+    return <Badge variant="secondary">{s}</Badge>;
+  };
 
   return (
-    <Card data-testid="card-shopify-sync-logs">
+    <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <ArrowLeftRight className="h-5 w-5 text-[#95bf47]" />
-            <div>
-              <CardTitle className="text-lg">Sync activity</CardTitle>
-              <CardDescription>
-                Recent inbound and outbound Shopify sync events.
-              </CardDescription>
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => refetch()}
-            disabled={isFetching}
-            title="Refresh"
-          >
-            <RefreshCw
-              className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`}
-            />
-          </Button>
-        </div>
+        <CardTitle className="text-base">Sync activity</CardTitle>
+        <CardDescription>
+          Last 500 Shopify sync events — refreshes every 30 s
+        </CardDescription>
       </CardHeader>
       <CardContent>
-        {logs.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-8">
-            No sync activity yet. Sync events will appear here after products,
-            customers, or orders are exchanged with Shopify.
-          </p>
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-muted-foreground text-sm py-4">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+          </div>
+        ) : !data?.logs.length ? (
+          <p className="text-sm text-muted-foreground py-4">No sync events yet.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-96">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -714,37 +532,15 @@ function SyncLogsCard() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {logs.map((log) => (
-                  <TableRow key={log.id}>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          log.direction === "inbound" ? "secondary" : "outline"
-                        }
-                      >
-                        {log.direction}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="capitalize">{log.entity}</TableCell>
-                    <TableCell className="capitalize">{log.action}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          log.status === "success"
-                            ? "default"
-                            : log.status === "error"
-                              ? "destructive"
-                              : "secondary"
-                        }
-                      >
-                        {log.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {log.shopifyId ?? "—"}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
-                      {format(new Date(log.createdAt), "MMM d, h:mm a")}
+                {data.logs.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell className="text-xs">{row.direction}</TableCell>
+                    <TableCell className="text-xs">{row.entity}</TableCell>
+                    <TableCell className="text-xs">{row.action}</TableCell>
+                    <TableCell>{statusBadge(row.status)}</TableCell>
+                    <TableCell className="text-xs font-mono">{row.shopifyId ?? "—"}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {formatTime(row.createdAt)}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -752,19 +548,13 @@ function SyncLogsCard() {
             </Table>
           </div>
         )}
-        {logs.some((l) => l.errorMessage) && (
-          <div className="mt-4 space-y-1">
-            {logs
-              .filter((l) => l.errorMessage)
-              .map((l) => (
-                <p
-                  key={l.id}
-                  className="text-xs text-destructive truncate"
-                  title={l.errorMessage ?? ""}
-                >
-                  {l.entity} {l.action}: {l.errorMessage}
-                </p>
-              ))}
+        {data?.logs.some((r) => r.status === "error") && (
+          <div className="mt-3 space-y-1">
+            {data.logs.filter((r) => r.status === "error").map((r) => (
+              <p key={r.id} className="text-xs text-destructive">
+                [{r.entity}/{r.action}] {r.errorMessage}
+              </p>
+            ))}
           </div>
         )}
       </CardContent>
