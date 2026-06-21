@@ -187,7 +187,7 @@ describe("shopify cross-tenant isolation", () => {
       const res = await request(app)
         .post("/shopify/oauth/install")
         .set("x-test-org-id", String(ORG_A))
-        .send({ shopDomain: "a-store.myshopify.com" });
+        .send({ shopDomain: "a-store.myshopify.com", apiKey: "test-key", apiSecret: "test-secret" });
       expect(res.status).toBe(200);
       const states = (await memDb.rowsOf(tables.shopifyOauthStatesTable.__table));
       expect(states.length).toBe(1);
