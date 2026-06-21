@@ -169,11 +169,14 @@ export default function SalesOrderNew() {
 
   // Only show in-stock items for sales orders (prevents selling unavailable stock).
   // Variant parents and their children are always included so the picker works correctly.
+  // Accessories and Raw Materials are always shown regardless of stock level.
+  const ALWAYS_SHOW_CATEGORIES = ["Accessories", "Raw Materials"];
   const inStockItems = useMemo(() => {
     if (!warehouseIdNum) return items;
     return items.filter((i) => {
       if (i.parentItemId != null) return true; // variant child — always pass through
       if (i.hasVariants) return true; // parent with variants — stock is per-variant
+      if (ALWAYS_SHOW_CATEGORIES.includes(i.category ?? "")) return true;
       return (i.stockAtWarehouse ?? 0) > 0;
     });
   }, [items, warehouseIdNum]);

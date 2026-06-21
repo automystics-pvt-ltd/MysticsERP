@@ -99,7 +99,7 @@ router.get("/pos/items/lookup", async (req, res, next) => {
       id: number; sku: string; name: string; barcode: string | null;
       salePrice: string; taxRate: string; isBundle: boolean; isBag: boolean;
       trackBatches: boolean; unit: string; imageUrl: string | null;
-      maxDiscountPercent: string | null;
+      maxDiscountPercent: string | null; category: string | null;
     }> = [];
     if (bagsOnly) {
       rows = await db
@@ -116,6 +116,7 @@ router.get("/pos/items/lookup", async (req, res, next) => {
           unit: itemsTable.unit,
           imageUrl: itemsTable.imageUrl,
           maxDiscountPercent: itemsTable.maxDiscountPercent,
+          category: itemsTable.category,
         })
         .from(itemsTable)
         .where(
@@ -143,6 +144,7 @@ router.get("/pos/items/lookup", async (req, res, next) => {
         unit: itemsTable.unit,
         imageUrl: itemsTable.imageUrl,
         maxDiscountPercent: itemsTable.maxDiscountPercent,
+        category: itemsTable.category,
       })
       .from(itemsTable)
       .where(
@@ -172,6 +174,7 @@ router.get("/pos/items/lookup", async (req, res, next) => {
           unit: itemsTable.unit,
           imageUrl: itemsTable.imageUrl,
           maxDiscountPercent: itemsTable.maxDiscountPercent,
+          category: itemsTable.category,
         })
         .from(itemsTable)
         .where(
@@ -221,10 +224,16 @@ router.get("/pos/items/lookup", async (req, res, next) => {
     // Only return items that have available stock in at least one POS warehouse.
     // Items with NO record or quantity=0 are filtered out so the search only
     // surfaces items the cashier can actually sell right now.
-    // Bags are shown regardless of stock (they're non-inventoried items).
+    // Bags and items categorised as Accessories/Raw Materials are always shown
+    // regardless of stock so they can be added to any sale.
+    const POS_ALWAYS_SHOW_CATEGORIES = ["Accessories", "Raw Materials"];
     const visibleRows = bagsOnly
       ? rows
-      : rows.filter((r) => (stockMap.get(r.id) ?? 0) > 0);
+      : rows.filter(
+          (r) =>
+            (stockMap.get(r.id) ?? 0) > 0 ||
+            POS_ALWAYS_SHOW_CATEGORIES.includes(r.category ?? ""),
+        );
 
     res.json({
       warehouseId: primaryWarehouseId,
