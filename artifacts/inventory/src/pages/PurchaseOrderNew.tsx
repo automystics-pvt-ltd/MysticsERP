@@ -73,6 +73,11 @@ export default function PurchaseOrderNew() {
   const { data: suppliers } = useListSuppliers();
   const { data: warehouses } = useListWarehouses();
   const { data: items } = useListItems();
+  const PURCHASABLE_CATEGORIES = ["Accessories", "Raw Materials"];
+  const purchasableItems = useMemo(
+    () => (items ?? []).filter((i) => PURCHASABLE_CATEGORIES.includes(i.category ?? "")),
+    [items],
+  );
   const [parentByLine, setParentByLine] = useState<Record<string, number>>({});
 
   const createMutation = useCreatePurchaseOrder({
@@ -448,7 +453,7 @@ export default function PurchaseOrderNew() {
                               name={`lines.${index}.itemId`}
                               render={({ field: selectField, fieldState }) => (
                                 <ItemPicker
-                                  items={items ?? []}
+                                  items={purchasableItems}
                                   selectedItemId={selectField.value || null}
                                   parentSelection={parentByLine[field.id] ?? null}
                                   onParentChange={(pid) =>

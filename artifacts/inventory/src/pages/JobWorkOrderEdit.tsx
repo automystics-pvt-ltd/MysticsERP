@@ -185,8 +185,9 @@ export default function JobWorkOrderEdit() {
     });
   };
 
+  const MATERIAL_CATEGORIES = ["Accessories", "Raw Materials"];
   const componentItems = (items ?? []).filter(
-    (i) => !i.hasVariants && !i.isBundle,
+    (i) => !i.hasVariants && !i.isBundle && MATERIAL_CATEGORIES.includes(i.category ?? ""),
   );
 
   if (isLoading) {
@@ -415,110 +416,6 @@ export default function JobWorkOrderEdit() {
                 Add component
               </Button>
 
-              <Separator className="my-6" />
-
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="font-medium text-lg">Additional raw materials</h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Free-form materials not tracked in inventory (e.g. packing, thread, chemicals). These appear on the challan but don't affect stock.
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => amAppend({ name: "", quantity: 1, unit: "" })}
-                    data-testid="btn-add-additional-material"
-                  >
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add material
-                  </Button>
-                </div>
-
-                {amFields.length > 0 && (
-                  <div className="space-y-3">
-                    {amFields.map((field, index) => (
-                      <div
-                        key={field.id}
-                        className="flex gap-3 items-start border p-4 rounded-lg bg-muted/20"
-                      >
-                        <div className="grid grid-cols-12 gap-3 w-full">
-                          <div className="col-span-12 md:col-span-6">
-                            <FormField
-                              control={form.control}
-                              name={`additionalMaterials.${index}.name`}
-                              render={({ field: f }) => (
-                                <FormItem>
-                                  <FormLabel className="text-xs">Material name *</FormLabel>
-                                  <FormControl>
-                                    <Input
-                                      {...f}
-                                      placeholder="e.g. Packing material"
-                                      data-testid={`input-am-name-${index}`}
-                                    />
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                          </div>
-                          <div className="col-span-6 md:col-span-3">
-                            <FormField
-                              control={form.control}
-                              name={`additionalMaterials.${index}.quantity`}
-                              render={({ field: f }) => (
-                                <FormItem>
-                                  <FormLabel className="text-xs">Quantity *</FormLabel>
-                                  <FormControl>
-                                    <Input
-                                      type="text"
-                                      inputMode="decimal"
-                                      {...f}
-                                      data-testid={`input-am-qty-${index}`}
-                                    />
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                          </div>
-                          <div className="col-span-6 md:col-span-3">
-                            <FormField
-                              control={form.control}
-                              name={`additionalMaterials.${index}.unit`}
-                              render={({ field: f }) => (
-                                <FormItem>
-                                  <FormLabel className="text-xs">Unit</FormLabel>
-                                  <FormControl>
-                                    <Input
-                                      {...f}
-                                      placeholder="e.g. kg, pcs"
-                                      data-testid={`input-am-unit-${index}`}
-                                    />
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                          </div>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="text-destructive h-9 w-9 mt-6"
-                          onClick={() => amRemove(index)}
-                          data-testid={`btn-remove-am-${index}`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
 
               <Separator className="my-6" />
 

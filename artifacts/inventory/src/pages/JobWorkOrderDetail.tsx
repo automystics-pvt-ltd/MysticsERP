@@ -648,33 +648,6 @@ export default function JobWorkOrderDetail() {
             </CardContent>
           </Card>
 
-          {(order.additionalMaterials?.length ?? 0) > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Additional raw materials (not in inventory)</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Material</TableHead>
-                      <TableHead className="text-right">Quantity</TableHead>
-                      <TableHead>Unit</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {order.additionalMaterials!.map((m, i) => (
-                      <TableRow key={i} data-testid={`row-am-${i}`}>
-                        <TableCell>{m.name}</TableCell>
-                        <TableCell className="text-right">{m.quantity}</TableCell>
-                        <TableCell className="text-muted-foreground text-xs">{m.unit ?? "—"}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          )}
         </TabsContent>
 
         <TabsContent value="issues" className="mt-4 space-y-4">

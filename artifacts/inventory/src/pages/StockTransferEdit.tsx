@@ -103,7 +103,7 @@ export default function StockTransferEdit() {
   const params = useParams<{ id: string }>();
   const id = Number(params.id);
   const [, setLocation] = useLocation();
-  const canEdit = useCanI("stock_transfers", "create");
+  const canEdit = useCanI("stock_transfers", "edit");
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
