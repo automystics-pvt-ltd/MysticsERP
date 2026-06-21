@@ -8,6 +8,12 @@ import {
   CardTitle,
   CardFooter,
 } from "@/components/ui/card";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import {
   Form,
@@ -47,6 +53,7 @@ import {
   ScanSearch,
   AlertTriangle,
   DownloadCloud,
+  ExternalLink,
 } from "lucide-react";
 import { SiShopify } from "react-icons/si";
 import { format } from "date-fns";
@@ -57,6 +64,7 @@ import {
   useSyncShopifyOrders,
   usePushShopifyProducts,
   useConnectShopifyCustom,
+  useStartShopifyInstall,
   useStartShopifyHistoricalImport,
   useGetShopifyImportJob,
   useReconcileShopifyOrders,
@@ -121,6 +129,9 @@ export default function IntegrationShopify() {
       queryKey: getGetShopifyConnectionQueryKey(),
     });
 
+  const [oauthDomain, setOauthDomain] = useState("");
+  const [oauthDomainError, setOauthDomainError] = useState("");
+
   const customMutation = useConnectShopifyCustom({
     mutation: {
       onSuccess: () => {
@@ -136,6 +147,34 @@ export default function IntegrationShopify() {
       },
     },
   });
+
+  const oauthMutation = useStartShopifyInstall({
+    mutation: {
+      onSuccess: (data) => {
+        window.location.href = data.installUrl;
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "OAuth connect failed",
+          description:
+            err instanceof Error
+              ? err.message
+              : "Could not start Shopify login. Try the Custom App method instead.",
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  function handleOauthConnect() {
+    const raw = oauthDomain.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+    if (!SHOP_DOMAIN_RE.test(raw)) {
+      setOauthDomainError("Must look like your-store.myshopify.com");
+      return;
+    }
+    setOauthDomainError("");
+    oauthMutation.mutate({ data: { shopDomain: raw } });
+  }
 
   const disconnectMutation = useDeleteShopifyConnection({
     mutation: {
@@ -260,98 +299,151 @@ export default function IntegrationShopify() {
               <div>
                 <CardTitle>Connect your Shopify store</CardTitle>
                 <CardDescription>
-                  Create a Custom App in your Shopify admin and paste your
-                  credentials below to connect.
+                  Choose how you'd like to connect — Shopify Login (easier) or a Custom App token.
                 </CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-5">
-            <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
-              <p className="text-sm font-medium flex items-center gap-2">
-                <KeyRound className="h-4 w-4 text-muted-foreground" />
-                How to create your Shopify Custom App:
-              </p>
-              <ol className="space-y-2">
-                {STEPS.map((step, i) => (
-                  <li key={i} className="flex gap-3 text-sm">
-                    <span className="flex-shrink-0 flex h-5 w-5 items-center justify-center rounded-full bg-[#95bf47] text-white text-xs font-bold">
-                      {i + 1}
-                    </span>
-                    <span className="text-muted-foreground">{step}</span>
-                  </li>
-                ))}
-              </ol>
-            </div>
+            <Tabs defaultValue="oauth">
+              <TabsList className="w-full">
+                <TabsTrigger value="oauth" className="flex-1">
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  Shopify Login
+                </TabsTrigger>
+                <TabsTrigger value="custom" className="flex-1">
+                  <KeyRound className="mr-2 h-4 w-4" />
+                  Custom App Token
+                </TabsTrigger>
+              </TabsList>
 
-            <Form {...customForm}>
-              <form
-                onSubmit={customForm.handleSubmit((v) =>
-                  customMutation.mutate({
-                    data: { shopDomain: v.shopDomain, accessToken: v.accessToken },
-                  }),
-                )}
-                className="space-y-4"
-              >
-                <FormField
-                  control={customForm.control}
-                  name="shopDomain"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Shop domain</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="your-store.myshopify.com"
-                          autoComplete="off"
-                          {...field}
-                          data-testid="input-shopify-custom-domain"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
+              <TabsContent value="oauth" className="space-y-4 pt-2">
+                <p className="text-sm text-muted-foreground">
+                  Enter your store domain and click <strong>Connect with Shopify</strong>. You'll be
+                  redirected to Shopify to authorize the connection — no token copying needed.
+                </p>
+                <div className="space-y-2">
+                  <Label htmlFor="oauth-domain">Shop domain</Label>
+                  <Input
+                    id="oauth-domain"
+                    placeholder="your-store.myshopify.com"
+                    autoComplete="off"
+                    value={oauthDomain}
+                    onChange={(e) => { setOauthDomain(e.target.value); setOauthDomainError(""); }}
+                    onKeyDown={(e) => e.key === "Enter" && handleOauthConnect()}
+                    data-testid="input-shopify-oauth-domain"
+                  />
+                  {oauthDomainError && (
+                    <p className="text-sm text-destructive">{oauthDomainError}</p>
                   )}
-                />
-                <FormField
-                  control={customForm.control}
-                  name="accessToken"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Admin API access token</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="shpat_xxxxxxxxxxxxxxxxxxxx"
-                          autoComplete="off"
-                          {...field}
-                          data-testid="input-shopify-access-token"
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        Paste the token from your custom app's "API credentials" tab
-                        (starts with <code className="text-xs">shpat_</code> or <code className="text-xs">shppa_</code>).
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                </div>
                 <Button
-                  type="submit"
-                  disabled={customMutation.isPending}
-                  data-testid="btn-connect-shopify-custom"
+                  onClick={handleOauthConnect}
+                  disabled={oauthMutation.isPending}
+                  data-testid="btn-connect-shopify-oauth"
                 >
-                  {customMutation.isPending ? (
+                  {oauthMutation.isPending ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Connecting…
+                      Redirecting…
                     </>
                   ) : (
                     <>
-                      <CheckCircle2 className="mr-2 h-4 w-4" />
-                      Connect store
+                      <ExternalLink className="mr-2 h-4 w-4" />
+                      Connect with Shopify
                     </>
                   )}
                 </Button>
-              </form>
-            </Form>
+              </TabsContent>
+
+              <TabsContent value="custom" className="space-y-5 pt-2">
+                <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+                  <p className="text-sm font-medium flex items-center gap-2">
+                    <KeyRound className="h-4 w-4 text-muted-foreground" />
+                    How to create your Shopify Custom App:
+                  </p>
+                  <ol className="space-y-2">
+                    {STEPS.map((step, i) => (
+                      <li key={i} className="flex gap-3 text-sm">
+                        <span className="flex-shrink-0 flex h-5 w-5 items-center justify-center rounded-full bg-[#95bf47] text-white text-xs font-bold">
+                          {i + 1}
+                        </span>
+                        <span className="text-muted-foreground">{step}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+
+                <Form {...customForm}>
+                  <form
+                    onSubmit={customForm.handleSubmit((v) =>
+                      customMutation.mutate({
+                        data: { shopDomain: v.shopDomain, accessToken: v.accessToken },
+                      }),
+                    )}
+                    className="space-y-4"
+                  >
+                    <FormField
+                      control={customForm.control}
+                      name="shopDomain"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Shop domain</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="your-store.myshopify.com"
+                              autoComplete="off"
+                              {...field}
+                              data-testid="input-shopify-custom-domain"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={customForm.control}
+                      name="accessToken"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Admin API access token</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="shpat_xxxxxxxxxxxxxxxxxxxx"
+                              autoComplete="off"
+                              {...field}
+                              data-testid="input-shopify-access-token"
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Paste the token from your custom app's "API credentials" tab
+                            (starts with <code className="text-xs">shpat_</code> or <code className="text-xs">shppa_</code>).
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <Button
+                      type="submit"
+                      disabled={customMutation.isPending}
+                      data-testid="btn-connect-shopify-custom"
+                    >
+                      {customMutation.isPending ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Connecting…
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="mr-2 h-4 w-4" />
+                          Connect store
+                        </>
+                      )}
+                    </Button>
+                  </form>
+                </Form>
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
       ) : (
