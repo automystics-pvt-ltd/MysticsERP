@@ -1,17 +1,21 @@
 import { and, eq, isNotNull } from "drizzle-orm";
 import {
   db,
+  customersTable,
   itemsTable,
   itemWarehouseStockTable,
   organizationsTable,
   salesOrdersTable,
+  shopifySyncLogsTable,
   warehousesTable,
 } from "@workspace/db";
 import { logger } from "./logger";
 import {
   createShopifyProduct,
+  createShopifyCustomer,
   createShopifyFulfillment,
   setInventoryLevel,
+  updateShopifyCustomer,
   updateShopifyProduct,
 } from "./shopify";
 import { computeBundleStockByWarehouse } from "./bundles";
@@ -456,4 +460,113 @@ async function pushStockToShopifyAsync(
       );
     }
   }
+}
+
+// ─── Customer push ────────────────────────────────────────────────────────────
+
+/**
+ * Fire-and-forget push of an ERP customer to Shopify.
+ * Creates a new Shopify customer if none is linked, otherwise updates.
+ * No-op if the org isn't connected to Shopify.
+ */
+export function pushCustomerToShopify(orgId: number, customerId: number): void {
+  pushCustomerToShopifyAsync(orgId, customerId).catch((err) => {
+    logger.warn(
+      {
+        err: err instanceof Error ? err.message : String(err),
+        orgId,
+        customerId,
+      },
+      "pushCustomerToShopify failed",
+    );
+  });
+}
+
+async function pushCustomerToShopifyAsync(
+  orgId: number,
+  customerId: number,
+): Promise<void> {
+  const orgRows = await db
+    .select({
+      shopDomain: organizationsTable.shopifyShopDomain,
+      accessToken: organizationsTable.shopifyAccessToken,
+    })
+    .from(organizationsTable)
+    .where(eq(organizationsTable.id, orgId))
+    .limit(1); // org-scope-allow: internal outbound push — queried by primary key
+
+  const org = orgRows[0];
+  if (!org?.shopDomain || !org.accessToken) return;
+
+  const customerRows = await db
+    .select()
+    .from(customersTable)
+    .where(
+      and(
+        eq(customersTable.id, customerId),
+        eq(customersTable.organizationId, orgId),
+      ),
+    )
+    .limit(1);
+  const customer = customerRows[0];
+  if (!customer) return;
+
+  const nameParts = (customer.name ?? "").trim().split(/\s+/);
+  const firstName = nameParts[0] ?? "";
+  const lastName = nameParts.slice(1).join(" ") || "";
+
+  const fields = {
+    firstName,
+    lastName,
+    email: customer.email ?? undefined,
+    phone: customer.phone ?? undefined,
+    company: customer.company ?? undefined,
+    note: customer.notes ?? undefined,
+  };
+
+  let action: string;
+  let shopifyId: string;
+  let status: "success" | "error" = "success";
+  let errorMessage: string | undefined;
+
+  try {
+    if (customer.shopifyCustomerId) {
+      await updateShopifyCustomer(org.shopDomain, org.accessToken, customer.shopifyCustomerId, fields);
+      action = "update";
+      shopifyId = customer.shopifyCustomerId;
+    } else {
+      const newId = await createShopifyCustomer(org.shopDomain, org.accessToken, fields);
+      await db
+        .update(customersTable)
+        .set({ shopifyCustomerId: newId })
+        .where(
+          and(
+            eq(customersTable.id, customerId),
+            eq(customersTable.organizationId, orgId),
+          ),
+        );
+      action = "create";
+      shopifyId = newId;
+    }
+  } catch (err) {
+    status = "error";
+    errorMessage = err instanceof Error ? err.message : String(err);
+    action = customer.shopifyCustomerId ? "update" : "create";
+    shopifyId = customer.shopifyCustomerId ?? "";
+    logger.warn(
+      { err: errorMessage, orgId, customerId },
+      "Shopify customer push failed",
+    );
+  }
+
+  await db.insert(shopifySyncLogsTable).values({
+    organizationId: orgId,
+    direction: "outbound",
+    entity: "customer",
+    action,
+    status,
+    shopifyId: shopifyId || null,
+    erpId: String(customerId),
+    errorMessage: errorMessage ?? null,
+  });
 }

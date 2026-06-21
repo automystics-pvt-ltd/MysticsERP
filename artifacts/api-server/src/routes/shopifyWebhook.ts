@@ -2,6 +2,7 @@ import { Router, type IRouter, type Request } from "express";
 import { and, eq } from "drizzle-orm";
 import {
   db,
+  customersTable,
   itemsTable,
   itemWarehouseStockTable,
   stockMovementsTable,
@@ -9,6 +10,7 @@ import {
   salesOrdersTable,
   salesOrderLinesTable,
   shopifyWebhookEventsTable,
+  shopifySyncLogsTable,
   warehousesTable,
 } from "@workspace/db";
 import { getDefaultWarehouseId } from "../lib/tenant";
@@ -16,6 +18,7 @@ import {
   fetchShopifyProduct,
   mapShopifyPaymentStatus,
   verifyWebhookSignature,
+  verifyWebhookSignatureWithKey,
   type ShopifyOrder,
   type ShopifyRefund,
 } from "../lib/shopify";
@@ -42,15 +45,6 @@ router.post("/webhooks/shopify", async (req, res, next) => {
   try {
     const signature = req.header("x-shopify-hmac-sha256") ?? "";
     const raw = (req as Request & { rawBody?: string }).rawBody ?? "";
-    if (!verifyWebhookSignature(raw, signature)) {
-      req.log?.warn(
-        { topic: req.header("x-shopify-topic") },
-        "Shopify webhook signature verification failed",
-      );
-      res.status(401).json({ error: "Invalid signature" });
-      return;
-    }
-
     const topic = req.header("x-shopify-topic") ?? "";
     const shopDomain = (req.header("x-shopify-shop-domain") ?? "").toLowerCase();
     const webhookId = req.header("x-shopify-webhook-id") ?? "";
@@ -60,13 +54,30 @@ router.post("/webhooks/shopify", async (req, res, next) => {
       return;
     }
 
-    // Resolve organization by shop domain
+    // Resolve organization by shop domain first so we can use per-org credentials.
     const orgRows = await db
       .select()
       .from(organizationsTable)
       .where(eq(organizationsTable.shopifyShopDomain, shopDomain))
-      .limit(1);
+      .limit(1); // org-scope-allow: webhook ingress — no org context yet, looked up by shop domain
     const org = orgRows[0];
+
+    // Verify HMAC using per-org API secret if available, falling back to the
+    // global env secret (for OAuth-connected installs that predate per-org creds).
+    const hmacSecret = org?.shopifyApiSecret ?? null;
+    const hmacOk = hmacSecret
+      ? verifyWebhookSignatureWithKey(raw, signature, hmacSecret)
+      : verifyWebhookSignature(raw, signature);
+
+    if (!hmacOk) {
+      req.log?.warn(
+        { topic, shopDomain },
+        "Shopify webhook signature verification failed",
+      );
+      res.status(401).json({ error: "Invalid signature" });
+      return;
+    }
+
     if (!org) {
       // Unknown shop — accept (so Shopify stops retrying) but no-op.
       req.log?.info({ topic, shopDomain }, "Webhook for unknown shop; ignoring");
@@ -724,6 +735,90 @@ router.post("/webhooks/shopify", async (req, res, next) => {
           .update(organizationsTable)
           .set({ shopifyLastWebhookAt: new Date() })
           .where(eq(organizationsTable.id, org.id));
+        break;
+      }
+
+      case "customers/create":
+      case "customers/update": {
+        const sc = body as unknown as {
+          id: number;
+          first_name?: string | null;
+          last_name?: string | null;
+          email?: string | null;
+          phone?: string | null;
+          note?: string | null;
+          default_address?: { company?: string | null } | null;
+        };
+        const shopifyCustomerId = String(sc.id);
+        const fullName = [sc.first_name, sc.last_name].filter(Boolean).join(" ").trim() || "Unknown";
+        const company = sc.default_address?.company ?? null;
+
+        let erpId: string | null = null;
+        let syncStatus: "success" | "error" = "success";
+        let errMsg: string | null = null;
+
+        try {
+          // Try to find existing customer by shopifyCustomerId
+          const existingRows = await db
+            .select({ id: customersTable.id })
+            .from(customersTable)
+            .where(
+              and(
+                eq(customersTable.organizationId, org.id),
+                eq(customersTable.shopifyCustomerId, shopifyCustomerId),
+              ),
+            )
+            .limit(1);
+          const existing = existingRows[0];
+
+          if (existing) {
+            const updates: Record<string, unknown> = { name: fullName };
+            if (sc.email !== undefined) updates["email"] = sc.email;
+            if (sc.phone !== undefined) updates["phone"] = sc.phone;
+            if (company !== undefined) updates["company"] = company;
+            if (sc.note !== undefined) updates["notes"] = sc.note;
+            await db
+              .update(customersTable)
+              .set(updates)
+              .where(
+                and(
+                  eq(customersTable.id, existing.id),
+                  eq(customersTable.organizationId, org.id),
+                ),
+              );
+            erpId = String(existing.id);
+          } else if (topic === "customers/create") {
+            // Only auto-create on create events, not update (avoid ghost customers)
+            const inserted = await db
+              .insert(customersTable)
+              .values({
+                organizationId: org.id,
+                name: fullName,
+                email: sc.email ?? null,
+                phone: sc.phone ?? null,
+                company: company ?? null,
+                notes: sc.note ?? null,
+                shopifyCustomerId,
+              })
+              .returning({ id: customersTable.id });
+            erpId = String(inserted[0]!.id);
+          }
+        } catch (err) {
+          syncStatus = "error";
+          errMsg = err instanceof Error ? err.message : String(err);
+          req.log?.warn({ err: errMsg, shopifyCustomerId, orgId: org.id }, "Shopify customer webhook failed");
+        }
+
+        await db.insert(shopifySyncLogsTable).values({
+          organizationId: org.id,
+          direction: "inbound",
+          entity: "customer",
+          action: topic === "customers/create" ? "create" : "update",
+          status: syncStatus,
+          shopifyId: shopifyCustomerId,
+          erpId,
+          errorMessage: errMsg,
+        });
         break;
       }
 

@@ -16,6 +16,7 @@ export const customersTable = pgTable("customers", {
   placeOfSupply: text("place_of_supply"),
   notes: text("notes"),
   outstandingBalance: numeric("outstanding_balance", { precision: 14, scale: 2 }).notNull().default("0"),
+  shopifyCustomerId: text("shopify_customer_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()

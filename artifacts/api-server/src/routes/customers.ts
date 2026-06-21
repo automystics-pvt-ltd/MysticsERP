@@ -4,6 +4,7 @@ import { db, customersTable, salesOrdersTable } from "@workspace/db";
 import { tenantMiddleware } from "../lib/tenant";
 import { serializeCustomer } from "../lib/serializers";
 import { toNum } from "../lib/numeric";
+import { pushCustomerToShopify } from "../lib/shopifyOutbound";
 
 const router: IRouter = Router();
 router.use(tenantMiddleware);
@@ -151,7 +152,9 @@ router.post("/customers", async (req, res, next) => {
         notes: b.notes ?? null,
       })
       .returning();
-    res.status(201).json({ ...serializeCustomer(inserted[0]!), overdueBalance: 0 });
+    const newCustomer = inserted[0]!;
+    pushCustomerToShopify(t.organizationId, newCustomer.id);
+    res.status(201).json({ ...serializeCustomer(newCustomer), overdueBalance: 0 });
   } catch (err) {
     next(err);
   }
@@ -209,6 +212,7 @@ router.patch("/customers/:id", async (req, res, next) => {
       res.status(404).json({ error: "Not found" });
       return;
     }
+    pushCustomerToShopify(t.organizationId, id);
     const overdueMap = await getOverdueBalanceMap(t.organizationId, [id]);
     res.json({ ...serializeCustomer(updated[0]), overdueBalance: toNum(overdueMap.get(id) ?? "0") });
   } catch (err) {

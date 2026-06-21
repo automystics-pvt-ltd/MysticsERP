@@ -42,6 +42,8 @@ const WEBHOOK_TOPICS = [
   "products/update",
   "products/delete",
   "inventory_levels/update",
+  "customers/create",
+  "customers/update",
   "app/uninstalled",
 ];
 
@@ -116,16 +118,36 @@ export function verifyOauthHmac(query: Record<string, string>): boolean {
 /**
  * Verify the HMAC header Shopify attaches to webhook deliveries.
  * Header is base64 of HMAC-SHA256 over the raw request body.
+ * Uses the global SHOPIFY_API_SECRET env var.
  */
 export function verifyWebhookSignature(
   rawBody: string | Buffer,
   headerSignature: string | undefined,
 ): boolean {
   if (!headerSignature) return false;
+  let secret: string;
+  try {
+    secret = getShopifyApiSecret();
+  } catch {
+    return false;
+  }
+  return verifyWebhookSignatureWithKey(rawBody, headerSignature, secret);
+}
+
+/**
+ * Verify a webhook HMAC using an explicit secret key.
+ * Use this for per-org verification when org.shopifyApiSecret is set.
+ */
+export function verifyWebhookSignatureWithKey(
+  rawBody: string | Buffer,
+  headerSignature: string | undefined,
+  secret: string,
+): boolean {
+  if (!headerSignature || !secret) return false;
   const bodyBuf =
     typeof rawBody === "string" ? Buffer.from(rawBody, "utf8") : rawBody;
   const digest = crypto
-    .createHmac("sha256", getShopifyApiSecret())
+    .createHmac("sha256", secret)
     .update(bodyBuf)
     .digest("base64");
   return safeEqualB64(digest, headerSignature);
@@ -732,6 +754,82 @@ export async function createShopifyFulfillment(
   await shopifyPost(shopDomain, accessToken, `/orders/${shopifyOrderId}/fulfillments.json`, {
     fulfillment: payload,
   });
+}
+
+export interface ShopifyCustomerAddress {
+  address1?: string | null;
+  address2?: string | null;
+  city?: string | null;
+  province?: string | null;
+  zip?: string | null;
+  country?: string | null;
+  company?: string | null;
+  phone?: string | null;
+}
+
+export interface ShopifyCustomer {
+  id: number;
+  first_name?: string | null;
+  last_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  note?: string | null;
+  default_address?: ShopifyCustomerAddress | null;
+}
+
+export interface UpsertShopifyCustomerFields {
+  firstName?: string;
+  lastName?: string;
+  email?: string | null;
+  phone?: string | null;
+  company?: string | null;
+  note?: string | null;
+}
+
+export async function createShopifyCustomer(
+  shopDomain: string,
+  accessToken: string,
+  fields: UpsertShopifyCustomerFields,
+): Promise<string> {
+  const payload: Record<string, unknown> = {};
+  if (fields.firstName) payload["first_name"] = fields.firstName;
+  if (fields.lastName) payload["last_name"] = fields.lastName;
+  if (fields.email) payload["email"] = fields.email;
+  if (fields.phone) payload["phone"] = fields.phone;
+  if (fields.note) payload["note"] = fields.note;
+  if (fields.company) {
+    payload["default_address"] = { company: fields.company };
+  }
+  const data = await shopifyPost<{ customer: ShopifyCustomer }>(
+    shopDomain,
+    accessToken,
+    "/customers.json",
+    { customer: payload },
+  );
+  return String(data.customer.id);
+}
+
+export async function updateShopifyCustomer(
+  shopDomain: string,
+  accessToken: string,
+  shopifyCustomerId: string,
+  fields: UpsertShopifyCustomerFields,
+): Promise<void> {
+  const payload: Record<string, unknown> = {};
+  if (fields.firstName !== undefined) payload["first_name"] = fields.firstName;
+  if (fields.lastName !== undefined) payload["last_name"] = fields.lastName;
+  if (fields.email !== undefined) payload["email"] = fields.email;
+  if (fields.phone !== undefined) payload["phone"] = fields.phone;
+  if (fields.note !== undefined) payload["note"] = fields.note;
+  if (fields.company !== undefined) {
+    payload["default_address"] = { company: fields.company };
+  }
+  await shopifyPut(
+    shopDomain,
+    accessToken,
+    `/customers/${shopifyCustomerId}.json`,
+    { customer: payload },
+  );
 }
 
 export { REQUIRED_SCOPES, WEBHOOK_TOPICS };

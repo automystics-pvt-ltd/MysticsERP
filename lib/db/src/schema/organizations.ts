@@ -28,6 +28,8 @@ export const organizationsTable = pgTable(
     trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
     shopifyShopDomain: text("shopify_shop_domain"),
     shopifyAccessToken: text("shopify_access_token"),
+    shopifyApiKey: text("shopify_api_key"),
+    shopifyApiSecret: text("shopify_api_secret"),
     shopifyScopes: text("shopify_scopes"),
     shopifyLocationId: text("shopify_location_id"),
     shopifyWebhookRegisteredAt: timestamp("shopify_webhook_registered_at", { withTimezone: true }),

@@ -23,6 +23,7 @@ export * from "./teamInvitations";
 export * from "./shopifyOauthStates";
 export * from "./shopifyWebhookEvents";
 export * from "./shopifyImportJobs";
+export * from "./shopifySyncLogs";
 export * from "./emailLog";
 export * from "./emailSettings";
 export * from "./paymentLinks";

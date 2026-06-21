@@ -9,6 +9,7 @@ import {
   salesOrdersTable,
   stockMovementsTable,
   shopifyOauthStatesTable,
+  shopifySyncLogsTable,
   warehousesTable,
 } from "@workspace/db";
 import { tenantMiddleware, getDefaultWarehouseId } from "../lib/tenant";
@@ -279,11 +280,16 @@ router.post("/shopify/connect-custom", async (req, res, next) => {
     // Get the primary location for inventory sync
     const locationId = await getPrimaryLocationId(shopDomain, accessToken);
 
+    const apiKey = typeof b.apiKey === "string" && b.apiKey.trim() ? b.apiKey.trim() : null;
+    const apiSecret = typeof b.apiSecret === "string" && b.apiSecret.trim() ? b.apiSecret.trim() : null;
+
     await db
       .update(organizationsTable)
       .set({
         shopifyShopDomain: shopDomain,
         shopifyAccessToken: accessToken,
+        ...(apiKey !== null && { shopifyApiKey: apiKey }),
+        ...(apiSecret !== null && { shopifyApiSecret: apiSecret }),
         shopifyScopes: null, // Custom apps don't return scopes via OAuth
         shopifyLocationId: locationId,
       })
@@ -1023,6 +1029,30 @@ router.get("/shopify/reconcile", async (req, res, next) => {
       missingInInventory,
       duplicates,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/shopify/sync-logs", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const limit = Math.min(Number(req.query["limit"] ?? 100), 500);
+    const entity = typeof req.query["entity"] === "string" ? req.query["entity"] : null;
+    const status = typeof req.query["status"] === "string" ? req.query["status"] : null;
+
+    const conds = [eq(shopifySyncLogsTable.organizationId, t.organizationId)];
+    if (entity) conds.push(eq(shopifySyncLogsTable.entity, entity));
+    if (status) conds.push(eq(shopifySyncLogsTable.status, status));
+
+    const rows = await db
+      .select()
+      .from(shopifySyncLogsTable)
+      .where(and(...conds))
+      .orderBy(sql`${shopifySyncLogsTable.createdAt} DESC`)
+      .limit(limit);
+
+    res.json({ logs: rows });
   } catch (err) {
     next(err);
   }
