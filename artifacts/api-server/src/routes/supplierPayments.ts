@@ -92,6 +92,10 @@ router.get("/supplier-payments", async (req, res, next) => {
       db
         .select({ count: sql<string>`COUNT(*)` })
         .from(supplierPaymentsTable)
+        .innerJoin(
+          suppliersTable,
+          eq(suppliersTable.id, supplierPaymentsTable.supplierId),
+        )
         .where(and(...conds)),
       basePaymentsQuery.limit(pageSize).offset((page - 1) * pageSize),
     ]);
@@ -598,6 +602,75 @@ router.post("/supplier-payments/:id/allocations", async (req, res, next) => {
   }
 });
 
+router.patch("/supplier-payments/:id", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const orgId = t.organizationId;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      res.status(400).json({ error: "Invalid payment id" });
+      return;
+    }
+
+    const b = req.body ?? {};
+    const updates: Record<string, unknown> = {};
+
+    if (b.paymentDate !== undefined) {
+      if (typeof b.paymentDate !== "string" || !b.paymentDate) {
+        res.status(400).json({ error: "paymentDate must be a non-empty string" });
+        return;
+      }
+      updates.paymentDate = b.paymentDate;
+    }
+    if (b.mode !== undefined) {
+      if (!isPaymentMode(String(b.mode))) {
+        res.status(400).json({ error: `Invalid mode. Allowed: ${PAYMENT_MODES.join(", ")}` });
+        return;
+      }
+      updates.mode = String(b.mode);
+    }
+    if (b.referenceNumber !== undefined) {
+      updates.referenceNumber = b.referenceNumber ?? null;
+    }
+    if (b.bankAccountLabel !== undefined) {
+      updates.bankAccountLabel = b.bankAccountLabel ?? null;
+    }
+    if (b.notes !== undefined) {
+      updates.notes = b.notes ?? null;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      res.status(400).json({ error: "No editable fields provided" });
+      return;
+    }
+
+    const updated = await db
+      .update(supplierPaymentsTable)
+      .set(updates)
+      .where(
+        and(
+          eq(supplierPaymentsTable.id, id),
+          eq(supplierPaymentsTable.organizationId, orgId),
+        ),
+      )
+      .returning({ id: supplierPaymentsTable.id });
+
+    if (updated.length === 0) {
+      res.status(404).json({ error: "Payment not found" });
+      return;
+    }
+
+    const detail = await loadPaymentDetail(orgId, id);
+    if (!detail) {
+      res.status(404).json({ error: "Payment not found" });
+      return;
+    }
+    res.json(detail);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.delete("/supplier-payments/:id", async (req, res, next) => {
   try {
     const t = req.tenant!;
@@ -651,7 +724,9 @@ router.delete("/supplier-payments/:id", async (req, res, next) => {
       // Returned or cancelled POs are closed — restoring balanceDue there
       // would leave phantom payables on a closed order.
       let netRestoredToPayable = 0;
+      let totalAllocated = 0;
       for (const a of allocs) {
+        totalAllocated += toNum(a.amount);
         const isClosed = a.poStatus === "returned" || a.poStatus === "cancelled";
         if (!isClosed) {
           await tx
@@ -670,9 +745,14 @@ router.delete("/supplier-payments/:id", async (req, res, next) => {
         }
       }
 
-      // Restore the supplier's outstanding payable only for the portion
-      // that was applied to still-active (non-closed) orders. Advances
-      // (unallocated) and allocations against closed orders are forfeited.
+      // Always restore the unallocated (advance) portion too — it reduced
+      // the supplier's outstanding payable when recorded and must be reversed
+      // when the payment is deleted, regardless of allocation state.
+      const unallocatedAdvance = Math.max(0, toNum(payment.amount) - totalAllocated);
+      netRestoredToPayable += unallocatedAdvance;
+
+      // Restore the supplier's outstanding payable for all active-PO
+      // allocations plus any unallocated advance balance.
       const restoredStr = toStr(netRestoredToPayable);
       await tx
         .update(suppliersTable)

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   useCreateSupplierPayment,
   useListPurchaseOrders,
+  useListSuppliers,
   getGetPurchaseOrderQueryKey,
   getListPurchaseOrdersQueryKey,
   getListSupplierPaymentsQueryKey,
@@ -54,7 +55,7 @@ type Allocation = { purchaseOrderId: number; amount: string };
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  supplierId: number;
+  supplierId?: number;
   supplierName?: string;
   presetPurchaseOrderId?: number;
   presetPurchaseOrderBalance?: number;
@@ -63,14 +64,17 @@ interface Props {
 export function RecordSupplierPaymentDialog({
   open,
   onOpenChange,
-  supplierId,
-  supplierName,
+  supplierId: supplierIdProp,
+  supplierName: supplierNameProp,
   presetPurchaseOrderId,
   presetPurchaseOrderBalance,
 }: Props) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  const [selectedSupplierId, setSelectedSupplierId] = useState<string>(
+    supplierIdProp ? String(supplierIdProp) : "",
+  );
   const [paymentDate, setPaymentDate] = useState(() =>
     new Date().toISOString().slice(0, 10),
   );
@@ -79,13 +83,23 @@ export function RecordSupplierPaymentDialog({
   const [bankAccount, setBankAccount] = useState("");
   const [notes, setNotes] = useState("");
   const [allocations, setAllocations] = useState<Allocation[]>([]);
+  const [manualAmount, setManualAmount] = useState<string>("");
+
+  const resolvedSupplierId = supplierIdProp ?? (selectedSupplierId ? Number(selectedSupplierId) : 0);
+  const showSupplierPicker = !supplierIdProp;
+
+  const { data: suppliersData } = useListSuppliers(
+    {},
+    { query: { enabled: open && showSupplierPicker } },
+  );
+  const suppliers = suppliersData?.suppliers ?? [];
 
   const { data: openOrders, isLoading: ordersLoading } = useListPurchaseOrders(
-    { supplierId },
+    { supplierId: resolvedSupplierId },
     {
       query: {
-        enabled: open && !!supplierId,
-        queryKey: getListPurchaseOrdersQueryKey({ supplierId }),
+        enabled: open && !!resolvedSupplierId,
+        queryKey: getListPurchaseOrdersQueryKey({ supplierId: resolvedSupplierId }),
       },
     },
   );
@@ -104,11 +118,13 @@ export function RecordSupplierPaymentDialog({
 
   useEffect(() => {
     if (!open) return;
+    setSelectedSupplierId(supplierIdProp ? String(supplierIdProp) : "");
     setPaymentDate(new Date().toISOString().slice(0, 10));
     setMode("upi");
     setReference("");
     setBankAccount("");
     setNotes("");
+    setManualAmount("");
     if (presetPurchaseOrderId && presetPurchaseOrderBalance) {
       setAllocations([
         {
@@ -119,12 +135,20 @@ export function RecordSupplierPaymentDialog({
     } else {
       setAllocations([]);
     }
-  }, [open, presetPurchaseOrderId, presetPurchaseOrderBalance]);
+  }, [open, supplierIdProp, presetPurchaseOrderId, presetPurchaseOrderBalance]);
 
   const totalAllocated = allocations.reduce(
     (s, a) => s + (Number(a.amount) || 0),
     0,
   );
+
+  // The effective payment amount: manual override if set, otherwise sum of allocations
+  const effectiveAmount = manualAmount
+    ? Number(manualAmount) || 0
+    : totalAllocated;
+
+  const advance = Math.max(0, effectiveAmount - totalAllocated);
+  const hasAdvance = advance > 0.005;
 
   const toggleAllocation = (orderId: number, balance: number) => {
     setAllocations((prev) => {
@@ -155,24 +179,12 @@ export function RecordSupplierPaymentDialog({
     mutation: {
       onSuccess: () => {
         toast({ title: "Payment recorded" });
-        queryClient.invalidateQueries({
-          queryKey: getListSupplierPaymentsQueryKey(),
-        });
-        queryClient.invalidateQueries({
-          queryKey: ["supplier-payments-paginated"],
-        });
-        queryClient.invalidateQueries({
-          queryKey: getListSuppliersQueryKey(),
-        });
-        queryClient.invalidateQueries({
-          queryKey: getListPurchaseOrdersQueryKey(),
-        });
-        queryClient.invalidateQueries({
-          queryKey: ["purchase-orders-paginated"],
-        });
-        queryClient.invalidateQueries({
-          queryKey: getGetPayablesAgingReportQueryKey(),
-        });
+        queryClient.invalidateQueries({ queryKey: getListSupplierPaymentsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: ["supplier-payments-paginated"] });
+        queryClient.invalidateQueries({ queryKey: getListSuppliersQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getListPurchaseOrdersQueryKey() });
+        queryClient.invalidateQueries({ queryKey: ["purchase-orders-paginated"] });
+        queryClient.invalidateQueries({ queryKey: getGetPayablesAgingReportQueryKey() });
         if (presetPurchaseOrderId) {
           queryClient.invalidateQueries({
             queryKey: getGetPurchaseOrderQueryKey(presetPurchaseOrderId),
@@ -197,9 +209,20 @@ export function RecordSupplierPaymentDialog({
   });
 
   const submit = () => {
-    if (!totalAllocated || totalAllocated <= 0) {
+    if (!resolvedSupplierId) {
+      toast({ title: "Select a supplier", variant: "destructive" });
+      return;
+    }
+    if (!effectiveAmount || effectiveAmount <= 0) {
       toast({
-        title: "Select at least one bill to pay",
+        title: "Enter a payment amount or select bills to pay",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (totalAllocated - effectiveAmount > 0.005) {
+      toast({
+        title: "Allocated amount exceeds payment amount",
         variant: "destructive",
       });
       return;
@@ -212,9 +235,9 @@ export function RecordSupplierPaymentDialog({
       .filter((a) => a.amount > 0);
     createMutation.mutate({
       data: {
-        supplierId,
+        supplierId: resolvedSupplierId,
         paymentDate,
-        amount: totalAllocated,
+        amount: effectiveAmount,
         mode,
         referenceNumber: reference || null,
         bankAccountLabel: bankAccount || null,
@@ -224,19 +247,43 @@ export function RecordSupplierPaymentDialog({
     });
   };
 
+  const resolvedSupplierName =
+    supplierNameProp ??
+    (selectedSupplierId
+      ? suppliers.find((s) => String(s.id) === selectedSupplierId)?.name
+      : undefined);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Record supplier payment</DialogTitle>
           <DialogDescription>
-            {supplierName
-              ? `To ${supplierName}`
+            {resolvedSupplierName
+              ? `To ${resolvedSupplierName}`
               : "Capture a payment to a supplier and apply it to open bills."}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4">
+          {showSupplierPicker && (
+            <div className="space-y-1.5">
+              <Label>Supplier</Label>
+              <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
+                <SelectTrigger data-testid="select-payment-supplier">
+                  <SelectValue placeholder="Select a supplier…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {suppliers.map((s) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="payment-date">Payment date</Label>
@@ -249,10 +296,27 @@ export function RecordSupplierPaymentDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Amount</Label>
-              <div className="flex h-10 items-center rounded-md border bg-muted px-3 text-sm font-mono">
-                {totalAllocated > 0 ? formatCurrency(totalAllocated) : <span className="text-muted-foreground">—</span>}
-              </div>
+              <Label htmlFor="payment-amount">Amount (₹)</Label>
+              <Input
+                id="payment-amount"
+                type="number"
+                min="0.01"
+                step="0.01"
+                placeholder={totalAllocated > 0 ? totalAllocated.toFixed(2) : "0.00"}
+                value={manualAmount}
+                onChange={(e) => setManualAmount(e.target.value)}
+                data-testid="input-payment-amount"
+              />
+              {!manualAmount && totalAllocated > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Defaults to allocated total: {formatCurrency(totalAllocated)}
+                </p>
+              )}
+              {hasAdvance && (
+                <p className="text-xs text-amber-600">
+                  {formatCurrency(advance)} will be recorded as advance
+                </p>
+              )}
             </div>
           </div>
 
@@ -305,86 +369,88 @@ export function RecordSupplierPaymentDialog({
             />
           </div>
 
-          <div className="rounded-md border">
-            <div className="px-4 py-3 border-b flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium">Apply to bills</p>
-                <p className="text-xs text-muted-foreground">
-                  Optional — leave blank to record as advance.
-                </p>
+          {resolvedSupplierId > 0 && (
+            <div className="rounded-md border">
+              <div className="px-4 py-3 border-b flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Apply to bills</p>
+                  <p className="text-xs text-muted-foreground">
+                    Optional — leave all unchecked to record as advance.
+                  </p>
+                </div>
+                <div className="text-right text-xs">
+                  <p className="text-muted-foreground">Allocated</p>
+                  <p className="font-mono font-medium">
+                    {formatCurrency(totalAllocated)}
+                  </p>
+                </div>
               </div>
-              <div className="text-right text-xs">
-                <p className="text-muted-foreground">Allocated</p>
-                <p className="font-mono font-medium">
-                  {formatCurrency(totalAllocated)}
+              {ordersLoading ? (
+                <p className="p-4 text-sm text-muted-foreground">Loading…</p>
+              ) : eligibleOrders.length === 0 ? (
+                <p className="p-4 text-sm text-muted-foreground">
+                  No open bills for this supplier.
                 </p>
-              </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-10"></TableHead>
+                      <TableHead>Order</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="text-right">Balance due</TableHead>
+                      <TableHead className="text-right">Apply</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {eligibleOrders.map((o) => {
+                      const alloc = allocations.find(
+                        (a) => a.purchaseOrderId === o.id,
+                      );
+                      const balance = Number(o.balanceDue);
+                      return (
+                        <TableRow key={o.id}>
+                          <TableCell>
+                            <Checkbox
+                              checked={!!alloc}
+                              onCheckedChange={() =>
+                                toggleAllocation(o.id, balance)
+                              }
+                              data-testid={`check-alloc-${o.id}`}
+                            />
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            {o.orderNumber}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatCurrency(o.total)}
+                          </TableCell>
+                          <TableCell className="text-right text-orange-600">
+                            {formatCurrency(balance)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max={balance}
+                              disabled={!alloc}
+                              value={alloc?.amount ?? ""}
+                              onChange={(e) =>
+                                updateAllocationAmount(o.id, e.target.value, balance)
+                              }
+                              className="h-8 w-28 ml-auto text-right"
+                              data-testid={`input-alloc-${o.id}`}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
             </div>
-            {ordersLoading ? (
-              <p className="p-4 text-sm text-muted-foreground">Loading…</p>
-            ) : eligibleOrders.length === 0 ? (
-              <p className="p-4 text-sm text-muted-foreground">
-                No open bills for this supplier.
-              </p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-10"></TableHead>
-                    <TableHead>Order</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    <TableHead className="text-right">Balance due</TableHead>
-                    <TableHead className="text-right">Apply</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {eligibleOrders.map((o) => {
-                    const alloc = allocations.find(
-                      (a) => a.purchaseOrderId === o.id,
-                    );
-                    const balance = Number(o.balanceDue);
-                    return (
-                      <TableRow key={o.id}>
-                        <TableCell>
-                          <Checkbox
-                            checked={!!alloc}
-                            onCheckedChange={() =>
-                              toggleAllocation(o.id, balance)
-                            }
-                            data-testid={`check-alloc-${o.id}`}
-                          />
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          {o.orderNumber}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(o.total)}
-                        </TableCell>
-                        <TableCell className="text-right text-orange-600">
-                          {formatCurrency(balance)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            max={balance}
-                            disabled={!alloc}
-                            value={alloc?.amount ?? ""}
-                            onChange={(e) =>
-                              updateAllocationAmount(o.id, e.target.value, balance)
-                            }
-                            className="h-8 w-28 ml-auto text-right"
-                            data-testid={`input-alloc-${o.id}`}
-                          />
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            )}
-          </div>
+          )}
         </div>
 
         <DialogFooter>
@@ -393,7 +459,7 @@ export function RecordSupplierPaymentDialog({
           </Button>
           <Button
             onClick={submit}
-            disabled={createMutation.isPending || totalAllocated <= 0}
+            disabled={createMutation.isPending || effectiveAmount <= 0 || !resolvedSupplierId}
             data-testid="btn-save-payment"
           >
             {createMutation.isPending ? "Saving…" : "Record payment"}

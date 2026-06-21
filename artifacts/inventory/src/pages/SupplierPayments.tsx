@@ -86,7 +86,6 @@ export default function SupplierPayments() {
           <Can module="supplier_payments" action="create">
             <Button
               onClick={() => setRecordOpen(true)}
-              disabled={!supplierIdNum}
               data-testid="btn-record-supplier-payment"
             >
               <Plus className="mr-2 h-4 w-4" />
@@ -237,14 +236,12 @@ export default function SupplierPayments() {
         itemLabel="payments"
       />
 
-      {supplierIdNum && (
-        <RecordSupplierPaymentDialog
-          open={recordOpen}
-          onOpenChange={setRecordOpen}
-          supplierId={supplierIdNum}
-          supplierName={selectedSupplier?.name}
-        />
-      )}
+      <RecordSupplierPaymentDialog
+        open={recordOpen}
+        onOpenChange={setRecordOpen}
+        supplierId={supplierIdNum ?? undefined}
+        supplierName={selectedSupplier?.name}
+      />
     </div>
   );
 }

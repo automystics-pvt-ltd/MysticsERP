@@ -10,6 +10,7 @@ import {
   getGetPurchaseOrderQueryKey,
   fetchPurchaseOrdersPaginated,
   applySupplierPaymentAllocation,
+  updateSupplierPayment,
   type PurchaseOrder,
 } from "@/lib/queryKeys";
 import { PageHeader } from "@/components/PageHeader";
@@ -31,10 +32,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { ArrowLeft, Trash2, FileDown, PlusCircle } from "lucide-react";
+import { ArrowLeft, Trash2, FileDown, PlusCircle, Pencil } from "lucide-react";
 import { useState, useEffect } from "react";
 import { downloadSupplierPaymentVoucher } from "@workspace/api-client-react";
 import {
@@ -53,6 +62,15 @@ import { useToast } from "@/hooks/use-toast";
 import { ApprovalActions } from "@/components/ApprovalActions";
 import { useCanI } from "@/hooks/usePermissions";
 
+const PAYMENT_MODES = [
+  { value: "cash", label: "Cash" },
+  { value: "bank", label: "Bank transfer" },
+  { value: "upi", label: "UPI" },
+  { value: "cheque", label: "Cheque" },
+  { value: "razorpay", label: "Razorpay" },
+  { value: "other", label: "Other" },
+] as const;
+
 export default function SupplierPaymentDetail() {
   const { id } = useParams();
   const paymentId = parseInt(id || "0", 10);
@@ -68,14 +86,59 @@ export default function SupplierPaymentDetail() {
   });
 
   const canApprovePayment = useCanI("supplier_payments", "approve");
+  const canEditPayment = useCanI("supplier_payments", "edit");
 
   const [downloading, setDownloading] = useState(false);
+
+  // ── Edit dialog state ─────────────────────────────────────────────────────
+  const [editOpen, setEditOpen] = useState(false);
+  const [editDate, setEditDate] = useState("");
+  const [editMode, setEditMode] = useState("");
+  const [editReference, setEditReference] = useState("");
+  const [editBank, setEditBank] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+
+  const { payment, allocations } = data ?? {};
+
+  useEffect(() => {
+    if (!payment || !editOpen) return;
+    setEditDate(payment.paymentDate);
+    setEditMode(payment.mode);
+    setEditReference(payment.referenceNumber ?? "");
+    setEditBank(payment.bankAccountLabel ?? "");
+    setEditNotes(payment.notes ?? "");
+  }, [payment, editOpen]);
+
+  const editMutation = useMutation({
+    mutationFn: () =>
+      updateSupplierPayment(paymentId, {
+        paymentDate: editDate,
+        mode: editMode,
+        referenceNumber: editReference || null,
+        bankAccountLabel: editBank || null,
+        notes: editNotes || null,
+      }),
+    onSuccess: (detail) => {
+      toast({ title: "Payment updated" });
+      queryClient.setQueryData(getGetSupplierPaymentQueryKey(paymentId), detail);
+      queryClient.invalidateQueries({ queryKey: getListSupplierPaymentsQueryKey() });
+      queryClient.invalidateQueries({ queryKey: ["supplier-payments-paginated"] });
+      setEditOpen(false);
+    },
+    onError: (err: unknown) => {
+      const e = err as { message?: string };
+      toast({
+        title: "Could not update payment",
+        description: e.message ?? "Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
 
   // ── Apply to PO state ────────────────────────────────────────────────────
   const [selectedPoId, setSelectedPoId] = useState<string>("");
   const [applyAmount, setApplyAmount] = useState<string>("");
 
-  const { payment, allocations } = data ?? {};
   const allocatedTotal = (allocations ?? []).reduce(
     (s, a) => s + Number(a.amount),
     0,
@@ -122,21 +185,15 @@ export default function SupplierPaymentDetail() {
       }),
     onSuccess: (detail) => {
       toast({ title: "Allocation applied" });
-      // Update the payment detail cache directly so the page refreshes instantly
       queryClient.setQueryData(getGetSupplierPaymentQueryKey(paymentId), detail);
-      // Invalidate related queries
-      queryClient.invalidateQueries({
-        queryKey: getListSupplierPaymentsQueryKey(),
-      });
+      queryClient.invalidateQueries({ queryKey: getListSupplierPaymentsQueryKey() });
+      queryClient.invalidateQueries({ queryKey: ["supplier-payments-paginated"] });
       queryClient.invalidateQueries({
         queryKey: getGetPurchaseOrderQueryKey(Number(selectedPoId)),
       });
-      queryClient.invalidateQueries({
-        queryKey: getListPurchaseOrdersQueryKey(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: getGetPayablesAgingReportQueryKey(),
-      });
+      queryClient.invalidateQueries({ queryKey: getListPurchaseOrdersQueryKey() });
+      queryClient.invalidateQueries({ queryKey: ["purchase-orders-paginated"] });
+      queryClient.invalidateQueries({ queryKey: getGetPayablesAgingReportQueryKey() });
       queryClient.invalidateQueries({
         queryKey: ["open-pos-for-supplier", payment?.supplierId],
       });
@@ -204,18 +261,12 @@ export default function SupplierPaymentDetail() {
     mutation: {
       onSuccess: () => {
         toast({ title: "Payment deleted" });
-        queryClient.invalidateQueries({
-          queryKey: getListSupplierPaymentsQueryKey(),
-        });
-        queryClient.invalidateQueries({
-          queryKey: getListSuppliersQueryKey(),
-        });
-        queryClient.invalidateQueries({
-          queryKey: getListPurchaseOrdersQueryKey(),
-        });
-        queryClient.invalidateQueries({
-          queryKey: getGetPayablesAgingReportQueryKey(),
-        });
+        queryClient.invalidateQueries({ queryKey: getListSupplierPaymentsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: ["supplier-payments-paginated"] });
+        queryClient.invalidateQueries({ queryKey: getListSuppliersQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getListPurchaseOrdersQueryKey() });
+        queryClient.invalidateQueries({ queryKey: ["purchase-orders-paginated"] });
+        queryClient.invalidateQueries({ queryKey: getGetPayablesAgingReportQueryKey() });
         for (const a of data?.allocations ?? []) {
           queryClient.invalidateQueries({
             queryKey: getGetPurchaseOrderQueryKey(a.purchaseOrderId),
@@ -252,6 +303,16 @@ export default function SupplierPaymentDetail() {
         breadcrumbs={[{ label: "Supplier Payments", href: "/supplier-payments" }, { label: `#${payment!.id}` }]}
         actions={
             <div className="flex flex-wrap gap-2">
+              {canEditPayment && (
+                <Button
+                  variant="outline"
+                  onClick={() => setEditOpen(true)}
+                  data-testid="btn-edit-payment"
+                >
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Edit
+                </Button>
+              )}
               <Button
                 variant="outline"
                 onClick={handleDownloadVoucher}
@@ -468,6 +529,90 @@ export default function SupplierPaymentDetail() {
           </CardContent>
         </Card>
       )}
+
+      {/* ── Edit payment dialog ─────────────────────────────────────────── */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit payment</DialogTitle>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-payment-date">Date</Label>
+                <Input
+                  id="edit-payment-date"
+                  type="date"
+                  value={editDate}
+                  onChange={(e) => setEditDate(e.target.value)}
+                  data-testid="input-edit-payment-date"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Mode</Label>
+                <Select value={editMode} onValueChange={setEditMode}>
+                  <SelectTrigger data-testid="select-edit-payment-mode">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAYMENT_MODES.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-payment-reference">Reference / Txn ID</Label>
+              <Input
+                id="edit-payment-reference"
+                value={editReference}
+                onChange={(e) => setEditReference(e.target.value)}
+                data-testid="input-edit-payment-reference"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-payment-bank">Bank / wallet</Label>
+              <Input
+                id="edit-payment-bank"
+                value={editBank}
+                onChange={(e) => setEditBank(e.target.value)}
+                placeholder="e.g. HDFC current 1234"
+                data-testid="input-edit-payment-bank"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-payment-notes">Notes</Label>
+              <Textarea
+                id="edit-payment-notes"
+                rows={2}
+                value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
+                data-testid="input-edit-payment-notes"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => editMutation.mutate()}
+              disabled={editMutation.isPending || !editDate || !editMode}
+              data-testid="btn-save-edit-payment"
+            >
+              {editMutation.isPending ? "Saving…" : "Save changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

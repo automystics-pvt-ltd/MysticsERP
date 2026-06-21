@@ -406,6 +406,32 @@ export async function fetchJobWorkOrdersPaginated(params: {
   return customFetch<JobWorkOrdersPage>(`/api/job-work-orders?${qs}`);
 }
 
+// ─── Supplier payment edit ────────────────────────────────────────────────────
+
+export async function updateSupplierPayment(
+  paymentId: number,
+  payload: {
+    paymentDate?: string;
+    mode?: string;
+    referenceNumber?: string | null;
+    bankAccountLabel?: string | null;
+    notes?: string | null;
+  },
+): Promise<import("@workspace/api-client-react").SupplierPaymentDetail> {
+  const res = await fetch(`/api/supplier-payments/${paymentId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err: unknown = await res.json().catch(() => ({}));
+    throw new Error(
+      (err as { error?: string }).error ?? "Failed to update payment",
+    );
+  }
+  return res.json() as Promise<import("@workspace/api-client-react").SupplierPaymentDetail>;
+}
+
 // ─── Supplier payment allocation ─────────────────────────────────────────────
 
 export async function applySupplierPaymentAllocation(
