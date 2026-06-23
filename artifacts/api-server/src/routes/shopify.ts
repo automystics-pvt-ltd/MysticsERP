@@ -90,14 +90,19 @@ router.post("/shopify/oauth/install", async (req, res, next) => {
         ),
       );
 
+    // Derive the app's public URL from the incoming request so neither
+    // SHOPIFY_APP_URL nor REPLIT_DEV_DOMAIN env vars are required.
+    const appUrl = `${req.protocol}://${req.get("host")}`;
+
     const state = crypto.randomBytes(24).toString("hex");
     await db.insert(shopifyOauthStatesTable).values({
       organizationId: t.organizationId,
       state,
       shopDomain,
+      appUrl,
     });
 
-    const installUrl = buildInstallUrl(shopDomain, state, b.apiKey);
+    const installUrl = buildInstallUrl(shopDomain, state, b.apiKey, appUrl);
     res.json({ installUrl });
   } catch (err) {
     next(err);

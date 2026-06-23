@@ -10,6 +10,7 @@ export const shopifyOauthStatesTable = pgTable(
       .references(() => organizationsTable.id, { onDelete: "cascade" }),
     state: text("state").notNull(),
     shopDomain: text("shop_domain").notNull(),
+    appUrl: text("app_url"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

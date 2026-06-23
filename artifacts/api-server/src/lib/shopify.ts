@@ -88,12 +88,14 @@ export function buildInstallUrl(
   shopDomain: string,
   state: string,
   apiKeyOverride?: string,
+  appUrlOverride?: string,
 ): string {
   const clientId = apiKeyOverride ?? getShopifyApiKey();
+  const appUrl = appUrlOverride ?? getShopifyAppUrl();
   const params = new URLSearchParams({
     client_id: clientId,
     scope: REQUIRED_SCOPES.join(","),
-    redirect_uri: `${getShopifyAppUrl()}/api/shopify/oauth/callback`,
+    redirect_uri: `${appUrl}/api/shopify/oauth/callback`,
     state,
     "grant_options[]": "",
   });
@@ -353,8 +355,9 @@ export async function fetchAllShopifyLocations(
 export async function registerWebhooks(
   shopDomain: string,
   accessToken: string,
+  appUrlOverride?: string,
 ): Promise<void> {
-  const callbackBase = `${getShopifyAppUrl()}/api/webhooks/shopify`;
+  const callbackBase = `${appUrlOverride ?? getShopifyAppUrl()}/api/webhooks/shopify`;
   // Delete any pre-existing subscriptions for this app first to avoid
   // duplicates (best-effort; we ignore errors).
   try {

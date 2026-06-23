@@ -122,7 +122,8 @@ router.get("/shopify/oauth/callback", async (req, res, next) => {
       .where(eq(organizationsTable.id, stateRow.organizationId));
 
     try {
-      await registerWebhooks(shopDomain, token.access_token);
+      const appUrl = stateRow.appUrl ?? undefined;
+      await registerWebhooks(shopDomain, token.access_token, appUrl);
       await db
         .update(organizationsTable)
         .set({ shopifyWebhookRegisteredAt: new Date() })
