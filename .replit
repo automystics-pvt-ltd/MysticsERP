@@ -107,5 +107,8 @@ ADMIN_PURGE_SECRET = "35768fc625f4f563f224c97f6f733307ac7c2e3a5f2fd27d"
 [userenv.development]
 SHOPIFY_APP_URL = "https://22659641-b6f0-49e0-9a16-3835786482d7-00-6aqv4gle7j5q.pike.replit.dev"
 
+[userenv.production]
+SHOPIFY_APP_URL = "https://erp.mmwear.in"
+
 [nix]
 channel = "stable-25_05"
