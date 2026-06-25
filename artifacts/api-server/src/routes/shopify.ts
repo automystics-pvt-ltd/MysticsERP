@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { Router, type IRouter } from "express";
-import { and, eq, lt, isNotNull, inArray, sql } from "drizzle-orm";
+import { and, eq, lt, isNotNull, inArray, ne, sql } from "drizzle-orm";
 import {
   db,
   organizationsTable,
@@ -377,7 +377,51 @@ router.post("/shopify/sync", async (req, res, next) => {
       return;
     }
 
-    const warehouseId = await getDefaultWarehouseId(t.organizationId);
+    // Use the default physical (non-virtual) warehouse for all imported stock.
+    // Explicitly exclude virtual warehouses (job-work) so they can never become
+    // the stock target for Shopify imports even if somehow marked as default.
+    const physicalDefaultRows = await db
+      .select({ id: warehousesTable.id, shopifyLocationId: warehousesTable.shopifyLocationId })
+      .from(warehousesTable)
+      .where(
+        and(
+          eq(warehousesTable.organizationId, t.organizationId),
+          eq(warehousesTable.isDefault, true),
+          eq(warehousesTable.isVirtual, false),
+        ),
+      )
+      .limit(1);
+    const warehouseId =
+      physicalDefaultRows[0]?.id ?? (await getDefaultWarehouseId(t.organizationId));
+
+    // Consolidate the primary Shopify location mapping onto the Main Warehouse.
+    // If a separate "Shopify Warehouse" is currently mapped to the org's primary
+    // Shopify location, move the mapping here so that inventory_levels/update
+    // webhooks route stock to Main Warehouse instead of that other warehouse.
+    if (org.shopifyLocationId && warehouseId) {
+      await db
+        .update(warehousesTable)
+        .set({ shopifyLocationId: null, shopifyLocationName: null })
+        .where(
+          and(
+            eq(warehousesTable.organizationId, t.organizationId),
+            eq(warehousesTable.shopifyLocationId, org.shopifyLocationId),
+            ne(warehousesTable.id, warehouseId),
+          ),
+        );
+      if (!physicalDefaultRows[0]?.shopifyLocationId) {
+        await db
+          .update(warehousesTable)
+          .set({ shopifyLocationId: org.shopifyLocationId })
+          .where(
+            and(
+              eq(warehousesTable.id, warehouseId),
+              eq(warehousesTable.organizationId, t.organizationId),
+            ),
+          );
+      }
+    }
+
     const products = await fetchShopifyProducts(
       org.shopifyShopDomain,
       org.shopifyAccessToken,
