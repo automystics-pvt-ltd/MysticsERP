@@ -58,6 +58,7 @@ import {
   X,
   RefreshCw,
   Wand2,
+  Package,
 } from "lucide-react";
 import { TablePagination } from "@/components/TablePagination";
 import { BulkImportItemsDialog } from "@/components/BulkImportItemsDialog";
@@ -114,6 +115,7 @@ import { ImageUploader } from "@/components/ImageUploader";
 import { useImageSrc } from "@/hooks/use-image-src";
 import { ReportExportButton, type ExportColumn } from "@/components/ReportExportButton";
 import { BulkEditItemsDialog } from "@/components/BulkEditItemsDialog";
+import { BulkAdjustStockDialog } from "@/components/BulkAdjustStockDialog";
 
 const COMMON_UNITS = [
   "pcs",
@@ -471,6 +473,7 @@ export default function Items() {
   const [pageSize, setPageSize] = useState(15);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  const [bulkAdjustOpen, setBulkAdjustOpen] = useState(false);
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<number | null>(null);
   // The same scanner dialog is reused from two callsites: the search
@@ -1190,6 +1193,13 @@ export default function Items() {
         warehouses={visibleWarehouses}
         onSuccess={() => setSelectedIds(new Set())}
       />
+      <BulkAdjustStockDialog
+        open={bulkAdjustOpen}
+        onOpenChange={setBulkAdjustOpen}
+        selectedItems={selectedExportRows}
+        warehouses={visibleWarehouses}
+        onSuccess={() => setSelectedIds(new Set())}
+      />
       <BarcodeScannerDialog
         open={scannerOpen}
         onOpenChange={(o) => {
@@ -1325,6 +1335,17 @@ export default function Items() {
             >
               <Edit className="mr-1.5 h-3.5 w-3.5" />
               Edit
+            </Button>
+          </Can>
+          <Can module="items" action="edit">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setBulkAdjustOpen(true)}
+              data-testid="btn-bulk-adjust-stock"
+            >
+              <Package className="mr-1.5 h-3.5 w-3.5" />
+              Adjust Stock
             </Button>
           </Can>
           {canBulkDelete && (
