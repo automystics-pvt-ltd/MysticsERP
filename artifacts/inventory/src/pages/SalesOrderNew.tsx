@@ -168,16 +168,34 @@ export default function SalesOrderNew() {
   const items = useMemo(() => itemsRaw ?? [], [itemsRaw]);
 
   // Only show in-stock items for sales orders (prevents selling unavailable stock).
-  // Variant parents and their children are always included so the picker works correctly.
   // Accessories and Raw Materials are excluded — they are not saleable finished goods.
   const EXCLUDE_CATEGORIES = ["Accessories", "Raw Materials"];
   const inStockItems = useMemo(() => {
+    const excluded = (i: (typeof items)[number]) =>
+      EXCLUDE_CATEGORIES.includes(i.category ?? "");
+
+    if (!warehouseIdNum) {
+      return items.filter((i) => !excluded(i));
+    }
+
+    // Which variant children have stock at the selected warehouse?
+    const childrenWithStock = new Set(
+      items
+        .filter((i) => i.parentItemId != null && (i.stockAtWarehouse ?? 0) >= 1)
+        .map((i) => i.id),
+    );
+    // Which variant parents have at least one child with stock?
+    const parentsWithStock = new Set(
+      items
+        .filter((i) => i.parentItemId != null && childrenWithStock.has(i.id))
+        .map((i) => i.parentItemId as number),
+    );
+
     return items.filter((i) => {
-      if (EXCLUDE_CATEGORIES.includes(i.category ?? "")) return false;
-      if (i.parentItemId != null) return true; // variant child — always pass through
-      if (i.hasVariants) return true; // parent with variants — stock is per-variant
-      if (!warehouseIdNum) return true;
-      return (i.stockAtWarehouse ?? 0) > 0;
+      if (excluded(i)) return false;
+      if (i.parentItemId != null) return childrenWithStock.has(i.id);
+      if (i.hasVariants) return parentsWithStock.has(i.id);
+      return (i.stockAtWarehouse ?? 0) >= 1;
     });
   }, [items, warehouseIdNum]);
 
