@@ -1,12 +1,15 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   db,
   organizationsTable,
   shopifyOauthStatesTable,
+  warehousesTable,
 } from "@workspace/db";
+import { getDefaultWarehouseId } from "../lib/tenant";
 import {
   exchangeCodeForToken,
+  fetchAllShopifyLocations,
   getPrimaryLocationId,
   getShopifyAppUrl,
   normalizeShopifyDomain,
@@ -120,6 +123,34 @@ router.get("/shopify/oauth/callback", async (req, res, next) => {
         shopifyLocationId: locationId,
       })
       .where(eq(organizationsTable.id, stateRow.organizationId));
+
+    // Auto-map the default warehouse to the primary Shopify location so
+    // stock pushes and incoming inventory webhooks route correctly
+    // without requiring the user to manually configure warehouse mapping.
+    if (locationId) {
+      try {
+        const locations = await fetchAllShopifyLocations(shopDomain, token.access_token);
+        const primaryLocation = locations.find((l) => l.id === locationId) ?? locations[0];
+        const defaultWarehouseId = await getDefaultWarehouseId(stateRow.organizationId);
+        await db
+          .update(warehousesTable)
+          .set({
+            shopifyLocationId: locationId,
+            shopifyLocationName: primaryLocation?.name ?? null,
+          })
+          .where(
+            and(
+              eq(warehousesTable.id, defaultWarehouseId),
+              eq(warehousesTable.organizationId, stateRow.organizationId),
+            ),
+          );
+      } catch (err) {
+        req.log?.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          "Failed to auto-map default warehouse to Shopify primary location",
+        );
+      }
+    }
 
     try {
       const appUrl = stateRow.appUrl ?? undefined;

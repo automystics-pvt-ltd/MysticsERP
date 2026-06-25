@@ -493,13 +493,17 @@ router.post("/webhooks/shopify", async (req, res, next) => {
             ),
           )
           .limit(1);
-        const warehouseId = whRows[0]?.id;
+        let warehouseId = whRows[0]?.id;
         if (!warehouseId) {
+          // No warehouse is mapped to this Shopify location. Fall back to
+          // the org's default warehouse so stock changes are not silently
+          // dropped when the warehouse-location mapping hasn't been
+          // configured yet (e.g. freshly connected orgs).
+          warehouseId = await getDefaultWarehouseId(org.id);
           req.log?.info(
-            { topic, shopDomain, locationId },
-            "inventory_levels/update for unmapped Shopify location; skipping",
+            { topic, shopDomain, locationId, fallbackWarehouseId: warehouseId },
+            "inventory_levels/update for unmapped Shopify location; routing to default warehouse",
           );
-          break;
         }
 
         const itemRows = await db

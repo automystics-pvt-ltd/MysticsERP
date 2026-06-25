@@ -1,4 +1,4 @@
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import {
   db,
   customersTable,
@@ -348,6 +348,7 @@ async function pushStockToShopifyAsync(
     .select({
       shopDomain: organizationsTable.shopifyShopDomain,
       accessToken: organizationsTable.shopifyAccessToken,
+      orgLocationId: organizationsTable.shopifyLocationId,
     })
     .from(organizationsTable)
     .where(eq(organizationsTable.id, orgId))
@@ -436,6 +437,29 @@ async function pushStockToShopifyAsync(
           ]
         : [],
     );
+  }
+
+  // Fallback: if no warehouse has a Shopify location mapping yet, use the
+  // org-level primary location with the item's total stock across all
+  // non-virtual warehouses. This handles orgs that connected before
+  // warehouse-level mapping was introduced (or re-connected without
+  // triggering the auto-map step).
+  if (rows.length === 0 && org.orgLocationId) {
+    const totalRows = await db
+      .select({
+        total: sql<string>`COALESCE(SUM(${itemWarehouseStockTable.quantity}::numeric - COALESCE(${itemWarehouseStockTable.ecReserved}::numeric, 0)), 0)`,
+      })
+      .from(itemWarehouseStockTable)
+      .innerJoin(warehousesTable, eq(warehousesTable.id, itemWarehouseStockTable.warehouseId))
+      .where(
+        and(
+          eq(itemWarehouseStockTable.itemId, itemId),
+          eq(itemWarehouseStockTable.organizationId, orgId),
+          eq(warehousesTable.isVirtual, false),
+        ),
+      );
+    const total = Math.max(0, Math.round(Number(totalRows[0]?.total ?? "0")));
+    rows = [{ shopifyLocationId: org.orgLocationId, warehouseId: 0, quantity: total }];
   }
 
   for (const r of rows) {
