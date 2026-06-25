@@ -547,6 +547,119 @@ export async function updateShopifyProduct(
   });
 }
 
+export interface CreateShopifyVariantResult {
+  variantId: string;
+  inventoryItemId: string;
+}
+
+/**
+ * Create a Shopify product that already carries multiple variants.
+ * Used when syncing a hasVariants=true ERP parent item to Shopify for the
+ * first time. Returns the new productId plus per-SKU variant + inventory IDs.
+ */
+export async function createShopifyProductWithVariants(
+  shopDomain: string,
+  accessToken: string,
+  fields: {
+    title: string;
+    category?: string | null;
+    options: string[];
+    variants: Array<{
+      sku: string;
+      price: string;
+      barcode?: string | null;
+      option1?: string | null;
+      option2?: string | null;
+      option3?: string | null;
+    }>;
+  },
+): Promise<{
+  productId: string;
+  variants: Array<{ sku: string; variantId: string; inventoryItemId: string }>;
+}> {
+  const shopifyVariants = fields.variants.map((v) => {
+    const variant: Record<string, unknown> = {
+      sku: v.sku,
+      price: v.price,
+      inventory_management: "shopify",
+    };
+    if (v.barcode) variant["barcode"] = v.barcode;
+    if (v.option1 != null) variant["option1"] = v.option1;
+    if (v.option2 != null) variant["option2"] = v.option2;
+    if (v.option3 != null) variant["option3"] = v.option3;
+    return variant;
+  });
+
+  const product: Record<string, unknown> = {
+    title: fields.title,
+    status: "active",
+    options: fields.options.map((name) => ({ name })),
+    variants: shopifyVariants,
+  };
+  if (fields.category) product["product_type"] = fields.category;
+
+  const data = await shopifyPost<{ product: ShopifyProductFull }>(
+    shopDomain,
+    accessToken,
+    "/products.json",
+    { product },
+  );
+  const created = data.product;
+
+  const resultVariants = fields.variants.map((v) => {
+    const matched = created.variants.find((sv) => sv.sku === v.sku);
+    if (!matched) throw new Error(`Shopify returned no variant for SKU ${v.sku}`);
+    return {
+      sku: v.sku,
+      variantId: String(matched.id),
+      inventoryItemId: String(matched.inventory_item_id ?? ""),
+    };
+  });
+
+  return { productId: String(created.id), variants: resultVariants };
+}
+
+/**
+ * Add a single new variant to an existing Shopify product.
+ * Used when a new ERP variant child is created under a parent that is already
+ * mapped to a Shopify product.
+ */
+export async function addVariantToShopifyProduct(
+  shopDomain: string,
+  accessToken: string,
+  productId: string,
+  variant: {
+    sku: string;
+    price: string;
+    barcode?: string | null;
+    option1?: string | null;
+    option2?: string | null;
+    option3?: string | null;
+  },
+): Promise<CreateShopifyVariantResult> {
+  const body: Record<string, unknown> = {
+    sku: variant.sku,
+    price: variant.price,
+    inventory_management: "shopify",
+  };
+  if (variant.barcode) body["barcode"] = variant.barcode;
+  if (variant.option1 != null) body["option1"] = variant.option1;
+  if (variant.option2 != null) body["option2"] = variant.option2;
+  if (variant.option3 != null) body["option3"] = variant.option3;
+
+  const data = await shopifyPost<{ variant: ShopifyVariantFull }>(
+    shopDomain,
+    accessToken,
+    `/products/${productId}/variants.json`,
+    { variant: body },
+  );
+  const v = data.variant;
+  return {
+    variantId: String(v.id),
+    inventoryItemId: String(v.inventory_item_id ?? ""),
+  };
+}
+
 export interface ShopifyOrder {
   id: number;
   name: string;

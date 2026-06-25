@@ -27,12 +27,25 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Link } from "wouter";
-import { useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
   Loader2,
@@ -41,6 +54,12 @@ import {
   CheckCircle2,
   ExternalLink,
   ArrowLeftRight,
+  RotateCcw,
+  AlertCircle,
+  CheckCheck,
+  SkipForward,
+  Activity,
+  Info,
 } from "lucide-react";
 import { SiShopify } from "react-icons/si";
 import { format } from "date-fns";
@@ -76,6 +95,34 @@ function formatTime(value: string | null | undefined) {
   if (!value) return "Never";
   return format(new Date(value), "MMM d, h:mm a");
 }
+
+type SyncLog = {
+  id: number;
+  direction: string;
+  entity: string;
+  action: string;
+  status: string;
+  shopifyId: string | null;
+  erpId: string | null;
+  sku: string | null;
+  name: string | null;
+  parentItemId: number | null;
+  failureReason: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+};
+
+type SyncSummary = {
+  total: number;
+  success: number;
+  error: number;
+  skipped: number;
+};
+
+type SyncLogsResponse = {
+  logs: SyncLog[];
+  summary: SyncSummary;
+};
 
 export default function IntegrationShopify() {
   const queryClient = useQueryClient();
@@ -224,7 +271,7 @@ export default function IntegrationShopify() {
   }
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 max-w-4xl">
       {header}
 
       {!connection?.connected ? (
@@ -362,39 +409,27 @@ export default function IntegrationShopify() {
             <CardContent className="pt-6 space-y-4">
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <p className="font-medium text-muted-foreground">
-                    Store domain
-                  </p>
+                  <p className="font-medium text-muted-foreground">Store domain</p>
                   <p className="font-medium">{connection.shopDomain}</p>
                 </div>
                 <div>
-                  <p className="font-medium text-muted-foreground">
-                    Last synced
-                  </p>
+                  <p className="font-medium text-muted-foreground">Last synced</p>
                   <p>{formatTime(connection.lastSyncedAt)}</p>
                 </div>
                 <div>
-                  <p className="font-medium text-muted-foreground">
-                    Products tracked
-                  </p>
+                  <p className="font-medium text-muted-foreground">Products tracked</p>
                   <p>{connection.productCount ?? 0}</p>
                 </div>
                 <div>
-                  <p className="font-medium text-muted-foreground">
-                    Last webhook
-                  </p>
+                  <p className="font-medium text-muted-foreground">Last webhook</p>
                   <p>{formatTime(connection.lastWebhookAt)}</p>
                 </div>
                 <div>
-                  <p className="font-medium text-muted-foreground">
-                    Webhooks registered
-                  </p>
+                  <p className="font-medium text-muted-foreground">Webhooks registered</p>
                   <p>{formatTime(connection.webhooksRegisteredAt)}</p>
                 </div>
                 <div>
-                  <p className="font-medium text-muted-foreground">
-                    Warehouses mapped
-                  </p>
+                  <p className="font-medium text-muted-foreground">Warehouses mapped</p>
                   <p data-testid="text-shopify-mapped-warehouses">
                     <span className="font-medium">
                       {connection.mappedWarehouseCount ?? 0}
@@ -418,12 +453,8 @@ export default function IntegrationShopify() {
                 </div>
                 {connection.scopes && (
                   <div className="col-span-2">
-                    <p className="font-medium text-muted-foreground">
-                      Granted scopes
-                    </p>
-                    <p className="font-mono text-xs break-all">
-                      {connection.scopes}
-                    </p>
+                    <p className="font-medium text-muted-foreground">Granted scopes</p>
+                    <p className="font-mono text-xs break-all">{connection.scopes}</p>
                   </div>
                 )}
               </div>
@@ -435,13 +466,9 @@ export default function IntegrationShopify() {
                 data-testid="btn-sync-shopify-products"
               >
                 <RefreshCw
-                  className={`mr-2 h-4 w-4 ${
-                    syncProductsMutation.isPending ? "animate-spin" : ""
-                  }`}
+                  className={`mr-2 h-4 w-4 ${syncProductsMutation.isPending ? "animate-spin" : ""}`}
                 />
-                {syncProductsMutation.isPending
-                  ? "Syncing products…"
-                  : "Sync products now"}
+                {syncProductsMutation.isPending ? "Syncing products…" : "Sync products now"}
               </Button>
               <Button
                 variant="outline"
@@ -451,13 +478,9 @@ export default function IntegrationShopify() {
                 title="Push all linked inventory products back to Shopify (name, SKU, barcode, price, status, category)"
               >
                 <RefreshCw
-                  className={`mr-2 h-4 w-4 ${
-                    pushProductsMutation.isPending ? "animate-spin" : ""
-                  }`}
+                  className={`mr-2 h-4 w-4 ${pushProductsMutation.isPending ? "animate-spin" : ""}`}
                 />
-                {pushProductsMutation.isPending
-                  ? "Pushing products…"
-                  : "Sync All Products to Shopify"}
+                {pushProductsMutation.isPending ? "Pushing products…" : "Sync All Products to Shopify"}
               </Button>
               <Button
                 variant="outline"
@@ -466,98 +489,333 @@ export default function IntegrationShopify() {
                 data-testid="btn-sync-shopify-orders"
               >
                 <ArrowLeftRight
-                  className={`mr-2 h-4 w-4 ${
-                    syncOrdersMutation.isPending ? "animate-spin" : ""
-                  }`}
+                  className={`mr-2 h-4 w-4 ${syncOrdersMutation.isPending ? "animate-spin" : ""}`}
                 />
-                {syncOrdersMutation.isPending
-                  ? "Syncing orders…"
-                  : "Sync orders now"}
+                {syncOrdersMutation.isPending ? "Syncing orders…" : "Sync orders now"}
               </Button>
             </CardFooter>
           </Card>
 
-          <SyncLogsCard />
+          <SyncHistoryCard />
         </div>
       )}
     </div>
   );
 }
 
-function SyncLogsCard() {
-  const { data, isLoading } = useQuery<
-    { logs: Array<{ id: number; direction: string; entity: string; action: string; status: string; shopifyId: string | null; erpId: number | null; errorMessage: string | null; createdAt: string }> }
-  >({
-    queryKey: ["shopify-sync-logs"],
+// ─── Sync History Card ────────────────────────────────────────────────────────
+
+const SYNC_LOG_QUERY_KEY = ["shopify-sync-logs"];
+
+function SyncHistoryCard() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [entityFilter, setEntityFilter] = useState<string>("all");
+  const [daysFilter, setDaysFilter] = useState<string>("7");
+
+  const params = new URLSearchParams({ limit: "200" });
+  if (statusFilter !== "all") params.set("status", statusFilter);
+  if (entityFilter !== "all") params.set("entity", entityFilter);
+  if (daysFilter !== "all") params.set("days", daysFilter);
+
+  const { data, isLoading, refetch, isFetching } = useQuery<SyncLogsResponse>({
+    queryKey: [...SYNC_LOG_QUERY_KEY, statusFilter, entityFilter, daysFilter],
     queryFn: async () => {
-      const r = await fetch("/api/shopify/sync-logs");
+      const r = await fetch(`/api/shopify/sync-logs?${params.toString()}`);
       if (!r.ok) throw new Error("Failed to load sync logs");
       return r.json();
     },
     refetchInterval: 30_000,
   });
 
+  const retryMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch("/api/shopify/sync-logs/retry-failed", { method: "POST" });
+      if (!r.ok) throw new Error("Retry request failed");
+      return r.json() as Promise<{ queued: number }>;
+    },
+    onSuccess: (result) => {
+      toast({
+        title: result.queued > 0 ? "Retry queued" : "Nothing to retry",
+        description:
+          result.queued > 0
+            ? `${result.queued} product${result.queued === 1 ? "" : "s"} queued for re-sync.`
+            : "All failed items are already mapped or have no retriable errors.",
+      });
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: SYNC_LOG_QUERY_KEY });
+      }, 3000);
+    },
+    onError: (err: unknown) => {
+      toast({
+        title: "Retry failed",
+        description: err instanceof Error ? err.message : "Try again",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const summary = data?.summary ?? { total: 0, success: 0, error: 0, skipped: 0 };
+  const logs = data?.logs ?? [];
+
   const statusBadge = (s: string) => {
-    if (s === "success") return <Badge variant="outline" className="text-green-600 border-green-300">success</Badge>;
-    if (s === "error") return <Badge variant="destructive">error</Badge>;
-    return <Badge variant="secondary">{s}</Badge>;
+    if (s === "success")
+      return (
+        <Badge variant="outline" className="text-green-600 border-green-300 gap-1">
+          <CheckCircle2 className="h-3 w-3" /> success
+        </Badge>
+      );
+    if (s === "error")
+      return (
+        <Badge variant="destructive" className="gap-1">
+          <AlertCircle className="h-3 w-3" /> error
+        </Badge>
+      );
+    return (
+      <Badge variant="secondary" className="gap-1">
+        <SkipForward className="h-3 w-3" /> {s}
+      </Badge>
+    );
+  };
+
+  const failureReasonLabel: Record<string, string> = {
+    validation: "Validation",
+    api_error: "API error",
+    missing_data: "Missing data",
+    duplicate_sku: "Duplicate SKU",
+    rate_limit: "Rate limit",
+    skipped_bundle: "Bundle (skipped)",
+    skipped_parent: "Parent (skipped)",
+    skipped_mapped: "Not mapped",
+    skipped_no_connection: "No connection",
   };
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Sync activity</CardTitle>
-        <CardDescription>
-          Last 500 Shopify sync events — refreshes every 30 s
-        </CardDescription>
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Activity className="h-4 w-4" />
+              Sync History
+            </CardTitle>
+            <CardDescription className="mt-1">
+              Full audit trail of every Shopify sync operation — refreshes every 30 s
+            </CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              disabled={isFetching}
+            >
+              <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${isFetching ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => retryMutation.mutate()}
+              disabled={retryMutation.isPending || summary.error === 0}
+              title={summary.error === 0 ? "No failed syncs to retry" : `Retry ${summary.error} failed sync${summary.error === 1 ? "" : "s"}`}
+            >
+              {retryMutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              Retry Failed
+              {summary.error > 0 && (
+                <span className="ml-1.5 rounded-full bg-destructive/15 text-destructive px-1.5 py-0.5 text-[10px] font-semibold">
+                  {summary.error}
+                </span>
+              )}
+            </Button>
+          </div>
+        </div>
       </CardHeader>
-      <CardContent>
+
+      <CardContent className="space-y-4">
+        {/* Summary stat cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <SummaryStat
+            label="Total"
+            value={summary.total}
+            icon={<Activity className="h-4 w-4 text-muted-foreground" />}
+          />
+          <SummaryStat
+            label="Success"
+            value={summary.success}
+            icon={<CheckCheck className="h-4 w-4 text-green-500" />}
+            valueClass="text-green-600"
+          />
+          <SummaryStat
+            label="Failed"
+            value={summary.error}
+            icon={<AlertCircle className="h-4 w-4 text-destructive" />}
+            valueClass={summary.error > 0 ? "text-destructive" : undefined}
+          />
+          <SummaryStat
+            label="Skipped"
+            value={summary.skipped}
+            icon={<SkipForward className="h-4 w-4 text-muted-foreground" />}
+          />
+        </div>
+
+        {/* Filters */}
+        <div className="flex gap-2 flex-wrap">
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-36 h-8 text-xs">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="success">Success</SelectItem>
+              <SelectItem value="error">Failed</SelectItem>
+              <SelectItem value="skipped">Skipped</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={entityFilter} onValueChange={setEntityFilter}>
+            <SelectTrigger className="w-36 h-8 text-xs">
+              <SelectValue placeholder="Entity" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All entities</SelectItem>
+              <SelectItem value="product">Product</SelectItem>
+              <SelectItem value="inventory">Inventory</SelectItem>
+              <SelectItem value="customer">Customer</SelectItem>
+              <SelectItem value="order">Order</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={daysFilter} onValueChange={setDaysFilter}>
+            <SelectTrigger className="w-32 h-8 text-xs">
+              <SelectValue placeholder="Period" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1">Last 24 h</SelectItem>
+              <SelectItem value="7">Last 7 days</SelectItem>
+              <SelectItem value="30">Last 30 days</SelectItem>
+              <SelectItem value="all">All time</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Log table */}
         {isLoading ? (
-          <div className="flex items-center gap-2 text-muted-foreground text-sm py-4">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+          <div className="flex items-center gap-2 text-muted-foreground text-sm py-6">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading sync history…
           </div>
-        ) : !data?.logs.length ? (
-          <p className="text-sm text-muted-foreground py-4">No sync events yet.</p>
+        ) : logs.length === 0 ? (
+          <div className="py-10 text-center text-sm text-muted-foreground">
+            No sync events match the current filters.
+          </div>
         ) : (
-          <div className="overflow-auto max-h-96">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Direction</TableHead>
-                  <TableHead>Entity</TableHead>
-                  <TableHead>Action</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Shopify ID</TableHead>
-                  <TableHead>Time</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.logs.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell className="text-xs">{row.direction}</TableCell>
-                    <TableCell className="text-xs">{row.entity}</TableCell>
-                    <TableCell className="text-xs">{row.action}</TableCell>
-                    <TableCell>{statusBadge(row.status)}</TableCell>
-                    <TableCell className="text-xs font-mono">{row.shopifyId ?? "—"}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {formatTime(row.createdAt)}
-                    </TableCell>
+          <TooltipProvider>
+            <div className="overflow-auto max-h-[480px] rounded-md border">
+              <Table>
+                <TableHeader className="sticky top-0 bg-background z-10">
+                  <TableRow>
+                    <TableHead className="text-xs w-24">Entity</TableHead>
+                    <TableHead className="text-xs w-20">Action</TableHead>
+                    <TableHead className="text-xs">Product / SKU</TableHead>
+                    <TableHead className="text-xs w-24">Status</TableHead>
+                    <TableHead className="text-xs">Failure reason</TableHead>
+                    <TableHead className="text-xs font-mono">Shopify ID</TableHead>
+                    <TableHead className="text-xs w-36">Time</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {logs.map((row) => (
+                    <TableRow
+                      key={row.id}
+                      className={row.status === "error" ? "bg-destructive/5" : undefined}
+                    >
+                      <TableCell className="text-xs capitalize py-2">
+                        <span className="inline-flex items-center gap-1">
+                          {row.direction === "inbound" ? "← " : "→ "}
+                          {row.entity}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-xs py-2 capitalize">{row.action}</TableCell>
+                      <TableCell className="text-xs py-2 max-w-[220px]">
+                        <div className="truncate font-medium">{row.name ?? "—"}</div>
+                        {row.sku && (
+                          <div className="text-muted-foreground font-mono text-[10px] truncate">
+                            {row.sku}
+                          </div>
+                        )}
+                        {row.parentItemId && (
+                          <div className="text-[10px] text-muted-foreground">variant</div>
+                        )}
+                      </TableCell>
+                      <TableCell className="py-2">{statusBadge(row.status)}</TableCell>
+                      <TableCell className="text-xs py-2">
+                        {row.failureReason ? (
+                          <span className="inline-flex items-center gap-1">
+                            <Badge variant="outline" className="text-[10px] py-0 h-5">
+                              {failureReasonLabel[row.failureReason] ?? row.failureReason}
+                            </Badge>
+                            {row.errorMessage && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Info className="h-3 w-3 text-muted-foreground cursor-help flex-shrink-0" />
+                                </TooltipTrigger>
+                                <TooltipContent side="left" className="max-w-xs text-xs break-words">
+                                  {row.errorMessage}
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-xs font-mono py-2 text-muted-foreground max-w-[120px] truncate">
+                        {row.shopifyId ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground py-2 whitespace-nowrap">
+                        {formatTime(row.createdAt)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </TooltipProvider>
         )}
-        {data?.logs.some((r) => r.status === "error") && (
-          <div className="mt-3 space-y-1">
-            {data.logs.filter((r) => r.status === "error").map((r) => (
-              <p key={r.id} className="text-xs text-destructive">
-                [{r.entity}/{r.action}] {r.errorMessage}
-              </p>
-            ))}
-          </div>
+
+        {logs.length > 0 && (
+          <p className="text-[11px] text-muted-foreground text-right">
+            Showing {logs.length} of up to 200 most recent events
+          </p>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function SummaryStat({
+  label,
+  value,
+  icon,
+  valueClass,
+}: {
+  label: string;
+  value: number;
+  icon: React.ReactNode;
+  valueClass?: string;
+}) {
+  return (
+    <div className="rounded-lg border bg-muted/30 p-3 flex items-center gap-3">
+      {icon}
+      <div>
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className={`text-xl font-semibold tabular-nums ${valueClass ?? ""}`}>{value}</p>
+      </div>
+    </div>
   );
 }

@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import {
   db,
   customersTable,
@@ -11,32 +11,85 @@ import {
 } from "@workspace/db";
 import { logger } from "./logger";
 import {
-  createShopifyProduct,
+  addVariantToShopifyProduct,
   createShopifyCustomer,
   createShopifyFulfillment,
+  createShopifyProduct,
+  createShopifyProductWithVariants,
   setInventoryLevel,
   updateShopifyCustomer,
   updateShopifyProduct,
 } from "./shopify";
 import { computeBundleStockByWarehouse } from "./bundles";
 
-/**
- * Per-(orgId,itemId) push state. Ensures at most one HTTP call to
- * Shopify is in flight per item at a time, and that any pushes
- * requested while one is running collapse into a single "follow-up"
- * push that re-reads the current total. This prevents stale
- * overwrites when stock changes faster than Shopify round-trips.
- *
- * In-process only — fine for single-instance deploys; if we scale
- * horizontally we'd want a Redis-backed lock or a job queue.
- */
-type PushState = {
-  inFlight: Promise<void>;
-  pending: boolean;
-};
-const pushStates = new Map<string, PushState>();
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const keyOf = (orgId: number, itemId: number): string => `${orgId}:${itemId}`;
+type OrgCreds = { shopDomain: string; accessToken: string; orgLocationId: string | null };
+
+async function fetchOrgCreds(orgId: number): Promise<OrgCreds | null> {
+  const rows = await db
+    .select({
+      shopDomain: organizationsTable.shopifyShopDomain,
+      accessToken: organizationsTable.shopifyAccessToken,
+      orgLocationId: organizationsTable.shopifyLocationId,
+    })
+    .from(organizationsTable)
+    .where(eq(organizationsTable.id, orgId))
+    .limit(1); // org-scope-allow: internal outbound push — queried by primary key
+  const org = rows[0];
+  if (!org || !org.shopDomain || !org.accessToken) return null;
+  return org as OrgCreds;
+}
+
+/** Categorise a raw error message into a structured failure reason. */
+function classifyError(msg: string): string {
+  const m = msg.toLowerCase();
+  if (m.includes("duplicate") || m.includes("already been taken") || m.includes("sku")) return "duplicate_sku";
+  if (m.includes("429") || m.includes("rate limit") || m.includes("throttl")) return "rate_limit";
+  if (m.includes("422") || m.includes("unprocessable") || m.includes("invalid")) return "validation";
+  if (m.includes("404") || m.includes("not found")) return "missing_data";
+  return "api_error";
+}
+
+/**
+ * Fire-and-forget sync log write. Never throws — a logging failure must never
+ * block or fail the actual sync operation.
+ */
+function writeSyncLog(
+  orgId: number,
+  entry: {
+    direction?: string;
+    entity: string;
+    action: string;
+    status: string;
+    shopifyId?: string | null;
+    erpId?: string | null;
+    sku?: string | null;
+    name?: string | null;
+    parentItemId?: number | null;
+    failureReason?: string | null;
+    errorMessage?: string | null;
+  },
+): void {
+  db.insert(shopifySyncLogsTable)
+    .values({
+      organizationId: orgId,
+      direction: entry.direction ?? "outbound",
+      entity: entry.entity,
+      action: entry.action,
+      status: entry.status,
+      shopifyId: entry.shopifyId ?? null,
+      erpId: entry.erpId ?? null,
+      sku: entry.sku ?? null,
+      name: entry.name ?? null,
+      parentItemId: entry.parentItemId ?? null,
+      failureReason: entry.failureReason ?? null,
+      errorMessage: entry.errorMessage ?? null,
+    })
+    .catch((err) => {
+      logger.warn({ err: err instanceof Error ? err.message : String(err) }, "Failed to write shopify sync log");
+    });
+}
 
 // ─── Product-fields push (name, sku, barcode, price, status, category) ───────
 
@@ -44,14 +97,9 @@ const keyOf = (orgId: number, itemId: number): string => `${orgId}:${itemId}`;
  * Per-(orgId,itemId) push state for product-field syncs. Independent of
  * the stock push state so the two don't coalesce each other.
  */
-type ProductPushState = {
-  inFlight: Promise<void>;
-  pending: boolean;
-};
+type ProductPushState = { inFlight: Promise<void>; pending: boolean };
 const productPushStates = new Map<string, ProductPushState>();
-
-const productKeyOf = (orgId: number, itemId: number): string =>
-  `product:${orgId}:${itemId}`;
+const productKeyOf = (orgId: number, itemId: number): string => `product:${orgId}:${itemId}`;
 
 /**
  * Fire-and-forget push of an item's product fields (name, sku, barcode,
@@ -75,10 +123,7 @@ export function pushProductFieldsToShopify(orgId: number, itemId: number): void 
 }
 
 function startProductPush(key: string, orgId: number, itemId: number): void {
-  const state: ProductPushState = {
-    pending: false,
-    inFlight: Promise.resolve(),
-  };
+  const state: ProductPushState = { pending: false, inFlight: Promise.resolve() };
   state.inFlight = (async () => {
     try {
       await pushProductFieldsToShopifyAsync(orgId, itemId);
@@ -96,20 +141,9 @@ function startProductPush(key: string, orgId: number, itemId: number): void {
   productPushStates.set(key, state);
 }
 
-async function pushProductFieldsToShopifyAsync(
-  orgId: number,
-  itemId: number,
-): Promise<void> {
-  const orgRows = await db
-    .select({
-      shopDomain: organizationsTable.shopifyShopDomain,
-      accessToken: organizationsTable.shopifyAccessToken,
-    })
-    .from(organizationsTable)
-    .where(eq(organizationsTable.id, orgId))
-    .limit(1);
-  const org = orgRows[0];
-  if (!org || !org.shopDomain || !org.accessToken) return;
+async function pushProductFieldsToShopifyAsync(orgId: number, itemId: number): Promise<void> {
+  const org = await fetchOrgCreds(orgId);
+  if (!org) return;
 
   const itemRows = await db
     .select({
@@ -121,37 +155,77 @@ async function pushProductFieldsToShopifyAsync(
       archivedAt: itemsTable.archivedAt,
       shopifyProductId: itemsTable.shopifyProductId,
       shopifyVariantId: itemsTable.shopifyVariantId,
+      parentItemId: itemsTable.parentItemId,
     })
     .from(itemsTable)
     .where(and(eq(itemsTable.id, itemId), eq(itemsTable.organizationId, orgId)))
     .limit(1);
   const item = itemRows[0];
-  if (!item || !item.shopifyProductId || !item.shopifyVariantId) return;
+  if (!item) return;
+  if (!item.shopifyProductId || !item.shopifyVariantId) {
+    writeSyncLog(orgId, {
+      entity: "product",
+      action: "update",
+      status: "skipped",
+      erpId: String(itemId),
+      sku: item.sku,
+      name: item.name,
+      parentItemId: item.parentItemId,
+      failureReason: "skipped_mapped",
+    });
+    return;
+  }
 
   const status: "active" | "draft" = item.archivedAt ? "draft" : "active";
 
-  await updateShopifyProduct(org.shopDomain, org.accessToken, item.shopifyProductId, {
-    variantId: item.shopifyVariantId,
-    title: item.name,
-    sku: item.sku,
-    barcode: item.barcode,
-    price: item.salePrice ?? "0",
-    category: item.category,
-    status,
-  });
+  try {
+    await updateShopifyProduct(org.shopDomain, org.accessToken, item.shopifyProductId, {
+      variantId: item.shopifyVariantId,
+      title: item.name,
+      sku: item.sku,
+      barcode: item.barcode,
+      price: item.salePrice ?? "0",
+      category: item.category,
+      status,
+    });
+    writeSyncLog(orgId, {
+      entity: "product",
+      action: "update",
+      status: "success",
+      erpId: String(itemId),
+      sku: item.sku,
+      name: item.name,
+      shopifyId: item.shopifyProductId,
+      parentItemId: item.parentItemId,
+    });
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    writeSyncLog(orgId, {
+      entity: "product",
+      action: "update",
+      status: "error",
+      erpId: String(itemId),
+      sku: item.sku,
+      name: item.name,
+      shopifyId: item.shopifyProductId,
+      parentItemId: item.parentItemId,
+      errorMessage,
+      failureReason: classifyError(errorMessage),
+    });
+    throw err;
+  }
 }
 
 // ─── New product create push ──────────────────────────────────────────────────
 
 /**
- * Fire-and-forget: create a new Shopify product for a locally-created item,
- * then write the returned shopifyProductId / shopifyVariantId /
- * shopifyInventoryItemId back to the item row and push opening stock.
+ * Fire-and-forget: create a new Shopify product for a locally-created item.
+ * Handles flat items, variant children, and variant parents with full logging.
+ * Bundles are skipped (they have no physical stock).
  *
  * No-op when:
  *   - the org isn't connected to Shopify, OR
- *   - the item already has a shopifyProductId (already mapped — e.g. it was
- *     imported from Shopify originally or a race condition already linked it).
+ *   - the item already has a shopifyProductId (already mapped).
  */
 export function createProductInShopify(orgId: number, itemId: number): void {
   createProductInShopifyAsync(orgId, itemId).catch((err) => {
@@ -162,20 +236,9 @@ export function createProductInShopify(orgId: number, itemId: number): void {
   });
 }
 
-async function createProductInShopifyAsync(
-  orgId: number,
-  itemId: number,
-): Promise<void> {
-  const orgRows = await db
-    .select({
-      shopDomain: organizationsTable.shopifyShopDomain,
-      accessToken: organizationsTable.shopifyAccessToken,
-    })
-    .from(organizationsTable)
-    .where(eq(organizationsTable.id, orgId))
-    .limit(1);
-  const org = orgRows[0];
-  if (!org || !org.shopDomain || !org.accessToken) return;
+async function createProductInShopifyAsync(orgId: number, itemId: number): Promise<void> {
+  const org = await fetchOrgCreds(orgId);
+  if (!org) return;
 
   const itemRows = await db
     .select({
@@ -188,35 +251,359 @@ async function createProductInShopifyAsync(
       isBundle: itemsTable.isBundle,
       hasVariants: itemsTable.hasVariants,
       parentItemId: itemsTable.parentItemId,
+      variantOptions: itemsTable.variantOptions,
     })
     .from(itemsTable)
     .where(and(eq(itemsTable.id, itemId), eq(itemsTable.organizationId, orgId)))
     .limit(1);
   const item = itemRows[0];
   if (!item) return;
-  // Already mapped, or is a bundle/variant parent (no physical stock of its own).
+
+  // Already mapped — skip silently (no log spam on re-connect flows)
   if (item.shopifyProductId) return;
-  if (item.hasVariants || item.isBundle) return;
 
-  const ids = await createShopifyProduct(org.shopDomain, org.accessToken, {
-    title: item.name,
-    sku: item.sku,
-    price: item.salePrice ?? "0",
-    barcode: item.barcode,
-    category: item.category,
-  });
+  // Bundles have no physical stock → skip with log
+  if (item.isBundle) {
+    writeSyncLog(orgId, {
+      entity: "product",
+      action: "create",
+      status: "skipped",
+      erpId: String(itemId),
+      sku: item.sku,
+      name: item.name,
+      failureReason: "skipped_bundle",
+    });
+    return;
+  }
 
-  await db
-    .update(itemsTable)
-    .set({
-      shopifyProductId: ids.productId,
-      shopifyVariantId: ids.variantId,
-      shopifyInventoryItemId: ids.inventoryItemId || null,
+  // Variant child → add as variant to the parent Shopify product
+  if (item.parentItemId) {
+    await syncVariantChildToShopify(orgId, itemId, item, org);
+    return;
+  }
+
+  // Variant parent → create multi-variant Shopify product from all children
+  if (item.hasVariants) {
+    await syncVariantParentToShopify(orgId, itemId, item, org);
+    return;
+  }
+
+  // Flat item → create a single-variant Shopify product
+  try {
+    const ids = await createShopifyProduct(org.shopDomain, org.accessToken, {
+      title: item.name,
+      sku: item.sku,
+      price: item.salePrice ?? "0",
+      barcode: item.barcode,
+      category: item.category,
+    });
+
+    await db
+      .update(itemsTable)
+      .set({
+        shopifyProductId: ids.productId,
+        shopifyVariantId: ids.variantId,
+        shopifyInventoryItemId: ids.inventoryItemId || null,
+      })
+      .where(and(eq(itemsTable.id, itemId), eq(itemsTable.organizationId, orgId)));
+
+    writeSyncLog(orgId, {
+      entity: "product",
+      action: "create",
+      status: "success",
+      erpId: String(itemId),
+      sku: item.sku,
+      name: item.name,
+      shopifyId: ids.productId,
+    });
+
+    // Push current stock to the new product so it isn't stuck at 0.
+    pushStockToShopify(orgId, itemId);
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    writeSyncLog(orgId, {
+      entity: "product",
+      action: "create",
+      status: "error",
+      erpId: String(itemId),
+      sku: item.sku,
+      name: item.name,
+      errorMessage,
+      failureReason: classifyError(errorMessage),
+    });
+    throw err;
+  }
+}
+
+/**
+ * Sync a variant child item to Shopify.
+ *
+ * If the parent already has a shopifyProductId: add this child as a new
+ * Shopify variant on the existing product.
+ *
+ * If the parent has no shopifyProductId yet: create the full multi-variant
+ * Shopify product using all currently-known children (including this one).
+ */
+async function syncVariantChildToShopify(
+  orgId: number,
+  itemId: number,
+  item: {
+    name: string;
+    sku: string;
+    barcode: string | null;
+    salePrice: string | null;
+    category: string | null;
+    parentItemId: number | null;
+  },
+  org: OrgCreds,
+): Promise<void> {
+  const parentId = item.parentItemId!;
+
+  // Fetch parent item
+  const parentRows = await db
+    .select({
+      name: itemsTable.name,
+      sku: itemsTable.sku,
+      category: itemsTable.category,
+      shopifyProductId: itemsTable.shopifyProductId,
+      variantOptions: itemsTable.variantOptions,
     })
-    .where(and(eq(itemsTable.id, itemId), eq(itemsTable.organizationId, orgId)));
+    .from(itemsTable)
+    .where(and(eq(itemsTable.id, parentId), eq(itemsTable.organizationId, orgId)))
+    .limit(1);
+  const parent = parentRows[0];
 
-  // Push current stock to the new Shopify product so it isn't stuck at 0.
-  pushStockToShopify(orgId, itemId);
+  if (!parent) {
+    writeSyncLog(orgId, {
+      entity: "product",
+      action: "create",
+      status: "error",
+      erpId: String(itemId),
+      sku: item.sku,
+      name: item.name,
+      parentItemId: parentId,
+      errorMessage: "Parent item not found",
+      failureReason: "missing_data",
+    });
+    return;
+  }
+
+  if (parent.shopifyProductId) {
+    // Parent already on Shopify → add this child as a new variant
+    try {
+      const result = await addVariantToShopifyProduct(
+        org.shopDomain,
+        org.accessToken,
+        parent.shopifyProductId,
+        {
+          sku: item.sku,
+          price: item.salePrice ?? "0",
+          barcode: item.barcode,
+          option1: item.name, // use variant item name as the option value
+        },
+      );
+
+      await db
+        .update(itemsTable)
+        .set({
+          shopifyProductId: parent.shopifyProductId,
+          shopifyVariantId: result.variantId,
+          shopifyInventoryItemId: result.inventoryItemId || null,
+        })
+        .where(and(eq(itemsTable.id, itemId), eq(itemsTable.organizationId, orgId)));
+
+      writeSyncLog(orgId, {
+        entity: "product",
+        action: "create",
+        status: "success",
+        erpId: String(itemId),
+        sku: item.sku,
+        name: item.name,
+        shopifyId: result.variantId,
+        parentItemId: parentId,
+      });
+
+      pushStockToShopify(orgId, itemId);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      writeSyncLog(orgId, {
+        entity: "product",
+        action: "create",
+        status: "error",
+        erpId: String(itemId),
+        sku: item.sku,
+        name: item.name,
+        parentItemId: parentId,
+        errorMessage,
+        failureReason: classifyError(errorMessage),
+      });
+      throw err;
+    }
+  } else {
+    // Parent not yet on Shopify → create the full product with all children
+    await syncVariantParentToShopify(orgId, parentId, parent, org);
+  }
+}
+
+/**
+ * Create a Shopify product from an ERP hasVariants parent and all its current
+ * children. Writes shopifyProductId back to the parent and
+ * shopifyProductId + shopifyVariantId + shopifyInventoryItemId to each child.
+ * Pushes stock for every child after the Shopify product is created.
+ */
+async function syncVariantParentToShopify(
+  orgId: number,
+  parentItemId: number,
+  parent: {
+    name: string;
+    sku: string;
+    category: string | null;
+    shopifyProductId?: string | null;
+    variantOptions?: unknown;
+  },
+  org: OrgCreds,
+): Promise<void> {
+  // Already mapped — nothing to do
+  if (parent.shopifyProductId) return;
+
+  // Fetch all variant children
+  const children = await db
+    .select({
+      id: itemsTable.id,
+      name: itemsTable.name,
+      sku: itemsTable.sku,
+      barcode: itemsTable.barcode,
+      salePrice: itemsTable.salePrice,
+      shopifyProductId: itemsTable.shopifyProductId,
+    })
+    .from(itemsTable)
+    .where(
+      and(
+        eq(itemsTable.parentItemId, parentItemId),
+        eq(itemsTable.organizationId, orgId),
+      ),
+    );
+
+  if (children.length === 0) {
+    // No children yet — skip silently; will be triggered when first child is created
+    writeSyncLog(orgId, {
+      entity: "product",
+      action: "create",
+      status: "skipped",
+      erpId: String(parentItemId),
+      name: parent.name,
+      sku: parent.sku,
+      failureReason: "skipped_parent",
+    });
+    return;
+  }
+
+  // Build option axes from variantOptions or fall back to "Variant"
+  const optionAxes: string[] = (() => {
+    const vo = parent.variantOptions as { axes?: string[] } | null;
+    if (vo?.axes && vo.axes.length > 0) return vo.axes.slice(0, 3);
+    return ["Variant"];
+  })();
+
+  const variantDefs = children.map((c) => ({
+    sku: c.sku,
+    price: c.salePrice ?? "0",
+    barcode: c.barcode,
+    option1: c.name, // variant item name as option1 value
+  }));
+
+  try {
+    const result = await createShopifyProductWithVariants(org.shopDomain, org.accessToken, {
+      title: parent.name,
+      category: parent.category,
+      options: optionAxes,
+      variants: variantDefs,
+    });
+
+    // Write shopifyProductId to parent
+    await db
+      .update(itemsTable)
+      .set({ shopifyProductId: result.productId })
+      .where(and(eq(itemsTable.id, parentItemId), eq(itemsTable.organizationId, orgId)));
+
+    writeSyncLog(orgId, {
+      entity: "product",
+      action: "create",
+      status: "success",
+      erpId: String(parentItemId),
+      name: parent.name,
+      sku: parent.sku,
+      shopifyId: result.productId,
+    });
+
+    // Write variant IDs to each child and push stock
+    for (const child of children) {
+      const matched = result.variants.find((v) => v.sku === child.sku);
+      if (!matched) {
+        writeSyncLog(orgId, {
+          entity: "product",
+          action: "create",
+          status: "error",
+          erpId: String(child.id),
+          sku: child.sku,
+          name: child.name,
+          parentItemId: parentItemId,
+          errorMessage: `Shopify response missing variant for SKU ${child.sku}`,
+          failureReason: "api_error",
+        });
+        continue;
+      }
+
+      await db
+        .update(itemsTable)
+        .set({
+          shopifyProductId: result.productId,
+          shopifyVariantId: matched.variantId,
+          shopifyInventoryItemId: matched.inventoryItemId || null,
+        })
+        .where(and(eq(itemsTable.id, child.id), eq(itemsTable.organizationId, orgId)));
+
+      writeSyncLog(orgId, {
+        entity: "product",
+        action: "create",
+        status: "success",
+        erpId: String(child.id),
+        sku: child.sku,
+        name: child.name,
+        shopifyId: matched.variantId,
+        parentItemId: parentItemId,
+      });
+
+      pushStockToShopify(orgId, child.id);
+    }
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    // Log failure for parent and all children
+    writeSyncLog(orgId, {
+      entity: "product",
+      action: "create",
+      status: "error",
+      erpId: String(parentItemId),
+      name: parent.name,
+      sku: parent.sku,
+      errorMessage,
+      failureReason: classifyError(errorMessage),
+    });
+    for (const child of children) {
+      writeSyncLog(orgId, {
+        entity: "product",
+        action: "create",
+        status: "error",
+        erpId: String(child.id),
+        sku: child.sku,
+        name: child.name,
+        parentItemId: parentItemId,
+        errorMessage,
+        failureReason: classifyError(errorMessage),
+      });
+    }
+    throw err;
+  }
 }
 
 // ─── Fulfillment push ─────────────────────────────────────────────────────────
@@ -236,21 +623,9 @@ export function pushFulfillmentToShopify(orgId: number, salesOrderId: number): v
   });
 }
 
-async function pushFulfillmentToShopifyAsync(
-  orgId: number,
-  salesOrderId: number,
-): Promise<void> {
-  const orgRows = await db
-    .select({
-      shopDomain: organizationsTable.shopifyShopDomain,
-      accessToken: organizationsTable.shopifyAccessToken,
-      orgLocationId: organizationsTable.shopifyLocationId,
-    })
-    .from(organizationsTable)
-    .where(eq(organizationsTable.id, orgId))
-    .limit(1);
-  const org = orgRows[0];
-  if (!org || !org.shopDomain || !org.accessToken) return;
+async function pushFulfillmentToShopifyAsync(orgId: number, salesOrderId: number): Promise<void> {
+  const org = await fetchOrgCreds(orgId);
+  if (!org) return;
 
   const orderRows = await db
     .select({
@@ -269,8 +644,6 @@ async function pushFulfillmentToShopifyAsync(
   const order = orderRows[0];
   if (!order?.shopifyOrderId) return;
   // Only push a Shopify fulfillment when the order is fully shipped.
-  // Partial shipments are skipped to avoid over-fulfilling line items
-  // in Shopify before all quantities have been shipped from inventory.
   if (order.status !== "shipped") return;
 
   const whRows = await db
@@ -296,22 +669,22 @@ async function pushFulfillmentToShopifyAsync(
 // ─── Stock push ───────────────────────────────────────────────────────────────
 
 /**
+ * Per-(orgId,itemId) push state. Ensures at most one HTTP call to Shopify is
+ * in flight per item at a time, and that any pushes requested while one is
+ * running collapse into a single "follow-up" push that re-reads current state.
+ */
+type PushState = { inFlight: Promise<void>; pending: boolean };
+const pushStates = new Map<string, PushState>();
+const keyOf = (orgId: number, itemId: number): string => `${orgId}:${itemId}`;
+
+/**
  * Fire-and-forget push of an item's stock back to Shopify, per-warehouse.
- * No-op if:
- *   - the org isn't connected to Shopify, OR
- *   - the item has no inventory_item_id mapping yet.
- *
- * For each warehouse with a `shopify_location_id` mapping, push that
- * warehouse's specific quantity to its mapped Shopify location.
- * Warehouses without a mapping are skipped.
+ * No-op if the org isn't connected or the item has no inventory_item_id.
  */
 export function pushStockToShopify(orgId: number, itemId: number): void {
   const key = keyOf(orgId, itemId);
   const existing = pushStates.get(key);
   if (existing) {
-    // A push is already running. Mark a follow-up so that when it
-    // completes we re-read state and push again — the most recent
-    // value always wins.
     existing.pending = true;
     return;
   }
@@ -319,10 +692,7 @@ export function pushStockToShopify(orgId: number, itemId: number): void {
 }
 
 function startPush(key: string, orgId: number, itemId: number): void {
-  const state: PushState = {
-    pending: false,
-    inFlight: Promise.resolve(),
-  };
+  const state: PushState = { pending: false, inFlight: Promise.resolve() };
   state.inFlight = (async () => {
     try {
       await pushStockToShopifyAsync(orgId, itemId);
@@ -340,26 +710,17 @@ function startPush(key: string, orgId: number, itemId: number): void {
   pushStates.set(key, state);
 }
 
-async function pushStockToShopifyAsync(
-  orgId: number,
-  itemId: number,
-): Promise<void> {
-  const orgRows = await db
-    .select({
-      shopDomain: organizationsTable.shopifyShopDomain,
-      accessToken: organizationsTable.shopifyAccessToken,
-      orgLocationId: organizationsTable.shopifyLocationId,
-    })
-    .from(organizationsTable)
-    .where(eq(organizationsTable.id, orgId))
-    .limit(1);
-  const org = orgRows[0];
-  if (!org || !org.shopDomain || !org.accessToken) return;
+async function pushStockToShopifyAsync(orgId: number, itemId: number): Promise<void> {
+  const org = await fetchOrgCreds(orgId);
+  if (!org) return;
 
   const itemRows = await db
     .select({
+      sku: itemsTable.sku,
+      name: itemsTable.name,
       inventoryItemId: itemsTable.shopifyInventoryItemId,
       isBundle: itemsTable.isBundle,
+      parentItemId: itemsTable.parentItemId,
     })
     .from(itemsTable)
     .where(and(eq(itemsTable.id, itemId), eq(itemsTable.organizationId, orgId)))
@@ -367,16 +728,11 @@ async function pushStockToShopifyAsync(
   const item = itemRows[0];
   if (!item || !item.inventoryItemId) return;
 
-  // For bundles, push derived per-warehouse stock (computed from
-  // current components). For physical items, push the row's quantity.
-  // We left-join warehouses so warehouses with no stock row push 0
-  // (otherwise unmapping a SKU from a warehouse would never reach
-  // Shopify).
-  let rows: Array<{
-    shopifyLocationId: string;
-    warehouseId: number;
-    quantity: number;
-  }>;
+  // For bundles, push derived per-warehouse stock (computed from current
+  // components). For physical items, push the row's quantity. We left-join
+  // warehouses so warehouses with no stock row push 0.
+  let rows: Array<{ shopifyLocationId: string; warehouseId: number; quantity: number }>;
+
   if (item.isBundle) {
     const derived = await computeBundleStockByWarehouse(orgId, itemId);
     const derivedById = new Map(derived.map((d) => [d.warehouseId, d.quantity]));
@@ -394,13 +750,7 @@ async function pushStockToShopifyAsync(
       );
     rows = whRows.flatMap((w) =>
       w.shopifyLocationId
-        ? [
-            {
-              warehouseId: w.warehouseId,
-              shopifyLocationId: w.shopifyLocationId,
-              quantity: derivedById.get(w.warehouseId) ?? 0,
-            },
-          ]
+        ? [{ warehouseId: w.warehouseId, shopifyLocationId: w.shopifyLocationId, quantity: derivedById.get(w.warehouseId) ?? 0 }]
         : [],
     );
   } else {
@@ -431,7 +781,6 @@ async function pushStockToShopifyAsync(
             {
               warehouseId: r.warehouseId,
               shopifyLocationId: r.shopifyLocationId,
-              // Available = physical stock minus ecommerce reservations
               quantity: Math.max(0, Number(r.quantity ?? "0") - Number(r.ecReserved ?? "0")),
             },
           ]
@@ -440,10 +789,7 @@ async function pushStockToShopifyAsync(
   }
 
   // Fallback: if no warehouse has a Shopify location mapping yet, use the
-  // org-level primary location with the item's total stock across all
-  // non-virtual warehouses. This handles orgs that connected before
-  // warehouse-level mapping was introduced (or re-connected without
-  // triggering the auto-map step).
+  // org-level primary location with total stock across all non-virtual warehouses.
   if (rows.length === 0 && org.orgLocationId) {
     const totalRows = await db
       .select({
@@ -462,6 +808,7 @@ async function pushStockToShopifyAsync(
     rows = [{ shopifyLocationId: org.orgLocationId, warehouseId: 0, quantity: total }];
   }
 
+  let anyError = false;
   for (const r of rows) {
     const qty = Math.round(r.quantity);
     try {
@@ -472,18 +819,39 @@ async function pushStockToShopifyAsync(
         r.shopifyLocationId,
         qty,
       );
+      writeSyncLog(orgId, {
+        entity: "inventory",
+        action: "sync",
+        status: "success",
+        erpId: String(itemId),
+        sku: item.sku,
+        name: item.name,
+        parentItemId: item.parentItemId,
+        shopifyId: item.inventoryItemId,
+      });
     } catch (err) {
+      anyError = true;
+      const errorMessage = err instanceof Error ? err.message : String(err);
       logger.warn(
-        {
-          err: err instanceof Error ? err.message : String(err),
-          orgId,
-          itemId,
-          locationId: r.shopifyLocationId,
-        },
+        { err: errorMessage, orgId, itemId, locationId: r.shopifyLocationId },
         "Shopify per-location push failed",
       );
+      writeSyncLog(orgId, {
+        entity: "inventory",
+        action: "sync",
+        status: "error",
+        erpId: String(itemId),
+        sku: item.sku,
+        name: item.name,
+        parentItemId: item.parentItemId,
+        shopifyId: item.inventoryItemId,
+        errorMessage,
+        failureReason: classifyError(errorMessage),
+      });
     }
   }
+
+  if (anyError) throw new Error("One or more stock location pushes failed");
 }
 
 // ─── Customer push ────────────────────────────────────────────────────────────
@@ -496,20 +864,13 @@ async function pushStockToShopifyAsync(
 export function pushCustomerToShopify(orgId: number, customerId: number): void {
   pushCustomerToShopifyAsync(orgId, customerId).catch((err) => {
     logger.warn(
-      {
-        err: err instanceof Error ? err.message : String(err),
-        orgId,
-        customerId,
-      },
+      { err: err instanceof Error ? err.message : String(err), orgId, customerId },
       "pushCustomerToShopify failed",
     );
   });
 }
 
-async function pushCustomerToShopifyAsync(
-  orgId: number,
-  customerId: number,
-): Promise<void> {
+async function pushCustomerToShopifyAsync(orgId: number, customerId: number): Promise<void> {
   const orgRows = await db
     .select({
       shopDomain: organizationsTable.shopifyShopDomain,
@@ -593,4 +954,54 @@ async function pushCustomerToShopifyAsync(
     erpId: String(customerId),
     errorMessage: errorMessage ?? null,
   });
+}
+
+// ─── Bulk retry ───────────────────────────────────────────────────────────────
+
+/**
+ * Re-trigger createProductInShopify for every ERP item in this org that has a
+ * failed or skipped (non-bundle) product sync log entry and is still unmapped
+ * (no shopifyProductId). Called by POST /shopify/sync-logs/retry-failed.
+ *
+ * Returns the count of items queued.
+ */
+export async function retryFailedProductSyncs(orgId: number): Promise<number> {
+  // Find item IDs with failed/skipped-non-bundle product sync logs
+  const failedLogs = await db
+    .select({ erpId: shopifySyncLogsTable.erpId })
+    .from(shopifySyncLogsTable)
+    .where(
+      and(
+        eq(shopifySyncLogsTable.organizationId, orgId),
+        eq(shopifySyncLogsTable.entity, "product"),
+        sql`${shopifySyncLogsTable.status} IN ('error', 'skipped')`,
+        sql`${shopifySyncLogsTable.failureReason} NOT IN ('skipped_bundle', 'skipped_mapped', 'skipped_no_connection')`,
+      ),
+    ); // org-scope-allow: retry query scoped to orgId in WHERE
+
+  const itemIds = [
+    ...new Set(
+      failedLogs
+        .map((r) => (r.erpId ? Number(r.erpId) : null))
+        .filter((id): id is number => id !== null && !isNaN(id)),
+    ),
+  ];
+  if (itemIds.length === 0) return 0;
+
+  // Only retry items that are still unmapped
+  const unmapped = await db
+    .select({ id: itemsTable.id })
+    .from(itemsTable)
+    .where(
+      and(
+        eq(itemsTable.organizationId, orgId),
+        inArray(itemsTable.id, itemIds),
+        sql`${itemsTable.shopifyProductId} IS NULL`,
+      ),
+    );
+
+  for (const { id } of unmapped) {
+    createProductInShopify(orgId, id);
+  }
+  return unmapped.length;
 }

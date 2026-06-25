@@ -1101,22 +1101,58 @@ router.get("/shopify/reconcile", async (req, res, next) => {
 router.get("/shopify/sync-logs", async (req, res, next) => {
   try {
     const t = req.tenant!;
-    const limit = Math.min(Number(req.query["limit"] ?? 100), 500);
+    const limit = Math.min(Number(req.query["limit"] ?? 200), 500);
     const entity = typeof req.query["entity"] === "string" ? req.query["entity"] : null;
     const status = typeof req.query["status"] === "string" ? req.query["status"] : null;
+    const days = req.query["days"] ? Number(req.query["days"]) : null;
 
     const conds = [eq(shopifySyncLogsTable.organizationId, t.organizationId)];
     if (entity) conds.push(eq(shopifySyncLogsTable.entity, entity));
     if (status) conds.push(eq(shopifySyncLogsTable.status, status));
+    if (days && days > 0) {
+      conds.push(
+        sql`${shopifySyncLogsTable.createdAt} >= NOW() - INTERVAL '${sql.raw(String(Math.floor(days)))} days'`,
+      );
+    }
 
-    const rows = await db
-      .select()
-      .from(shopifySyncLogsTable)
-      .where(and(...conds))
-      .orderBy(sql`${shopifySyncLogsTable.createdAt} DESC`)
-      .limit(limit);
+    const [rows, summary] = await Promise.all([
+      db
+        .select()
+        .from(shopifySyncLogsTable)
+        .where(and(...conds))
+        .orderBy(sql`${shopifySyncLogsTable.createdAt} DESC`)
+        .limit(limit),
+      db
+        .select({
+          status: shopifySyncLogsTable.status,
+          count: sql<string>`COUNT(*)`,
+        })
+        .from(shopifySyncLogsTable)
+        .where(and(eq(shopifySyncLogsTable.organizationId, t.organizationId)))
+        .groupBy(shopifySyncLogsTable.status),
+    ]);
 
-    res.json({ logs: rows });
+    const counts = { total: 0, success: 0, error: 0, skipped: 0 };
+    for (const row of summary) {
+      const n = Number(row.count);
+      counts.total += n;
+      if (row.status === "success") counts.success = n;
+      else if (row.status === "error") counts.error = n;
+      else if (row.status === "skipped") counts.skipped = n;
+    }
+
+    res.json({ logs: rows, summary: counts });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/shopify/sync-logs/retry-failed", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const { retryFailedProductSyncs } = await import("../lib/shopifyOutbound");
+    const queued = await retryFailedProductSyncs(t.organizationId);
+    res.json({ queued });
   } catch (err) {
     next(err);
   }
