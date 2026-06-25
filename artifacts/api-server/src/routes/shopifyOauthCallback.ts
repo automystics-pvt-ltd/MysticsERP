@@ -166,7 +166,14 @@ router.get("/shopify/oauth/callback", async (req, res, next) => {
       );
     }
 
-    res.redirect(`${getShopifyAppUrl()}/integrations/shopify?connected=1`);
+    const appBaseUrl = stateRow.appUrl ?? (() => {
+      try { return getShopifyAppUrl(); } catch { return null; }
+    })();
+    if (!appBaseUrl) {
+      res.status(500).json({ error: "Cannot determine app URL to redirect after Shopify connect. Set SHOPIFY_APP_URL." });
+      return;
+    }
+    res.redirect(`${appBaseUrl}/integrations/shopify?connected=1`);
   } catch (err) {
     next(err);
   }
