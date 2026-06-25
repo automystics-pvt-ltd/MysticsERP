@@ -39,6 +39,7 @@ import {
   useListWarehouses,
   useCreateItem,
   useUpdateItem,
+  useAdjustItemStock,
   getListItemsQueryKey,
   getGetItemQueryKey,
   getItem,
@@ -89,6 +90,9 @@ const itemEditSchema = z
     dimensionWidth: z.coerce.number().min(0).optional().nullable(),
     dimensionHeight: z.coerce.number().min(0).optional().nullable(),
     dimensionUnit: z.string().default("cm"),
+    adjustQty: z.coerce.number().optional(),
+    adjustWarehouseId: z.coerce.number().optional(),
+    adjustReason: z.string().default("manual_adjustment"),
   })
   .refine(
     (v) => {
@@ -241,6 +245,9 @@ export function ItemEditSheet({ item, open, onClose, onSuccess }: ItemEditSheetP
       dimensionWidth: null,
       dimensionHeight: null,
       dimensionUnit: "cm",
+      adjustQty: undefined,
+      adjustWarehouseId: undefined,
+      adjustReason: "manual_adjustment",
     },
   });
 
@@ -411,9 +418,6 @@ export function ItemEditSheet({ item, open, onClose, onSuccess }: ItemEditSheetP
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListItemsQueryKey() });
         if (item) queryClient.invalidateQueries({ queryKey: getGetItemQueryKey(item.id) });
-        onClose();
-        onSuccess?.();
-        toast({ title: "Item updated successfully" });
       },
       onError: (err: unknown) => {
         const e = err as { response?: { data?: { error?: string } } };
@@ -425,6 +429,8 @@ export function ItemEditSheet({ item, open, onClose, onSuccess }: ItemEditSheetP
       },
     },
   });
+
+  const adjustMutation = useAdjustItemStock();
 
   const onSubmit = async (data: ItemEditFormValues) => {
     if (!item && orgSkuMode !== "auto" && !data.sku.trim()) {
@@ -459,37 +465,73 @@ export function ItemEditSheet({ item, open, onClose, onSuccess }: ItemEditSheetP
       const wasBundle = !!item.isBundle;
       const wantsTrackBatches = !!data.trackBatches;
       const wasTrackBatches = !!item.trackBatches;
-      updateMutation.mutate({
-        id: item.id,
-        data: {
-          sku: data.sku,
-          name: data.name,
-          description: data.description || null,
-          category: data.category || null,
-          brand: data.brand || null,
-          unit: data.unit,
-          salePrice: data.salePrice,
-          purchasePrice: data.purchasePrice,
-          hsnCode: data.hsnCode || null,
-          barcode: data.barcode?.trim() ? data.barcode.trim() : null,
-          taxRate: data.taxRate,
-          reorderLevel: data.reorderLevel,
-          imageUrl: data.imageUrl?.trim() ? data.imageUrl.trim() : null,
-          ...(wantsVariants !== hadVariants ? { hasVariants: wantsVariants } : {}),
-          ...(wantsVariants ? { variantOptions } : {}),
-          ...(wantsBundle !== wasBundle ? { isBundle: wantsBundle } : {}),
-          ...(wantsBundle ? { components: componentsPayload } : {}),
-          ...(wantsTrackBatches !== wasTrackBatches ? { trackBatches: wantsTrackBatches } : {}),
-          allowBackorder: !!data.allowBackorder,
-          maxDiscountPercent: data.maxDiscountPercent ?? null,
-          weight: data.weight ?? null,
-          weightUnit: data.weightUnit || "g",
-          dimensionLength: data.dimensionLength ?? null,
-          dimensionWidth: data.dimensionWidth ?? null,
-          dimensionHeight: data.dimensionHeight ?? null,
-          dimensionUnit: data.dimensionUnit || "cm",
-        },
-      });
+      try {
+        await updateMutation.mutateAsync({
+          id: item.id,
+          data: {
+            sku: data.sku,
+            name: data.name,
+            description: data.description || null,
+            category: data.category || null,
+            brand: data.brand || null,
+            unit: data.unit,
+            salePrice: data.salePrice,
+            purchasePrice: data.purchasePrice,
+            hsnCode: data.hsnCode || null,
+            barcode: data.barcode?.trim() ? data.barcode.trim() : null,
+            taxRate: data.taxRate,
+            reorderLevel: data.reorderLevel,
+            imageUrl: data.imageUrl?.trim() ? data.imageUrl.trim() : null,
+            ...(wantsVariants !== hadVariants ? { hasVariants: wantsVariants } : {}),
+            ...(wantsVariants ? { variantOptions } : {}),
+            ...(wantsBundle !== wasBundle ? { isBundle: wantsBundle } : {}),
+            ...(wantsBundle ? { components: componentsPayload } : {}),
+            ...(wantsTrackBatches !== wasTrackBatches ? { trackBatches: wantsTrackBatches } : {}),
+            allowBackorder: !!data.allowBackorder,
+            maxDiscountPercent: data.maxDiscountPercent ?? null,
+            weight: data.weight ?? null,
+            weightUnit: data.weightUnit || "g",
+            dimensionLength: data.dimensionLength ?? null,
+            dimensionWidth: data.dimensionWidth ?? null,
+            dimensionHeight: data.dimensionHeight ?? null,
+            dimensionUnit: data.dimensionUnit || "cm",
+          },
+        });
+        const shouldAdjust =
+          !item.isBundle &&
+          !item.hasVariants &&
+          data.adjustQty != null &&
+          data.adjustQty !== 0 &&
+          data.adjustWarehouseId;
+        if (shouldAdjust) {
+          try {
+            await adjustMutation.mutateAsync({
+              id: item.id,
+              data: {
+                warehouseId: data.adjustWarehouseId!,
+                quantity: data.adjustQty!,
+                reason: data.adjustReason || "manual_adjustment",
+              },
+            });
+            queryClient.invalidateQueries({ queryKey: getGetItemQueryKey(item.id) });
+          } catch (adjErr) {
+            const e = adjErr as { response?: { data?: { error?: string } } };
+            toast({
+              variant: "destructive",
+              title: "Item saved but stock update failed",
+              description: e.response?.data?.error ?? "Unknown error",
+            });
+            onClose();
+            onSuccess?.();
+            return;
+          }
+        }
+        onClose();
+        onSuccess?.();
+        toast({ title: "Item updated successfully" });
+      } catch {
+        return;
+      }
     } else {
       createMutation.mutate({
         data: {
@@ -825,6 +867,92 @@ export function ItemEditSheet({ item, open, onClose, onSuccess }: ItemEditSheetP
                   />
                 )}
               </div>
+
+              {item && !item.isBundle && !item.hasVariants && (
+                <div className="space-y-3 rounded-md border p-3">
+                  <p className="text-sm font-medium">Update Stock</p>
+                  {item.warehouseStock && item.warehouseStock.length > 0 && (
+                    <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                      {item.warehouseStock.map((ws) => (
+                        <span key={ws.warehouseId} className="rounded bg-muted px-2 py-0.5">
+                          {ws.warehouseName ?? `Warehouse ${ws.warehouseId}`}: {ws.quantity}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="adjustQty"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Adjustment Qty</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              placeholder="+10 or -5"
+                              value={field.value ?? ""}
+                              onChange={(e) => field.onChange(e.target.value === "" ? undefined : Number(e.target.value))}
+                              data-testid="input-item-adjust-qty"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="adjustWarehouseId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Warehouse</FormLabel>
+                          <Select
+                            value={field.value?.toString() ?? ""}
+                            onValueChange={(v) => field.onChange(v ? Number(v) : undefined)}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select warehouse" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {visibleWarehouses.map((w) => (
+                                <SelectItemUI key={w.id} value={w.id.toString()}>
+                                  {w.name}
+                                </SelectItemUI>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <FormField
+                    control={form.control}
+                    name="adjustReason"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Reason</FormLabel>
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItemUI value="manual_adjustment">Manual Adjustment</SelectItemUI>
+                            <SelectItemUI value="damaged">Damaged</SelectItemUI>
+                            <SelectItemUI value="lost">Lost</SelectItemUI>
+                            <SelectItemUI value="found">Found</SelectItemUI>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              )}
 
               <div className="space-y-3">
                 <p className="text-sm font-medium">Weight &amp; Dimensions</p>
