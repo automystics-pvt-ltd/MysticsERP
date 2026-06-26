@@ -38,6 +38,8 @@ const WEBHOOK_TOPICS = [
   "orders/fulfilled",
   "orders/cancelled",
   "refunds/create",
+  "fulfillments/create",
+  "fulfillments/update",
   "products/create",
   "products/update",
   "products/delete",
@@ -719,7 +721,13 @@ export interface ShopifyOrder {
   }>;
   fulfillments?: Array<{
     id: number;
+    status?: string | null;
     location_id?: number | null;
+    tracking_number?: string | null;
+    tracking_numbers?: string[];
+    tracking_company?: string | null;
+    tracking_url?: string | null;
+    tracking_urls?: string[];
     line_items?: Array<{
       variant_id?: number | null;
       quantity: number;
@@ -906,6 +914,11 @@ export async function createShopifyFulfillment(
   accessToken: string,
   shopifyOrderId: string,
   locationId: string | null,
+  tracking?: {
+    number?: string | null;
+    company?: string | null;
+    url?: string | null;
+  },
 ): Promise<void> {
   const payload: Record<string, unknown> = {
     notify_customer: false,
@@ -913,6 +926,9 @@ export async function createShopifyFulfillment(
   if (locationId) {
     payload["location_id"] = Number(locationId);
   }
+  if (tracking?.number) payload["tracking_number"] = tracking.number;
+  if (tracking?.company) payload["tracking_company"] = tracking.company;
+  if (tracking?.url) payload["tracking_url"] = tracking.url;
   await shopifyPost(shopDomain, accessToken, `/orders/${shopifyOrderId}/fulfillments.json`, {
     fulfillment: payload,
   });

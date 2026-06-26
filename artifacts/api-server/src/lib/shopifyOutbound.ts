@@ -1,7 +1,8 @@
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import {
   db,
   customersTable,
+  fulfillmentsTable,
   itemsTable,
   itemWarehouseStockTable,
   organizationsTable,
@@ -643,8 +644,27 @@ async function pushFulfillmentToShopifyAsync(orgId: number, salesOrderId: number
     .limit(1);
   const order = orderRows[0];
   if (!order?.shopifyOrderId) return;
-  // Only push a Shopify fulfillment when the order is fully shipped.
-  if (order.status !== "shipped") return;
+  // Push when at least some lines have shipped (partial or full).
+  if (!["partially_shipped", "shipped"].includes(order.status)) return;
+
+  // Fetch tracking info from the most recently dispatched ERP fulfillment
+  // so Shopify always receives the AWB/carrier the warehouse staff entered.
+  const [trackingRow] = await db
+    .select({
+      awbNumber: fulfillmentsTable.awbNumber,
+      courierName: fulfillmentsTable.courierName,
+      trackingUrl: fulfillmentsTable.trackingUrl,
+    })
+    .from(fulfillmentsTable)
+    .where(
+      and(
+        eq(fulfillmentsTable.organizationId, orgId),
+        eq(fulfillmentsTable.salesOrderId, salesOrderId),
+        eq(fulfillmentsTable.status, "dispatched"),
+      ),
+    )
+    .orderBy(desc(fulfillmentsTable.dispatchedAt))
+    .limit(1);
 
   const whRows = await db
     .select({ shopifyLocationId: warehousesTable.shopifyLocationId })
@@ -663,6 +683,13 @@ async function pushFulfillmentToShopifyAsync(orgId: number, salesOrderId: number
     org.accessToken,
     order.shopifyOrderId,
     locationId,
+    trackingRow
+      ? {
+          number: trackingRow.awbNumber,
+          company: trackingRow.courierName,
+          url: trackingRow.trackingUrl,
+        }
+      : undefined,
   );
 }
 

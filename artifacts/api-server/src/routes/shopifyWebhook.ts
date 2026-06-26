@@ -3,6 +3,8 @@ import { and, eq, isNull } from "drizzle-orm";
 import {
   db,
   customersTable,
+  fulfillmentsTable,
+  shipmentsTable,
   itemsTable,
   itemWarehouseStockTable,
   stockMovementsTable,
@@ -349,6 +351,69 @@ router.post("/webhooks/shopify", async (req, res, next) => {
           // Push updated stock back to Shopify for each touched item
           for (const itemId of touchedItemIds) {
             pushStockToShopify(org.id, itemId);
+          }
+
+          // Sync Shopify tracking → ERP: when the merchant fulfills an order
+          // in Shopify, propagate the tracking number/carrier/url back to any
+          // existing ERP shipment and fulfillment records so both sides agree.
+          const shopifyFulfillments = (o.fulfillments ?? []) as Array<{
+            id: number;
+            status?: string | null;
+            tracking_number?: string | null;
+            tracking_numbers?: string[];
+            tracking_company?: string | null;
+            tracking_url?: string | null;
+            tracking_urls?: string[];
+          }>;
+          const bestTracking = shopifyFulfillments
+            .filter((f) => f.status !== "cancelled")
+            .reduce<{ number: string | null; company: string | null; url: string | null }>(
+              (acc, f) => ({
+                number: acc.number ?? f.tracking_number ?? (f.tracking_numbers?.[0] ?? null),
+                company: acc.company ?? f.tracking_company ?? null,
+                url: acc.url ?? f.tracking_url ?? (f.tracking_urls?.[0] ?? null),
+              }),
+              { number: null, company: null, url: null },
+            );
+
+          if (bestTracking.number || bestTracking.company || bestTracking.url) {
+            const trackingUpdate = {
+              ...(bestTracking.number ? { awb: bestTracking.number } : {}),
+              ...(bestTracking.company ? { courierName: bestTracking.company } : {}),
+              ...(bestTracking.url ? { trackingUrl: bestTracking.url } : {}),
+            };
+            const fulfillmentTrackingUpdate = {
+              ...(bestTracking.number ? { awbNumber: bestTracking.number } : {}),
+              ...(bestTracking.company ? { courierName: bestTracking.company } : {}),
+              ...(bestTracking.url ? { trackingUrl: bestTracking.url } : {}),
+            };
+
+            if (Object.keys(trackingUpdate).length > 0) {
+              // Update all active (non-cancelled) ERP shipments for this SO
+              await db
+                .update(shipmentsTable)
+                .set(trackingUpdate)
+                .where(
+                  and(
+                    eq(shipmentsTable.organizationId, org.id),
+                    eq(shipmentsTable.salesOrderId, order.id),
+                    eq(shipmentsTable.status, "shipped"),
+                  ),
+                );
+            }
+            if (Object.keys(fulfillmentTrackingUpdate).length > 0) {
+              // Update all dispatched ERP fulfillment records for this SO
+              await db
+                .update(fulfillmentsTable)
+                .set(fulfillmentTrackingUpdate)
+                .where(
+                  and(
+                    eq(fulfillmentsTable.organizationId, org.id),
+                    eq(fulfillmentsTable.salesOrderId, order.id),
+                    eq(fulfillmentsTable.status, "dispatched"),
+                  ),
+                );
+            }
           }
         }
 
@@ -931,6 +996,86 @@ router.post("/webhooks/shopify", async (req, res, next) => {
           .update(warehousesTable)
           .set({ shopifyLocationId: null, shopifyLocationName: null })
           .where(eq(warehousesTable.organizationId, org.id));
+        break;
+      }
+
+      case "fulfillments/create":
+      case "fulfillments/update": {
+        // Shopify sends the fulfillment object with order_id + tracking.
+        // Sync tracking back to any matching ERP shipment / fulfillment record
+        // so both sides always display the same carrier & AWB.
+        const f = body as {
+          id?: number;
+          order_id?: number;
+          status?: string | null;
+          tracking_number?: string | null;
+          tracking_numbers?: string[];
+          tracking_company?: string | null;
+          tracking_url?: string | null;
+          tracking_urls?: string[];
+        };
+        if (!f.order_id) break;
+        const shopifyFulfillmentOrderId = String(f.order_id);
+
+        const orderRows2 = await db
+          .select({ id: salesOrdersTable.id })
+          .from(salesOrdersTable)
+          .where(
+            and(
+              eq(salesOrdersTable.organizationId, org.id),
+              eq(salesOrdersTable.shopifyOrderId, shopifyFulfillmentOrderId),
+            ),
+          )
+          .limit(1);
+        const erpOrder = orderRows2[0];
+        if (!erpOrder) break;
+
+        const trackingNumber = f.tracking_number ?? f.tracking_numbers?.[0] ?? null;
+        const trackingCompany = f.tracking_company ?? null;
+        const trackingUrl = f.tracking_url ?? f.tracking_urls?.[0] ?? null;
+
+        if (trackingNumber || trackingCompany || trackingUrl) {
+          const shipmentUpdate = {
+            ...(trackingNumber ? { awb: trackingNumber } : {}),
+            ...(trackingCompany ? { courierName: trackingCompany } : {}),
+            ...(trackingUrl ? { trackingUrl } : {}),
+          };
+          const fulfillmentUpdate = {
+            ...(trackingNumber ? { awbNumber: trackingNumber } : {}),
+            ...(trackingCompany ? { courierName: trackingCompany } : {}),
+            ...(trackingUrl ? { trackingUrl } : {}),
+          };
+
+          if (Object.keys(shipmentUpdate).length > 0) {
+            await db
+              .update(shipmentsTable)
+              .set(shipmentUpdate)
+              .where(
+                and(
+                  eq(shipmentsTable.organizationId, org.id),
+                  eq(shipmentsTable.salesOrderId, erpOrder.id),
+                  eq(shipmentsTable.status, "shipped"),
+                ),
+              );
+          }
+          if (Object.keys(fulfillmentUpdate).length > 0) {
+            await db
+              .update(fulfillmentsTable)
+              .set(fulfillmentUpdate)
+              .where(
+                and(
+                  eq(fulfillmentsTable.organizationId, org.id),
+                  eq(fulfillmentsTable.salesOrderId, erpOrder.id),
+                  eq(fulfillmentsTable.status, "dispatched"),
+                ),
+              );
+          }
+        }
+
+        await db
+          .update(organizationsTable)
+          .set({ shopifyLastWebhookAt: new Date() })
+          .where(eq(organizationsTable.id, org.id));
         break;
       }
 
