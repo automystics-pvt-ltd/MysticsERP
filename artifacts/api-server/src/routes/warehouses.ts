@@ -308,9 +308,30 @@ router.patch("/warehouses/:id", async (req, res, next) => {
     const t = req.tenant!;
     const id = Number(req.params.id);
     const b = req.body ?? {};
+
+    // Check whether this is a system warehouse — they have restricted edits.
+    const existingRows = await db
+      .select({ isSystem: warehousesTable.isSystem })
+      .from(warehousesTable)
+      .where(
+        and(
+          eq(warehousesTable.id, id),
+          eq(warehousesTable.organizationId, t.organizationId),
+        ),
+      )
+      .limit(1);
+    const isSystemWarehouse = existingRows[0]?.isSystem ?? false;
+
     const updates: Record<string, unknown> = {};
-    for (const k of ["name", "code", "addressLine1", "city", "state", "country", "isDefault"]) {
-      if (k in b) updates[k] = b[k];
+    if (isSystemWarehouse) {
+      // System warehouses: only name and address fields may be changed.
+      for (const k of ["name", "addressLine1", "city", "state", "country"]) {
+        if (k in b) updates[k] = b[k];
+      }
+    } else {
+      for (const k of ["name", "code", "addressLine1", "city", "state", "country", "isDefault"]) {
+        if (k in b) updates[k] = b[k];
+      }
     }
 
     // Shopify location mapping. Accept either both fields or just id.
@@ -450,6 +471,30 @@ router.delete("/warehouses/:id", async (req, res, next) => {
   try {
     const t = req.tenant!;
     const id = Number(req.params.id);
+
+    // Fetch first to check system-warehouse protection.
+    const rows = await db
+      .select({ isSystem: warehousesTable.isSystem, isDefault: warehousesTable.isDefault })
+      .from(warehousesTable)
+      .where(
+        and(
+          eq(warehousesTable.id, id),
+          eq(warehousesTable.organizationId, t.organizationId),
+        ),
+      )
+      .limit(1);
+
+    if (!rows[0]) {
+      res.status(404).json({ error: "Warehouse not found" });
+      return;
+    }
+    if (rows[0].isSystem) {
+      res.status(400).json({
+        error: "System warehouses (Main, Shopify, Store) cannot be deleted. You can rename them or edit their address.",
+      });
+      return;
+    }
+
     await db
       .delete(warehousesTable)
       .where(

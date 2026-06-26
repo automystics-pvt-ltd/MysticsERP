@@ -87,7 +87,7 @@ export function serializeOrganization(o: Organization) {
   };
 }
 
-export function serializeWarehouse(w: Warehouse & { isVirtual?: boolean | null; jobWorkerSupplierId?: number | null }) {
+export function serializeWarehouse(w: Warehouse & { isVirtual?: boolean | null; jobWorkerSupplierId?: number | null; isSystem?: boolean | null }) {
   return {
     id: w.id,
     name: w.name,
@@ -97,6 +97,7 @@ export function serializeWarehouse(w: Warehouse & { isVirtual?: boolean | null; 
     state: w.state,
     country: w.country,
     isDefault: w.isDefault,
+    isSystem: w.isSystem ?? false,
     isVirtual: w.isVirtual ?? false,
     jobWorkerSupplierId: w.jobWorkerSupplierId ?? null,
     shopifyLocationId: w.shopifyLocationId,

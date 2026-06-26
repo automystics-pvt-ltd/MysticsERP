@@ -136,6 +136,7 @@ const MOVEMENT_LABELS: Record<string, string> = {
   job_work_receipt_cancel: "Job Work Receipt Cancel",
   job_work_scrap: "Job Work Scrap",
   shopify_order: "Shopify Order",
+  shopify_reserve: "Shopify Reserved",
   shopify_sync: "Shopify Sync",
   shopify_webhook: "Shopify Update",
   damage: "Damage Write-off",
@@ -234,7 +235,7 @@ function EditWarehouseDialog({
   open,
   onOpenChange,
 }: {
-  warehouse: Warehouse;
+  warehouse: Warehouse & { isSystem?: boolean };
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
@@ -324,23 +325,25 @@ function EditWarehouseDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Code *</FormLabel>
-                    <FormControl><Input {...field} className="font-mono" /></FormControl>
+                    <FormControl><Input {...field} className="font-mono" disabled={!!warehouse.isSystem} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              <FormField
-                control={form.control}
-                name="isDefault"
-                render={({ field }) => (
-                  <FormItem className="flex items-center gap-2 pt-6">
-                    <FormControl>
-                      <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                    <FormLabel className="!mt-0 cursor-pointer font-normal">Set as default</FormLabel>
-                  </FormItem>
-                )}
-              />
+              {!warehouse.isSystem && (
+                <FormField
+                  control={form.control}
+                  name="isDefault"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center gap-2 pt-6">
+                      <FormControl>
+                        <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                      </FormControl>
+                      <FormLabel className="!mt-0 cursor-pointer font-normal">Set as default</FormLabel>
+                    </FormItem>
+                  )}
+                />
+              )}
             </div>
             <FormField
               control={form.control}

@@ -333,13 +333,32 @@ export async function ensureTenant(
     role: "owner",
   });
 
-  await db.insert(warehousesTable).values({
-    organizationId: org.id,
-    name: "Main Warehouse",
-    code: "MAIN",
-    isDefault: true,
-    country: "India",
-  });
+  await db.insert(warehousesTable).values([
+    {
+      organizationId: org.id,
+      name: "Main Warehouse",
+      code: "MAIN",
+      isDefault: true,
+      isSystem: true,
+      country: "India",
+    },
+    {
+      organizationId: org.id,
+      name: "Shopify Warehouse",
+      code: "SHOPIFY",
+      isDefault: false,
+      isSystem: true,
+      country: "India",
+    },
+    {
+      organizationId: org.id,
+      name: "Store Warehouse",
+      code: "STORE",
+      isDefault: false,
+      isSystem: true,
+      country: "India",
+    },
+  ]);
 
   const ownerPerms = await resolvePermissions(org.id, "owner");
   return {
@@ -557,8 +576,58 @@ export async function getDefaultWarehouseId(
       name: "Main Warehouse",
       code: "MAIN",
       isDefault: true,
+      isSystem: true,
       country: "India",
     })
     .returning({ id: warehousesTable.id });
   return inserted[0]!.id;
+}
+
+/**
+ * Returns the id of this org's "Shopify Warehouse" (code=SHOPIFY,
+ * isSystem=true), creating it lazily if it doesn't exist yet.
+ * Used by the Shopify order importer to park in-transit stock.
+ */
+export async function ensureShopifyWarehouse(
+  organizationId: number,
+): Promise<number> {
+  const existing = await db
+    .select({ id: warehousesTable.id })
+    .from(warehousesTable)
+    .where(
+      and(
+        eq(warehousesTable.organizationId, organizationId),
+        eq(warehousesTable.code, "SHOPIFY"),
+      ),
+    )
+    .limit(1);
+  if (existing[0]) return existing[0].id;
+
+  const inserted = await db
+    .insert(warehousesTable)
+    .values({
+      organizationId,
+      name: "Shopify Warehouse",
+      code: "SHOPIFY",
+      isDefault: false,
+      isSystem: true,
+      country: "India",
+    })
+    .onConflictDoNothing()
+    .returning({ id: warehousesTable.id });
+
+  if (inserted[0]) return inserted[0].id;
+
+  // Concurrent creation: just fetch again
+  const retry = await db
+    .select({ id: warehousesTable.id })
+    .from(warehousesTable)
+    .where(
+      and(
+        eq(warehousesTable.organizationId, organizationId),
+        eq(warehousesTable.code, "SHOPIFY"),
+      ),
+    )
+    .limit(1);
+  return retry[0]!.id;
 }

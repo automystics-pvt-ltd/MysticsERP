@@ -3314,6 +3314,7 @@ components:
         state: { type: ["string", "null"] }
         country: { type: ["string", "null"] }
         isDefault: { type: boolean }
+        isSystem: { type: boolean }
         isVirtual: { type: boolean }
         jobWorkerSupplierId: { type: ["integer", "null"] }
         shopifyLocationId: { type: ["string", "null"] }
@@ -3325,6 +3326,7 @@ components:
           name,
           code,
           isDefault,
+          isSystem,
           isVirtual,
           jobWorkerSupplierId,
           createdAt,

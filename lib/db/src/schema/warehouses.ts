@@ -16,6 +16,10 @@ export const warehousesTable = pgTable(
     state: text("state"),
     country: text("country"),
     isDefault: boolean("is_default").notNull().default(false),
+    // System warehouses (Main Warehouse, Shopify Warehouse, Store Warehouse)
+    // are auto-created by the platform and cannot be deleted. Admins may
+    // still edit the name and address fields.
+    isSystem: boolean("is_system").notNull().default(false),
     // Virtual warehouses model stock that is physically off-premises
     // (currently: at a job worker / outsourcing partner). They are
     // hidden from the regular warehouse picker and listings so users

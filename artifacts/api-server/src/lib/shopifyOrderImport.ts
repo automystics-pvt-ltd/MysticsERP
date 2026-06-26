@@ -1,4 +1,4 @@
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import {
   db,
   customersTable,
@@ -14,6 +14,7 @@ import { nextOrderNumber } from "./orderHelpers";
 import { generateUniqueBarcode } from "./barcodeGen";
 import { toNum, toStr } from "./numeric";
 import { mapShopifyPaymentStatus, type ShopifyOrder } from "./shopify";
+import { ensureShopifyWarehouse } from "./tenant";
 
 export type ImportOutcome = "imported" | "duplicate";
 
@@ -39,19 +40,22 @@ function isOrderNumberCollision(err: unknown): boolean {
 
 /**
  * Insert a single Shopify order into our system. Idempotent on
- * (organization_id, shopify_order_id). Decrements stock for each
- * line item from its resolved warehouse:
- *   1. line_items[i].origin_location.id  → warehouse mapped to that
- *      Shopify location, OR
- *   2. order.location_id (top-level)     → warehouse mapped to that, OR
- *   3. defaultWarehouseId                → fallback (e.g. if Shopify
- *      didn't tell us a location, or the warehouse isn't mapped yet).
+ * (organization_id, shopify_order_id).
  *
- * Wrapped in a single transaction so partial failures roll back
- * cleanly — otherwise a half-imported order would be locked in
- * permanently by the (organization_id, shopify_order_id) uniqueness
- * and never get its lines/stock movements on retry.
+ * Item resolution priority per line:
+ *   1. `variant_id` → item with matching `shopifyVariantId` (most precise —
+ *      avoids mismatches when two variants share a SKU in different orgs)
+ *   2. `sku`        → item with matching `sku` (legacy / non-variant products)
+ *   3. auto-create  → new item with `shopifyVariantId` set so future orders
+ *      match via route 1 immediately
  *
+ * Inventory flow (Req 3):
+ *   On import  → stock moves physically: source warehouse −qty, Shopify
+ *                Warehouse +qty. Two `shopify_reserve` movements are written.
+ *   On ship    → existing ERP shipment route deducts from Shopify Warehouse
+ *                automatically because the order's `warehouseId` points there.
+ *
+ * Wrapped in a single transaction so partial failures roll back cleanly.
  * Returns "duplicate" if the order is already present.
  */
 export async function importShopifyOrder(
@@ -88,7 +92,7 @@ export async function importShopifyOrder(
   }
   const orderLevelLocId =
     o.location_id != null ? String(o.location_id) : null;
-  const resolveWarehouseFor = (
+  const resolveSourceWarehouse = (
     li: ShopifyOrder["line_items"][number],
   ): number => {
     const liLoc = li.origin_location?.id != null
@@ -104,6 +108,10 @@ export async function importShopifyOrder(
     }
     return defaultWarehouseId;
   };
+
+  // Ensure the Shopify Warehouse exists for this org (idempotent,
+  // creates lazily for existing orgs that pre-date the SHOPIFY code).
+  const shopifyWarehouseId = await ensureShopifyWarehouse(organizationId);
 
   for (let attempt = 0; ; attempt++) {
     try {
@@ -172,10 +180,15 @@ export async function importShopifyOrder(
       customerId = created[0]!.id;
     }
 
-    // Resolve / create items per line, build line records
+    // Resolve / create items per line, build line records.
+    //
+    // Resolution order:
+    //   1. shopifyVariantId match   — exact variant lookup (most reliable)
+    //   2. sku match                — fallback for non-variant / legacy items
+    //   3. auto-create              — new item stamped with shopifyVariantId
     const lineRecords: Array<{
       itemId: number;
-      warehouseId: number;
+      sourceWarehouseId: number;
       description: string | null;
       quantity: string;
       unitPrice: string;
@@ -186,23 +199,47 @@ export async function importShopifyOrder(
     }> = [];
 
     for (const li of o.line_items) {
-      const sku = (li.sku && li.sku.trim()) || `SHOPIFY-LI-${li.id}`;
-      let item = (
-        await tx
-          .select()
-          .from(itemsTable)
-          .where(
-            and(
-              eq(itemsTable.organizationId, organizationId),
-              eq(itemsTable.sku, sku),
-            ),
-          )
-          .limit(1)
-      )[0];
+      let item: typeof itemsTable.$inferSelect | undefined;
+
+      // 1. Try shopifyVariantId lookup (for synced variant products)
+      if (li.variant_id != null) {
+        item = (
+          await tx
+            .select()
+            .from(itemsTable)
+            .where(
+              and(
+                eq(itemsTable.organizationId, organizationId),
+                eq(itemsTable.shopifyVariantId, String(li.variant_id)),
+              ),
+            )
+            .limit(1)
+        )[0];
+      }
+
+      // 2. Try SKU lookup (non-variant products or items synced before
+      //    shopifyVariantId was populated)
       if (!item) {
-        // Auto-generate inside the same txn so a freshly minted item
-        // from a Shopify line item lands in the Barcodes screen with a
-        // real Code 128 value (matches POST /items behaviour).
+        const sku = li.sku && li.sku.trim();
+        if (sku) {
+          item = (
+            await tx
+              .select()
+              .from(itemsTable)
+              .where(
+                and(
+                  eq(itemsTable.organizationId, organizationId),
+                  eq(itemsTable.sku, sku),
+                ),
+              )
+              .limit(1)
+          )[0];
+        }
+      }
+
+      // 3. Auto-create — stamp shopifyVariantId so future imports hit route 1.
+      if (!item) {
+        const sku = (li.sku && li.sku.trim()) || `SHOPIFY-LI-${li.id}`;
         const autoBarcode = await generateUniqueBarcode(organizationId, tx);
         const created = await tx
           .insert(itemsTable)
@@ -217,10 +254,16 @@ export async function importShopifyOrder(
             purchasePrice: "0",
             taxRate: "0",
             reorderLevel: "0",
+            // Link variant IDs so the item appears in the correct picker slot
+            // and future orders skip the fallback paths.
+            ...(li.variant_id != null
+              ? { shopifyVariantId: String(li.variant_id) }
+              : {}),
           })
           .returning();
         item = created[0]!;
       }
+
       const qty = li.quantity;
       const unitPrice = toNum(li.price);
       const lineSubtotal = unitPrice * qty;
@@ -228,7 +271,7 @@ export async function importShopifyOrder(
       const taxRate = lineSubtotal > 0 ? (taxAmount / lineSubtotal) * 100 : 0;
       lineRecords.push({
         itemId: item.id,
-        warehouseId: resolveWarehouseFor(li),
+        sourceWarehouseId: resolveSourceWarehouse(li),
         description: li.title,
         quantity: toStr(qty),
         unitPrice: toStr(unitPrice),
@@ -250,12 +293,10 @@ export async function importShopifyOrder(
           ? "shipped"
           : "confirmed";
 
-    // Order header carries one warehouseId column. Use the first line's
-    // resolved warehouse, falling back to the default; the per-line
-    // stock decrements below use each line's own warehouseId, so the
-    // header value is purely informational.
-    const headerWarehouseId =
-      lineRecords[0]?.warehouseId ?? defaultWarehouseId;
+    // Use Shopify Warehouse as the order's warehouse so that ERP
+    // shipments created later will deduct stock from there (where
+    // we are physically parking the reserved units, see below).
+    const headerWarehouseId = shopifyWarehouseId;
 
     const insertedOrder = await tx
       .insert(salesOrdersTable)
@@ -282,69 +323,111 @@ export async function importShopifyOrder(
     const orderId = insertedOrder[0]!.id;
 
     if (lineRecords.length > 0) {
-      // salesOrderLinesTable doesn't carry warehouse_id today; strip it
-      // from the persisted line payload (it's already used for the
-      // per-line stock decrements below).
+      // salesOrderLinesTable doesn't carry warehouse_id; strip it
+      // from the persisted payload (used only for stock movements below).
       await tx.insert(salesOrderLinesTable).values(
-        lineRecords.map(({ warehouseId: _wh, ...rest }) => ({
+        lineRecords.map(({ sourceWarehouseId: _wh, ...rest }) => ({
           salesOrderId: orderId,
           ...rest,
         })),
       );
 
-      // Reserve ecommerce stock per-line by incrementing ec_reserved.
-      // Physical warehouse quantity is untouched — it only moves when
-      // Shopify fires the orders/fulfilled webhook (warehouse staff picks).
+      // Physical stock transfer: source warehouse → Shopify Warehouse.
+      //
+      // Deduct from the source warehouse and credit the Shopify Warehouse
+      // so that inventory is correctly parked there until the ERP shipment
+      // is recorded (which will deduct from Shopify Warehouse automatically
+      // because the order's warehouseId points to it).
       for (const l of lineRecords) {
         const qty = toNum(l.quantity);
         if (qty <= 0) continue;
-        const stockRows = await tx
-          .select({ id: itemWarehouseStockTable.id, quantity: itemWarehouseStockTable.quantity, ecReserved: itemWarehouseStockTable.ecReserved })
+
+        // ── Source warehouse: deduct physical stock ──────────────────────
+        const srcRows = await tx
+          .select({
+            id: itemWarehouseStockTable.id,
+            quantity: itemWarehouseStockTable.quantity,
+          })
           .from(itemWarehouseStockTable) // org-scope-allow: inside Shopify import txn, org already validated
           .where(
             and(
               eq(itemWarehouseStockTable.organizationId, organizationId),
               eq(itemWarehouseStockTable.itemId, l.itemId),
-              eq(itemWarehouseStockTable.warehouseId, l.warehouseId),
+              eq(itemWarehouseStockTable.warehouseId, l.sourceWarehouseId),
             ),
           )
           .for("update")
           .limit(1);
-        if (stockRows[0]) {
-          const currentReserved = toNum(stockRows[0].ecReserved);
-          const currentQty = toNum(stockRows[0].quantity);
-          // Cap reservation at available physical stock unless org allows negatives
-          const reserveQty = allowNegativeStock
-            ? qty
-            : Math.min(qty, Math.max(0, currentQty - currentReserved));
+
+        const currentSrcQty = toNum(srcRows[0]?.quantity ?? "0");
+        const deductQty = allowNegativeStock
+          ? qty
+          : Math.min(qty, Math.max(0, currentSrcQty));
+
+        if (srcRows[0]) {
           await tx
             .update(itemWarehouseStockTable)
-            .set({ ecReserved: toStr(currentReserved + reserveQty) }) // org-scope-allow: inside Shopify import txn, org already validated
+            .set({ quantity: toStr(currentSrcQty - deductQty) }) // org-scope-allow: inside Shopify import txn, org already validated
             .where(
               and(
-                eq(itemWarehouseStockTable.id, stockRows[0].id),
+                eq(itemWarehouseStockTable.id, srcRows[0].id),
                 eq(itemWarehouseStockTable.organizationId, organizationId),
               ),
             );
         } else {
+          // Row doesn't exist yet — create it at 0 (going negative if allowed)
           await tx.insert(itemWarehouseStockTable).values({
             organizationId,
             itemId: l.itemId,
-            warehouseId: l.warehouseId,
-            quantity: "0",
+            warehouseId: l.sourceWarehouseId,
+            quantity: toStr(-deductQty),
             ecReserved: "0",
           });
         }
-        await tx.insert(stockMovementsTable).values({
-          organizationId,
-          itemId: l.itemId,
-          warehouseId: l.warehouseId,
-          movementType: "shopify_order",
-          quantity: toStr(-qty),
-          referenceType: "shopify_order",
-          referenceId: orderId,
-          notes: `Shopify order ${o.name} (reserved)`,
-        });
+
+        // ── Shopify Warehouse: credit physical stock ─────────────────────
+        await tx
+          .insert(itemWarehouseStockTable)
+          .values({
+            organizationId,
+            itemId: l.itemId,
+            warehouseId: shopifyWarehouseId,
+            quantity: toStr(deductQty),
+            ecReserved: "0",
+          })
+          .onConflictDoUpdate({
+            target: [
+              itemWarehouseStockTable.itemId,
+              itemWarehouseStockTable.warehouseId,
+            ],
+            set: {
+              quantity: sql`${itemWarehouseStockTable.quantity} + ${toStr(deductQty)}::numeric`,
+            },
+          });
+
+        // ── Write two stock movements ─────────────────────────────────────
+        await tx.insert(stockMovementsTable).values([
+          {
+            organizationId,
+            itemId: l.itemId,
+            warehouseId: l.sourceWarehouseId,
+            movementType: "shopify_reserve",
+            quantity: toStr(-deductQty),
+            referenceType: "shopify_order",
+            referenceId: orderId,
+            notes: `Shopify order ${o.name} — reserved out of source warehouse`,
+          },
+          {
+            organizationId,
+            itemId: l.itemId,
+            warehouseId: shopifyWarehouseId,
+            movementType: "shopify_reserve",
+            quantity: toStr(deductQty),
+            referenceType: "shopify_order",
+            referenceId: orderId,
+            notes: `Shopify order ${o.name} — parked in Shopify Warehouse`,
+          },
+        ]);
       }
     }
 

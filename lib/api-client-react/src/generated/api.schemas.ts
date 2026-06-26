@@ -282,6 +282,7 @@ export interface Warehouse {
   /** @nullable */
   country: string | null;
   isDefault: boolean;
+  isSystem: boolean;
   isVirtual: boolean;
   /** @nullable */
   jobWorkerSupplierId: number | null;
