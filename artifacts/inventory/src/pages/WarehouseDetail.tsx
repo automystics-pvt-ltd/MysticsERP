@@ -235,7 +235,7 @@ function EditWarehouseDialog({
   open,
   onOpenChange,
 }: {
-  warehouse: Warehouse & { isSystem?: boolean };
+  warehouse: Warehouse & { isSystem?: boolean; code?: string };
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
@@ -325,12 +325,12 @@ function EditWarehouseDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Code *</FormLabel>
-                    <FormControl><Input {...field} className="font-mono" disabled={!!warehouse.isSystem} /></FormControl>
+                    <FormControl><Input {...field} className="font-mono" disabled={!!warehouse.isSystem || ["MAIN","SHOPIFY","STORE","POS"].includes((warehouse.code ?? "").toUpperCase())} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              {!warehouse.isSystem && (
+              {!warehouse.isSystem && !["MAIN","SHOPIFY","STORE","POS"].includes((warehouse.code ?? "").toUpperCase()) && (
                 <FormField
                   control={form.control}
                   name="isDefault"

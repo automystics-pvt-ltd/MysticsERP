@@ -216,6 +216,11 @@ const MOVEMENT_LABELS: Record<string, string> = {
   shopify_sync: "Shopify Sync", shopify_webhook: "Shopify Update", damage: "Damage Write-off",
 };
 
+const SYSTEM_WAREHOUSE_CODES = new Set(["MAIN", "SHOPIFY", "STORE", "POS"]);
+function isSystemWarehouse(w: { isSystem?: boolean; code?: string }): boolean {
+  return !!w.isSystem || SYSTEM_WAREHOUSE_CODES.has((w.code ?? "").toUpperCase());
+}
+
 function movementIsInbound(type: string, quantity: number): boolean {
   const inTypes = ["purchase","transfer_in","opening","sales_return","shipment_cancelled","goods_receipt_cancelled","transfer_cancelled","job_work_receipt"];
   if (inTypes.includes(type)) return true;
@@ -313,7 +318,7 @@ function WarehouseCard({ warehouse, summary, summaryLoading, shopifyConnected, o
               <Can module="warehouses" action="edit">
                 <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-background/70" title="Edit" onClick={() => onEdit(warehouse)} data-testid={`btn-edit-warehouse-${warehouse.id}`}><Edit className="h-3.5 w-3.5" /></Button>
               </Can>
-              {!warehouse.isDefault && !warehouse.isSystem && (
+              {!warehouse.isDefault && !isSystemWarehouse(warehouse) && (
                 <Can module="warehouses" action="delete">
                   <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10" title="Delete" onClick={() => onDelete(warehouse)} data-testid={`btn-delete-warehouse-${warehouse.id}`}><Trash2 className="h-3.5 w-3.5" /></Button>
                 </Can>
@@ -347,7 +352,7 @@ function WarehouseCard({ warehouse, summary, summaryLoading, shopifyConnected, o
           <div className="flex items-center justify-between pt-2.5 border-t border-border/50 mt-auto">
             <div className="flex flex-wrap items-center gap-1.5">
               {warehouse.isDefault && <Badge variant="secondary" className="gap-1 text-[10px] font-semibold"><Star className="h-2.5 w-2.5" />Default</Badge>}
-              {warehouse.isSystem && <Badge variant="outline" className="gap-1 text-[10px] font-semibold text-muted-foreground">System</Badge>}
+              {isSystemWarehouse(warehouse) && <Badge variant="outline" className="gap-1 text-[10px] font-semibold text-muted-foreground">System</Badge>}
               {shopifyConnected && warehouse.shopifyLocationName ? <Badge variant="outline" className="gap-1 text-[10px] font-normal" data-testid={`cell-warehouse-shopify-${warehouse.id}`}><Store className="h-2.5 w-2.5" />{warehouse.shopifyLocationName}</Badge> : shopifyConnected ? <span className="text-[10px] text-muted-foreground" data-testid={`cell-warehouse-shopify-${warehouse.id}`}>Not mapped</span> : null}
             </div>
             <button type="button" className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-primary hover:text-primary/70 transition-colors shrink-0" onClick={(e) => { e.stopPropagation(); onView(warehouse); }} data-testid={`btn-view-warehouse-${warehouse.id}`}>View <ChevronRight className="h-3.5 w-3.5" /></button>
@@ -818,7 +823,7 @@ function WarehouseDetailSheet({
                 <SheetDescription className="text-xs font-mono mt-0.5 flex items-center gap-1.5 flex-wrap">
                   {warehouse.code}
                   {warehouse.isDefault && <Badge variant="secondary" className="gap-1 text-[10px]"><Star className="h-2.5 w-2.5" />Default</Badge>}
-                  {warehouse.isSystem && <Badge variant="outline" className="gap-1 text-[10px] font-semibold text-muted-foreground">System</Badge>}
+                  {isSystemWarehouse(warehouse) && <Badge variant="outline" className="gap-1 text-[10px] font-semibold text-muted-foreground">System</Badge>}
                   {shopifyConnected && warehouse.shopifyLocationName && <Badge variant="outline" className="gap-1 text-[10px] font-normal"><Store className="h-2.5 w-2.5" />{warehouse.shopifyLocationName}</Badge>}
                 </SheetDescription>
               </div>
@@ -1435,7 +1440,7 @@ export default function Warehouses() {
                           </TableCell>
                         )}
                         <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
-                          {w.isDefault ? <Badge variant="secondary" className="gap-1 text-xs"><Star className="h-3 w-3" />Default</Badge> : w.isSystem ? <Badge variant="outline" className="gap-1 text-xs font-semibold text-muted-foreground">System</Badge> : <span className="text-xs text-muted-foreground">—</span>}
+                          {w.isDefault ? <Badge variant="secondary" className="gap-1 text-xs"><Star className="h-3 w-3" />Default</Badge> : isSystemWarehouse(w) ? <Badge variant="outline" className="gap-1 text-xs font-semibold text-muted-foreground">System</Badge> : <span className="text-xs text-muted-foreground">—</span>}
                         </TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-1 justify-end">
@@ -1443,7 +1448,7 @@ export default function Warehouses() {
                             <Can module="warehouses" action="edit">
                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEdit(w)} data-testid={`btn-edit-warehouse-${w.id}`} title="Edit"><Edit className="h-4 w-4" /></Button>
                             </Can>
-                            {!w.isDefault && !w.isSystem && (
+                            {!w.isDefault && !isSystemWarehouse(w) && (
                               <Can module="warehouses" action="delete">
                                 <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setDeleteDialogWarehouse(w)} data-testid={`btn-delete-warehouse-${w.id}`} title="Delete"><Trash2 className="h-4 w-4" /></Button>
                               </Can>
@@ -1486,7 +1491,7 @@ export default function Warehouses() {
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 mt-6">
               <div className="grid grid-cols-3 gap-4">
                 <FormField control={form.control} name="code" render={({ field }) => (
-                  <FormItem className="col-span-1"><FormLabel>Code *</FormLabel><FormControl><Input {...field} placeholder="MAIN" className="font-mono uppercase" data-testid="input-warehouse-code" disabled={!!editingWarehouse?.isSystem} /></FormControl><FormMessage /></FormItem>
+                  <FormItem className="col-span-1"><FormLabel>Code *</FormLabel><FormControl><Input {...field} placeholder="MAIN" className="font-mono uppercase" data-testid="input-warehouse-code" disabled={editingWarehouse ? isSystemWarehouse(editingWarehouse) : false} /></FormControl><FormMessage /></FormItem>
                 )} />
                 <FormField control={form.control} name="name" render={({ field }) => (
                   <FormItem className="col-span-2"><FormLabel>Name *</FormLabel><FormControl><Input {...field} data-testid="input-warehouse-name" /></FormControl><FormMessage /></FormItem>
@@ -1511,7 +1516,7 @@ export default function Warehouses() {
                 )} />
               </div>
 
-              {!editingWarehouse?.isSystem && (
+              {!(editingWarehouse && isSystemWarehouse(editingWarehouse)) && (
                 <FormField control={form.control} name="isDefault" render={({ field }) => (
                   <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-lg border border-border/60 p-4">
                     <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} data-testid="checkbox-warehouse-default" /></FormControl>

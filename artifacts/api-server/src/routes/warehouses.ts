@@ -311,7 +311,7 @@ router.patch("/warehouses/:id", async (req, res, next) => {
 
     // Check whether this is a system warehouse — they have restricted edits.
     const existingRows = await db
-      .select({ isSystem: warehousesTable.isSystem })
+      .select({ isSystem: warehousesTable.isSystem, code: warehousesTable.code })
       .from(warehousesTable)
       .where(
         and(
@@ -320,7 +320,10 @@ router.patch("/warehouses/:id", async (req, res, next) => {
         ),
       )
       .limit(1);
-    const isSystemWarehouse = existingRows[0]?.isSystem ?? false;
+    const SYSTEM_CODES_PATCH = new Set(["MAIN", "SHOPIFY", "STORE", "POS"]);
+    const isSystemWarehouse =
+      (existingRows[0]?.isSystem ?? false) ||
+      SYSTEM_CODES_PATCH.has((existingRows[0]?.code ?? "").toUpperCase());
 
     const updates: Record<string, unknown> = {};
     if (isSystemWarehouse) {
@@ -474,7 +477,7 @@ router.delete("/warehouses/:id", async (req, res, next) => {
 
     // Fetch first to check system-warehouse protection.
     const rows = await db
-      .select({ isSystem: warehousesTable.isSystem, isDefault: warehousesTable.isDefault })
+      .select({ isSystem: warehousesTable.isSystem, code: warehousesTable.code, isDefault: warehousesTable.isDefault })
       .from(warehousesTable)
       .where(
         and(
@@ -488,7 +491,8 @@ router.delete("/warehouses/:id", async (req, res, next) => {
       res.status(204).send();
       return;
     }
-    if (rows[0].isSystem) {
+    const SYSTEM_CODES = new Set(["MAIN", "SHOPIFY", "STORE", "POS"]);
+    if (rows[0].isSystem || SYSTEM_CODES.has(rows[0].code.toUpperCase())) {
       res.status(400).json({
         error: "System warehouses (Main, Shopify, Store) cannot be deleted. You can rename them or edit their address.",
       });
