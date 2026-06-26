@@ -529,22 +529,49 @@ export async function updateShopifyProduct(
   productId: string,
   fields: UpdateShopifyProductFields,
 ): Promise<void> {
-  const variantPatch: Record<string, unknown> = { id: Number(fields.variantId) };
+  // Variant-level fields (price, sku, barcode) MUST go to the variant endpoint.
+  // Sending variants:[{id}] in a PUT /products/{id}.json call replaces the
+  // *entire* variant list — all other variants get deleted by Shopify.
+  const variantPatch: Record<string, unknown> = {};
   if (fields.price !== undefined) variantPatch["price"] = fields.price;
   if (fields.sku !== undefined) variantPatch["sku"] = fields.sku;
   if (fields.barcode !== undefined) variantPatch["barcode"] = fields.barcode ?? "";
 
-  const productPatch: Record<string, unknown> = {
-    id: Number(productId),
-    variants: [variantPatch],
-  };
-  if (fields.title !== undefined) productPatch["title"] = fields.title;
-  if (fields.category !== undefined) productPatch["product_type"] = fields.category ?? "";
-  if (fields.status !== undefined) productPatch["status"] = fields.status;
+  const hasVariantChanges = Object.keys(variantPatch).length > 0;
+  const hasProductChanges =
+    fields.title !== undefined ||
+    fields.category !== undefined ||
+    fields.status !== undefined;
 
-  await shopifyPut(shopDomain, accessToken, `/products/${productId}.json`, {
-    product: productPatch,
-  });
+  const calls: Promise<unknown>[] = [];
+
+  if (hasVariantChanges) {
+    // Safe: only touches this one variant, leaves all others intact.
+    calls.push(
+      shopifyPut(
+        shopDomain,
+        accessToken,
+        `/products/${productId}/variants/${fields.variantId}.json`,
+        { variant: variantPatch },
+      ),
+    );
+  }
+
+  if (hasProductChanges) {
+    // Product-level fields only — no `variants` key so Shopify won't touch them.
+    const productPatch: Record<string, unknown> = { id: Number(productId) };
+    if (fields.title !== undefined) productPatch["title"] = fields.title;
+    if (fields.category !== undefined) productPatch["product_type"] = fields.category ?? "";
+    if (fields.status !== undefined) productPatch["status"] = fields.status;
+
+    calls.push(
+      shopifyPut(shopDomain, accessToken, `/products/${productId}.json`, {
+        product: productPatch,
+      }),
+    );
+  }
+
+  await Promise.all(calls);
 }
 
 export interface CreateShopifyVariantResult {
