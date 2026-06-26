@@ -485,7 +485,7 @@ router.delete("/warehouses/:id", async (req, res, next) => {
       .limit(1);
 
     if (!rows[0]) {
-      res.status(404).json({ error: "Warehouse not found" });
+      res.status(204).send();
       return;
     }
     if (rows[0].isSystem) {
