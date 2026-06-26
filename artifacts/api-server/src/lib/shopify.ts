@@ -722,6 +722,8 @@ export interface ShopifyOrder {
   fulfillments?: Array<{
     id: number;
     status?: string | null;
+    /** Carrier delivery status: "confirmed", "in_transit", "out_for_delivery", "delivered", "failure" */
+    shipment_status?: string | null;
     location_id?: number | null;
     tracking_number?: string | null;
     tracking_numbers?: string[];
@@ -734,6 +736,8 @@ export interface ShopifyOrder {
       origin_location?: { id: number } | null;
     }>;
   }>;
+  /** Shopify shipping lines (rate/carrier titles). */
+  shipping_lines?: Array<{ title: string; price: string }>;
 }
 
 export interface ShopifyRefund {

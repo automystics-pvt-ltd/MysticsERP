@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request } from "express";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, ne, notInArray } from "drizzle-orm";
 import {
   db,
   customersTable,
@@ -173,15 +173,34 @@ router.post("/webhooks/shopify", async (req, res, next) => {
                   updates["status"] = "partially_shipped";
                 }
               }
+              // Sync delivery method from Shopify shipping lines
+              const syncedMethod = o.shipping_lines?.[0]?.title ?? null;
+              if (syncedMethod) updates["deliveryMethod"] = syncedMethod;
+
               await db
                 .update(salesOrdersTable)
-                .set(updates as { paymentStatus?: string | null; status?: string })
+                .set(updates as { paymentStatus?: string | null; status?: string; deliveryMethod?: string | null })
                 .where(
                   and(
                     eq(salesOrdersTable.organizationId, org.id),
                     eq(salesOrdersTable.id, existing.id),
                   ),
                 );
+
+              // Advance ERP fulfillment to "dispatched" when Shopify reports
+              // the order as fully fulfilled.
+              if (o.fulfillment_status === "fulfilled") {
+                await db
+                  .update(fulfillmentsTable)
+                  .set({ status: "dispatched", dispatchedAt: new Date() })
+                  .where(
+                    and(
+                      eq(fulfillmentsTable.organizationId, org.id),
+                      eq(fulfillmentsTable.salesOrderId, existing.id),
+                      ne(fulfillmentsTable.status, "dispatched"),
+                    ),
+                  );
+              }
             }
           }
         }
@@ -340,6 +359,33 @@ router.post("/webhooks/shopify", async (req, res, next) => {
             await db
               .update(salesOrdersTable)
               .set({ paymentStatus: mapShopifyPaymentStatus(o.financial_status) })
+              .where(
+                and(
+                  eq(salesOrdersTable.organizationId, org.id),
+                  eq(salesOrdersTable.id, order.id),
+                ),
+              );
+          }
+
+          // Advance ERP fulfillment record to "dispatched" — idempotent when
+          // the ERP already dispatched first (guard: ne status, "dispatched").
+          await db
+            .update(fulfillmentsTable)
+            .set({ status: "dispatched", dispatchedAt: new Date() })
+            .where(
+              and(
+                eq(fulfillmentsTable.organizationId, org.id),
+                eq(fulfillmentsTable.salesOrderId, order.id),
+                ne(fulfillmentsTable.status, "dispatched"),
+              ),
+            );
+
+          // Sync delivery method from Shopify shipping lines
+          const ordFulMethod = o.shipping_lines?.[0]?.title ?? null;
+          if (ordFulMethod) {
+            await db
+              .update(salesOrdersTable)
+              .set({ deliveryMethod: ordFulMethod })
               .where(
                 and(
                   eq(salesOrdersTable.organizationId, org.id),
@@ -1011,12 +1057,14 @@ router.post("/webhooks/shopify", async (req, res, next) => {
       case "fulfillments/create":
       case "fulfillments/update": {
         // Shopify sends the fulfillment object with order_id + tracking.
-        // Sync tracking back to any matching ERP shipment / fulfillment record
-        // so both sides always display the same carrier & AWB.
+        // Full sync: advance ERP fulfillment + order status, propagate
+        // delivery status, and sync carrier/AWB tracking in both directions.
         const f = body as {
           id?: number;
           order_id?: number;
           status?: string | null;
+          /** Carrier delivery status e.g. "delivered", "in_transit". */
+          shipment_status?: string | null;
           tracking_number?: string | null;
           tracking_numbers?: string[];
           tracking_company?: string | null;
@@ -1027,7 +1075,7 @@ router.post("/webhooks/shopify", async (req, res, next) => {
         const shopifyFulfillmentOrderId = String(f.order_id);
 
         const orderRows2 = await db
-          .select({ id: salesOrdersTable.id })
+          .select({ id: salesOrdersTable.id, status: salesOrdersTable.status })
           .from(salesOrdersTable)
           .where(
             and(
@@ -1039,6 +1087,66 @@ router.post("/webhooks/shopify", async (req, res, next) => {
         const erpOrder = orderRows2[0];
         if (!erpOrder) break;
 
+        // ── ERP fulfillment status ────────────────────────────────────────
+        // Advance the auto-created ERP fulfillment to "dispatched" when
+        // Shopify creates or updates a successful fulfillment. The ne()
+        // guard makes this idempotent for ERP-initiated dispatches.
+        const shopifyFulIsActive =
+          f.status !== "cancelled" &&
+          f.status !== "failure" &&
+          f.status !== "error";
+
+        if (shopifyFulIsActive) {
+          await db
+            .update(fulfillmentsTable)
+            .set({ status: "dispatched", dispatchedAt: new Date() })
+            .where(
+              and(
+                eq(fulfillmentsTable.organizationId, org.id),
+                eq(fulfillmentsTable.salesOrderId, erpOrder.id),
+                ne(fulfillmentsTable.status, "dispatched"),
+              ),
+            );
+
+          // Advance order to "shipped" (unless already at/past shipped)
+          const PAST_SHIPPED = [
+            "shipped", "delivered", "invoiced", "paid",
+            "returned", "refunded", "cancelled",
+          ];
+          if (!PAST_SHIPPED.includes(erpOrder.status)) {
+            await db
+              .update(salesOrdersTable)
+              .set({ status: "shipped" })
+              .where(
+                and(
+                  eq(salesOrdersTable.organizationId, org.id),
+                  eq(salesOrdersTable.id, erpOrder.id),
+                  notInArray(salesOrdersTable.status, PAST_SHIPPED),
+                ),
+              );
+          }
+        }
+
+        // ── Carrier delivery confirmation ─────────────────────────────────
+        // When the carrier marks the shipment "delivered", advance the ERP
+        // order from "shipped" → "delivered".
+        if (f.shipment_status === "delivered") {
+          const PAST_DELIVERED = [
+            "delivered", "invoiced", "paid", "returned", "refunded", "cancelled",
+          ];
+          await db
+            .update(salesOrdersTable)
+            .set({ status: "delivered" })
+            .where(
+              and(
+                eq(salesOrdersTable.organizationId, org.id),
+                eq(salesOrdersTable.id, erpOrder.id),
+                notInArray(salesOrdersTable.status, PAST_DELIVERED),
+              ),
+            );
+        }
+
+        // ── Tracking sync ─────────────────────────────────────────────────
         const trackingNumber = f.tracking_number ?? f.tracking_numbers?.[0] ?? null;
         const trackingCompany = f.tracking_company ?? null;
         const trackingUrl = f.tracking_url ?? f.tracking_urls?.[0] ?? null;
@@ -1068,6 +1176,7 @@ router.post("/webhooks/shopify", async (req, res, next) => {
               );
           }
           if (Object.keys(fulfillmentUpdate).length > 0) {
+            // Update both dispatched AND newly-advanced fulfillment records
             await db
               .update(fulfillmentsTable)
               .set(fulfillmentUpdate)

@@ -98,6 +98,8 @@ export const salesOrdersTable = pgTable(
     posSessionId: integer("pos_session_id").references(() => posSessionsTable.id, {
       onDelete: "set null",
     }),
+    /** Shipping method name synced from Shopify (e.g. "Standard Shipping"). */
+    deliveryMethod: text("delivery_method"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()

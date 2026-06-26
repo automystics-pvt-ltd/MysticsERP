@@ -349,6 +349,7 @@ export async function importShopifyOrder(
         shopifyOrderId: String(o.id),
         externalReference: `shopify:${o.id}`,
         paymentStatus: mapShopifyPaymentStatus(o.financial_status),
+        deliveryMethod: o.shipping_lines?.[0]?.title ?? null,
       })
       .onConflictDoNothing({
         target: [salesOrdersTable.organizationId, salesOrdersTable.shopifyOrderId],
