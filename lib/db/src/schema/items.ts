@@ -110,11 +110,11 @@ export const itemsTable = pgTable(
       t.parentItemId,
     ),
     // Idempotent Shopify resync: match-by-variant-id is the primary
-    // upsert key now, so we want a fast lookup.
-    orgShopifyVariant: index("items_org_shopify_variant_idx").on(
-      t.organizationId,
-      t.shopifyVariantId,
-    ),
+    // upsert key. Unique (partial, non-null) so concurrent order imports
+    // for the same new variant collapse into one row via ON CONFLICT.
+    orgShopifyVariant: uniqueIndex("items_org_shopify_variant_idx")
+      .on(t.organizationId, t.shopifyVariantId)
+      .where(sql`${t.shopifyVariantId} IS NOT NULL`),
     // Camera-scanner / lookup-by-barcode path needs an org-scoped index
     // so a scan resolves in O(log n) regardless of catalog size.
     orgBarcode: index("items_org_barcode_idx").on(

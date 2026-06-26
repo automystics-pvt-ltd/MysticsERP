@@ -699,7 +699,9 @@ router.post("/webhooks/shopify", async (req, res, next) => {
                 description: fresh.body_html,
                 category: fresh.product_type,
                 salePrice: variant.price ?? "0",
-                barcode: variant.barcode ?? null,
+                // Only overwrite barcode if Shopify has one — never wipe an
+                // auto-generated ERP barcode with null when Shopify has none.
+                ...(variant.barcode ? { barcode: variant.barcode } : {}),
                 archivedAt: archivedAtValue,
                 shopifyProductId: freshProductId,
                 shopifyVariantId: variantIdStr,

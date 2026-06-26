@@ -709,6 +709,7 @@ export interface ShopifyOrder {
   line_items: Array<{
     id: number;
     variant_id?: number | null;
+    variant_title?: string | null;
     sku: string | null;
     title: string;
     quantity: number;

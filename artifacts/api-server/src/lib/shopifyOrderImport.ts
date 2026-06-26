@@ -238,15 +238,20 @@ export async function importShopifyOrder(
       }
 
       // 3. Auto-create — stamp shopifyVariantId so future imports hit route 1.
+      //    Uses ON CONFLICT DO NOTHING + re-fetch so concurrent webhook / import
+      //    job calls for the same new variant never produce duplicate ERP items.
       if (!item) {
         const sku = (li.sku && li.sku.trim()) || `SHOPIFY-LI-${li.id}`;
+        // Build a descriptive name: "Product — Variant" (e.g. "wOMENS IEGGINGS — M")
+        const variantSuffix = li.variant_title && li.variant_title.trim();
+        const itemName = variantSuffix ? `${li.title} — ${variantSuffix}` : li.title;
         const autoBarcode = await generateUniqueBarcode(organizationId, tx);
         const created = await tx
           .insert(itemsTable)
           .values({
             organizationId,
             sku,
-            name: li.title,
+            name: itemName,
             unit: "pcs",
             barcode: autoBarcode,
             barcodeSource: "auto",
@@ -260,8 +265,36 @@ export async function importShopifyOrder(
               ? { shopifyVariantId: String(li.variant_id) }
               : {}),
           })
+          .onConflictDoNothing()
           .returning();
-        item = created[0]!;
+        if (created[0]) {
+          item = created[0];
+        } else {
+          // Concurrent import already created this variant — re-fetch it.
+          const variantIdStr = li.variant_id != null ? String(li.variant_id) : null;
+          const refetch = variantIdStr
+            ? await tx
+                .select()
+                .from(itemsTable)
+                .where(
+                  and(
+                    eq(itemsTable.organizationId, organizationId),
+                    eq(itemsTable.shopifyVariantId, variantIdStr),
+                  ),
+                )
+                .limit(1)
+            : await tx
+                .select()
+                .from(itemsTable)
+                .where(
+                  and(
+                    eq(itemsTable.organizationId, organizationId),
+                    eq(itemsTable.sku, sku),
+                  ),
+                )
+                .limit(1);
+          item = refetch[0];
+        }
       }
 
       const qty = li.quantity;
