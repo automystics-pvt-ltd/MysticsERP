@@ -216,7 +216,7 @@ const MOVEMENT_LABELS: Record<string, string> = {
   shopify_sync: "Shopify Sync", shopify_webhook: "Shopify Update", damage: "Damage Write-off",
 };
 
-const SYSTEM_WAREHOUSE_CODES = new Set(["MAIN", "SHOPIFY", "STORE", "POS"]);
+const SYSTEM_WAREHOUSE_CODES = new Set(["MAIN", "SHOPIFY", "POS"]);
 function isSystemWarehouse(w: { isSystem?: boolean; code?: string }): boolean {
   return !!w.isSystem || SYSTEM_WAREHOUSE_CODES.has((w.code ?? "").toUpperCase());
 }

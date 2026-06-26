@@ -224,33 +224,23 @@ export async function ensureTenant(
       .where(
         and(
           eq(warehousesTable.organizationId, chosen.organizationId),
-          inArray(warehousesTable.code, ["MAIN", "SHOPIFY", "STORE", "POS"]),
+          inArray(warehousesTable.code, ["MAIN", "SHOPIFY", "POS"]),
           eq(warehousesTable.isSystem, false),
         ),
       );
 
-    // Ensure Shopify Warehouse + Store Warehouse exist for orgs bootstrapped
-    // before these system warehouses were introduced. Fire-and-forget.
+    // Ensure Shopify Warehouse exists for orgs bootstrapped before it was
+    // introduced. Fire-and-forget: no-op once the row is already there.
     void db
       .insert(warehousesTable)
-      .values([
-        {
-          organizationId: chosen.organizationId,
-          name: "Shopify Warehouse",
-          code: "SHOPIFY",
-          isDefault: false,
-          isSystem: true,
-          country: "India",
-        },
-        {
-          organizationId: chosen.organizationId,
-          name: "Store Warehouse",
-          code: "STORE",
-          isDefault: false,
-          isSystem: true,
-          country: "India",
-        },
-      ])
+      .values({
+        organizationId: chosen.organizationId,
+        name: "Shopify Warehouse",
+        code: "SHOPIFY",
+        isDefault: false,
+        isSystem: true,
+        country: "India",
+      })
       .onConflictDoNothing();
 
     // Block suspended members — super-admins bypass this check
@@ -385,14 +375,6 @@ export async function ensureTenant(
       organizationId: org.id,
       name: "Shopify Warehouse",
       code: "SHOPIFY",
-      isDefault: false,
-      isSystem: true,
-      country: "India",
-    },
-    {
-      organizationId: org.id,
-      name: "Store Warehouse",
-      code: "STORE",
       isDefault: false,
       isSystem: true,
       country: "India",

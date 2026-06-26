@@ -320,7 +320,7 @@ router.patch("/warehouses/:id", async (req, res, next) => {
         ),
       )
       .limit(1);
-    const SYSTEM_CODES_PATCH = new Set(["MAIN", "SHOPIFY", "STORE", "POS"]);
+    const SYSTEM_CODES_PATCH = new Set(["MAIN", "SHOPIFY", "POS"]);
     const isSystemWarehouse =
       (existingRows[0]?.isSystem ?? false) ||
       SYSTEM_CODES_PATCH.has((existingRows[0]?.code ?? "").toUpperCase());
@@ -491,7 +491,7 @@ router.delete("/warehouses/:id", async (req, res, next) => {
       res.status(204).send();
       return;
     }
-    const SYSTEM_CODES = new Set(["MAIN", "SHOPIFY", "STORE", "POS"]);
+    const SYSTEM_CODES = new Set(["MAIN", "SHOPIFY", "POS"]);
     if (rows[0].isSystem || SYSTEM_CODES.has(rows[0].code.toUpperCase())) {
       res.status(400).json({
         error: "System warehouses (Main, Shopify, Store) cannot be deleted. You can rename them or edit their address.",

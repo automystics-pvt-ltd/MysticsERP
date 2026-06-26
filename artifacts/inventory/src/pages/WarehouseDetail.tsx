@@ -325,12 +325,12 @@ function EditWarehouseDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Code *</FormLabel>
-                    <FormControl><Input {...field} className="font-mono" disabled={!!warehouse.isSystem || ["MAIN","SHOPIFY","STORE","POS"].includes((warehouse.code ?? "").toUpperCase())} /></FormControl>
+                    <FormControl><Input {...field} className="font-mono" disabled={!!warehouse.isSystem || ["MAIN","SHOPIFY","POS"].includes((warehouse.code ?? "").toUpperCase())} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              {!warehouse.isSystem && !["MAIN","SHOPIFY","STORE","POS"].includes((warehouse.code ?? "").toUpperCase()) && (
+              {!warehouse.isSystem && !["MAIN","SHOPIFY","POS"].includes((warehouse.code ?? "").toUpperCase()) && (
                 <FormField
                   control={form.control}
                   name="isDefault"
