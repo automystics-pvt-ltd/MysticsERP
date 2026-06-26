@@ -214,6 +214,21 @@ export async function ensureTenant(
       }
       chosen = match;
     }
+
+    // Backfill isSystem=true for system warehouses on existing orgs that were
+    // created before the isSystem flag was introduced. Fire-and-forget: no-op
+    // once all rows are already correct.
+    void db
+      .update(warehousesTable)
+      .set({ isSystem: true })
+      .where(
+        and(
+          eq(warehousesTable.organizationId, chosen.organizationId),
+          inArray(warehousesTable.code, ["MAIN", "SHOPIFY", "STORE"]),
+          eq(warehousesTable.isSystem, false),
+        ),
+      );
+
     // Block suspended members — super-admins bypass this check
     if (!chosen.isActive && !userRow.isSuperAdmin) {
       const err = new Error(
@@ -592,7 +607,7 @@ export async function ensureShopifyWarehouse(
   organizationId: number,
 ): Promise<number> {
   const existing = await db
-    .select({ id: warehousesTable.id })
+    .select({ id: warehousesTable.id, isSystem: warehousesTable.isSystem })
     .from(warehousesTable)
     .where(
       and(
@@ -601,7 +616,21 @@ export async function ensureShopifyWarehouse(
       ),
     )
     .limit(1);
-  if (existing[0]) return existing[0].id;
+  if (existing[0]) {
+    // Backfill isSystem for rows created before the flag was introduced.
+    if (!existing[0].isSystem) {
+      void db
+        .update(warehousesTable)
+        .set({ isSystem: true })
+        .where(
+          and(
+            eq(warehousesTable.id, existing[0].id),
+            eq(warehousesTable.organizationId, organizationId),
+          ),
+        );
+    }
+    return existing[0].id;
+  }
 
   const inserted = await db
     .insert(warehousesTable)
