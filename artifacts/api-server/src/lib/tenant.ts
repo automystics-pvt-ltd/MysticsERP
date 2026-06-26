@@ -224,7 +224,7 @@ export async function ensureTenant(
       .where(
         and(
           eq(warehousesTable.organizationId, chosen.organizationId),
-          inArray(warehousesTable.code, ["MAIN", "SHOPIFY", "STORE"]),
+          inArray(warehousesTable.code, ["MAIN", "SHOPIFY", "STORE", "POS"]),
           eq(warehousesTable.isSystem, false),
         ),
       );

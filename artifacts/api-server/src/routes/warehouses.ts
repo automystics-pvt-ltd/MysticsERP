@@ -495,14 +495,28 @@ router.delete("/warehouses/:id", async (req, res, next) => {
       return;
     }
 
-    await db
-      .delete(warehousesTable)
-      .where(
-        and(
-          eq(warehousesTable.id, id),
-          eq(warehousesTable.organizationId, t.organizationId),
-        ),
-      );
+    try {
+      await db
+        .delete(warehousesTable)
+        .where(
+          and(
+            eq(warehousesTable.id, id),
+            eq(warehousesTable.organizationId, t.organizationId),
+          ),
+        );
+    } catch (deleteErr) {
+      const pgCode =
+        (deleteErr as { code?: string })?.code ??
+        (deleteErr as { cause?: { code?: string } })?.cause?.code;
+      if (pgCode === "23503") {
+        res.status(400).json({
+          error:
+            "This warehouse cannot be deleted because it has stock movements, transfers, or orders linked to it. Clear those references first.",
+        });
+        return;
+      }
+      throw deleteErr;
+    }
     res.status(204).send();
   } catch (err) {
     next(err);
