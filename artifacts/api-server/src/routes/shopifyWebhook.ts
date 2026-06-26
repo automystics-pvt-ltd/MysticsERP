@@ -755,8 +755,17 @@ router.post("/webhooks/shopify", async (req, res, next) => {
               const variantLabel = [variant.option1, variant.option2, variant.option3]
                 .filter(Boolean)
                 .join(" / ");
+              // Strip any trailing "— {variantLabel}" that may have been
+              // pushed back to the Shopify product title by a previous bad
+              // sync (e.g. "Womens Leggings — L" should become just
+              // "Womens Leggings" so we don't produce "…— L — L").
+              const suffix = variantLabel ? ` — ${variantLabel}` : "";
+              const baseTitle =
+                suffix && fresh.title.endsWith(suffix)
+                  ? fresh.title.slice(0, -suffix.length)
+                  : fresh.title;
               const variantName = isMultiVariant && variantLabel
-                ? `${fresh.title} — ${variantLabel}`
+                ? `${baseTitle} — ${variantLabel}`
                 : fresh.title;
 
               const commonFields = {

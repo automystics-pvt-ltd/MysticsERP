@@ -179,10 +179,17 @@ async function pushProductFieldsToShopifyAsync(orgId: number, itemId: number): P
 
   const status: "active" | "draft" = item.archivedAt ? "draft" : "active";
 
+  // For variant children the Shopify **product** title is owned by the parent
+  // item, not the child. Sending the child's ERP name (e.g. "Womens Leggings — L")
+  // as `title` contaminates the product title and causes the webhook to
+  // accumulate suffixes ("…— L — L — L"). Skip `title` for child variants;
+  // the parent's pushProductFieldsToShopify call handles the product title.
+  const shopifyTitle = item.parentItemId ? undefined : item.name;
+
   try {
     await updateShopifyProduct(org.shopDomain, org.accessToken, item.shopifyProductId, {
       variantId: item.shopifyVariantId,
-      title: item.name,
+      title: shopifyTitle,
       sku: item.sku,
       barcode: item.barcode,
       price: item.salePrice ?? "0",
