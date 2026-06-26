@@ -2,6 +2,8 @@ import { and, eq, isNotNull, sql } from "drizzle-orm";
 import {
   db,
   customersTable,
+  fulfillmentsTable,
+  fulfillmentLinesTable,
   itemsTable,
   itemWarehouseStockTable,
   organizationsTable,
@@ -358,12 +360,19 @@ export async function importShopifyOrder(
     if (lineRecords.length > 0) {
       // salesOrderLinesTable doesn't carry warehouse_id; strip it
       // from the persisted payload (used only for stock movements below).
-      await tx.insert(salesOrderLinesTable).values(
-        lineRecords.map(({ sourceWarehouseId: _wh, ...rest }) => ({
-          salesOrderId: orderId,
-          ...rest,
-        })),
-      );
+      const insertedLines = await tx
+        .insert(salesOrderLinesTable)
+        .values(
+          lineRecords.map(({ sourceWarehouseId: _wh, ...rest }) => ({
+            salesOrderId: orderId,
+            ...rest,
+          })),
+        )
+        .returning({
+          id: salesOrderLinesTable.id,
+          itemId: salesOrderLinesTable.itemId,
+          quantity: salesOrderLinesTable.quantity,
+        });
 
       // Physical stock transfer: source warehouse → Shopify Warehouse.
       //
@@ -461,6 +470,34 @@ export async function importShopifyOrder(
             notes: `Shopify order ${o.name} — parked in Shopify Warehouse`,
           },
         ]);
+      }
+
+      // Auto-create a fulfillment in "picking" status so the order
+      // immediately appears in the Fulfillment List for warehouse staff.
+      // Skip when the Shopify order is already fully fulfilled — there is
+      // nothing left to pick.
+      if (status !== "shipped") {
+        const [fulfillment] = await tx
+          .insert(fulfillmentsTable)
+          .values({
+            organizationId,
+            salesOrderId: orderId,
+            fulfillmentNumber: nextOrderNumber("FULFIL"),
+            status: "picking",
+            warehouseId: headerWarehouseId,
+          })
+          .returning();
+
+        await tx.insert(fulfillmentLinesTable).values(
+          insertedLines.map((l) => ({
+            organizationId,
+            fulfillmentId: fulfillment!.id,
+            salesOrderLineId: l.id,
+            itemId: l.itemId,
+            quantityRequired: l.quantity,
+            quantityPicked: "0",
+          })),
+        );
       }
     }
 
