@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request } from "express";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   db,
   customersTable,
@@ -583,15 +583,83 @@ router.post("/webhooks/shopify", async (req, res, next) => {
             org.shopifyAccessToken,
             productId,
           );
-          if (fresh) {
-            const variant = fresh.variants[0];
-            if (variant) {
+          if (fresh && fresh.variants.length > 0) {
+            // Map Shopify status → inventory active/inactive.
+            const shopifyStatus = fresh.status ?? "active";
+            const archivedAtValue = shopifyStatus === "active" ? null : new Date();
+            const freshProductId = String(fresh.id);
+            const isMultiVariant = fresh.variants.length > 1;
+
+            // For multi-variant products, ensure a parent item exists.
+            let parentItemId: number | null = null;
+            if (isMultiVariant) {
+              const parentRows = await db
+                .select({ id: itemsTable.id })
+                .from(itemsTable)
+                .where(
+                  and(
+                    eq(itemsTable.organizationId, org.id),
+                    eq(itemsTable.shopifyProductId, freshProductId),
+                    eq(itemsTable.hasVariants, true),
+                    isNull(itemsTable.parentItemId),
+                  ),
+                )
+                .limit(1); // org-scope-allow: matched by shopifyProductId (globally unique Shopify id)
+
+              if (parentRows[0]) {
+                parentItemId = parentRows[0].id;
+                // Keep parent name/category/status in sync.
+                await db
+                  .update(itemsTable)
+                  .set({
+                    name: fresh.title,
+                    category: fresh.product_type,
+                    archivedAt: archivedAtValue,
+                    imageUrl: fresh.image?.src ?? null,
+                  })
+                  .where(
+                    and(
+                      eq(itemsTable.organizationId, org.id),
+                      eq(itemsTable.id, parentRows[0].id),
+                    ),
+                  );
+              } else if (topic === "products/create") {
+                // New multi-variant product → create the parent item.
+                const parentBarcode = await generateUniqueBarcode(org.id);
+                const inserted = await db
+                  .insert(itemsTable)
+                  .values({
+                    organizationId: org.id,
+                    sku: `SHOPIFY-${freshProductId}`,
+                    unit: "pcs",
+                    barcode: parentBarcode,
+                    barcodeSource: "auto",
+                    purchasePrice: "0",
+                    taxRate: "0",
+                    reorderLevel: "0",
+                    hasVariants: true,
+                    name: fresh.title,
+                    description: fresh.body_html,
+                    category: fresh.product_type,
+                    salePrice: "0",
+                    archivedAt: archivedAtValue,
+                    shopifyProductId: freshProductId,
+                    imageUrl: fresh.image?.src ?? null,
+                  })
+                  .returning({ id: itemsTable.id });
+                parentItemId = inserted[0]?.id ?? null;
+              }
+            }
+
+            // Process every variant — not just the first one.
+            for (const variant of fresh.variants) {
               const variantIdStr = String(variant.id);
               const sku =
-                (variant.sku && variant.sku.trim()) || `SHOPIFY-${fresh.id}`;
+                (variant.sku && variant.sku.trim()) ||
+                `SHOPIFY-${freshProductId}-${variant.id}`;
 
-              // Prefer to match by stable shopifyVariantId so SKU renames
-              // in Shopify still land on the right inventory row.
+              // Match by stable shopifyVariantId first so SKU renames in
+              // Shopify still land on the right ERP row.
               let matchRows = await db
                 .select({ id: itemsTable.id })
                 .from(itemsTable)
@@ -602,9 +670,10 @@ router.post("/webhooks/shopify", async (req, res, next) => {
                   ),
                 )
                 .limit(1); // org-scope-allow: matched by shopifyVariantId (globally unique Shopify id)
+
               if (!matchRows[0]) {
-                // Fall back to SKU match for items that were imported
-                // before shopifyVariantId was recorded.
+                // Fall back to SKU match for items imported before
+                // shopifyVariantId was recorded.
                 matchRows = await db
                   .select({ id: itemsTable.id })
                   .from(itemsTable)
@@ -617,19 +686,22 @@ router.post("/webhooks/shopify", async (req, res, next) => {
                   .limit(1);
               }
 
-              // Map Shopify status → inventory active/inactive.
-              // active → unarchive; draft/archived → archive.
-              const shopifyStatus = fresh.status ?? "active";
-              const archivedAtValue =
-                shopifyStatus === "active" ? null : new Date();
+              // For multi-variant products use "Parent — Option" as item name.
+              const variantLabel = [variant.option1, variant.option2, variant.option3]
+                .filter(Boolean)
+                .join(" / ");
+              const variantName = isMultiVariant && variantLabel
+                ? `${fresh.title} — ${variantLabel}`
+                : fresh.title;
+
               const commonFields = {
-                name: fresh.title,
+                name: variantName,
                 description: fresh.body_html,
                 category: fresh.product_type,
                 salePrice: variant.price ?? "0",
                 barcode: variant.barcode ?? null,
                 archivedAt: archivedAtValue,
-                shopifyProductId: String(fresh.id),
+                shopifyProductId: freshProductId,
                 shopifyVariantId: variantIdStr,
                 shopifyInventoryItemId: variant.inventory_item_id
                   ? String(variant.inventory_item_id)
@@ -637,21 +709,22 @@ router.post("/webhooks/shopify", async (req, res, next) => {
                 imageUrl: fresh.image?.src ?? null,
               };
 
-              const itemId = matchRows[0]?.id;
-              if (itemId) {
-                // Update existing item.
+              const existingId = matchRows[0]?.id;
+              if (existingId) {
+                // Update the existing ERP item.
                 await db
                   .update(itemsTable)
                   .set(commonFields)
                   .where(
                     and(
                       eq(itemsTable.organizationId, org.id),
-                      eq(itemsTable.id, itemId),
+                      eq(itemsTable.id, existingId),
                     ),
                   );
               } else if (topic === "products/create") {
-                // New product in Shopify → create a local item.
-                // Stock starts at 0; inventory_levels/update will correct it.
+                // products/create → always create a new item.
+                // products/update → never auto-create: only existing ERP items
+                // are updated; new variants must be imported deliberately.
                 const autoBarcode = await generateUniqueBarcode(org.id);
                 await db.insert(itemsTable).values({
                   organizationId: org.id,
@@ -663,12 +736,13 @@ router.post("/webhooks/shopify", async (req, res, next) => {
                   taxRate: "0",
                   reorderLevel: "0",
                   hasVariants: false,
-                  name: fresh.title,
+                  ...(parentItemId ? { parentItemId } : {}),
+                  name: variantName,
                   description: fresh.body_html,
                   category: fresh.product_type,
                   salePrice: variant.price ?? "0",
                   archivedAt: archivedAtValue,
-                  shopifyProductId: String(fresh.id),
+                  shopifyProductId: freshProductId,
                   shopifyVariantId: variantIdStr,
                   shopifyInventoryItemId: variant.inventory_item_id
                     ? String(variant.inventory_item_id)
