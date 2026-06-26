@@ -229,6 +229,30 @@ export async function ensureTenant(
         ),
       );
 
+    // Ensure Shopify Warehouse + Store Warehouse exist for orgs bootstrapped
+    // before these system warehouses were introduced. Fire-and-forget.
+    void db
+      .insert(warehousesTable)
+      .values([
+        {
+          organizationId: chosen.organizationId,
+          name: "Shopify Warehouse",
+          code: "SHOPIFY",
+          isDefault: false,
+          isSystem: true,
+          country: "India",
+        },
+        {
+          organizationId: chosen.organizationId,
+          name: "Store Warehouse",
+          code: "STORE",
+          isDefault: false,
+          isSystem: true,
+          country: "India",
+        },
+      ])
+      .onConflictDoNothing();
+
     // Block suspended members — super-admins bypass this check
     if (!chosen.isActive && !userRow.isSuperAdmin) {
       const err = new Error(
