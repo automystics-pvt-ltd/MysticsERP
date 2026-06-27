@@ -819,9 +819,12 @@ router.post("/webhooks/shopify", async (req, res, next) => {
                 description: fresh.body_html,
                 category: fresh.product_type,
                 salePrice: variant.price ?? "0",
-                // Only overwrite barcode if Shopify has one — never wipe an
-                // auto-generated ERP barcode with null when Shopify has none.
-                ...(variant.barcode ? { barcode: variant.barcode } : {}),
+                // Only overwrite barcode if Shopify has a non-empty value —
+                // never wipe an ERP barcode when Shopify has none. Also track
+                // the source so the UI knows this barcode is Shopify-managed.
+                ...(variant.barcode && variant.barcode.trim()
+                  ? { barcode: variant.barcode.trim(), barcodeSource: "shopify" }
+                  : {}),
                 archivedAt: archivedAtValue,
                 shopifyProductId: freshProductId,
                 shopifyVariantId: variantIdStr,
@@ -847,13 +850,23 @@ router.post("/webhooks/shopify", async (req, res, next) => {
                 // products/create → always create a new item.
                 // products/update → never auto-create: only existing ERP items
                 // are updated; new variants must be imported deliberately.
-                const autoBarcode = await generateUniqueBarcode(org.id);
+                //
+                // Barcode priority: Shopify variant barcode (EAN/UPC/GTIN) >
+                // auto-generated. Never auto-generate when Shopify already has
+                // a real barcode — that overwrites the merchant's catalog data.
+                const shopifyVarBarcode =
+                  variant.barcode && variant.barcode.trim()
+                    ? variant.barcode.trim()
+                    : null;
+                const [newBarcode, newBarcodeSource] = shopifyVarBarcode
+                  ? [shopifyVarBarcode, "shopify" as const]
+                  : [await generateUniqueBarcode(org.id), "auto" as const];
                 await db.insert(itemsTable).values({
                   organizationId: org.id,
                   sku,
                   unit: "pcs",
-                  barcode: autoBarcode,
-                  barcodeSource: "auto",
+                  barcode: newBarcode,
+                  barcodeSource: newBarcodeSource,
                   purchasePrice: "0",
                   taxRate: "0",
                   reorderLevel: "0",
