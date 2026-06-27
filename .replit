@@ -39,7 +39,7 @@ isValidation = true
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "pnpm --filter @workspace/api-server typecheck"
+args = "pnpm run typecheck"
 
 [[workflows.workflow]]
 name = "lint-org-scope"
