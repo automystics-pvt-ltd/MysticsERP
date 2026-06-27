@@ -1235,6 +1235,11 @@ export interface RefundLine {
   itemId: number;
   itemName: string;
   sku: string;
+  /**
+     * Warehouse where this line's items are restocked. Null if no restock for this line.
+     * @nullable
+     */
+  warehouseId: number | null;
   quantity: number;
   unitPrice: number;
   refundAmount: number;
@@ -1267,6 +1272,11 @@ export interface Refund {
   reason: string | null;
   /** @nullable */
   notes: string | null;
+  /**
+     * Clerk userId of the operator who issued the refund.
+     * @nullable
+     */
+  createdBy: string | null;
   createdAt: string;
   lines: RefundLine[];
 }
@@ -1277,6 +1287,11 @@ export interface CreateRefundLinePayload {
   quantity: number;
   /** Money amount refunded for this line (informational). */
   refundAmount?: number;
+  /**
+     * Per-line restock warehouse. Overrides the top-level warehouseId for this line. Null = no restock for this specific line.
+     * @nullable
+     */
+  warehouseId?: number | null;
 }
 
 export interface CreateRefundPayload {

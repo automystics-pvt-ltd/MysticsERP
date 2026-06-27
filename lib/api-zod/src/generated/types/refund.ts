@@ -23,6 +23,11 @@ export interface Refund {
   reason: string | null;
   /** @nullable */
   notes: string | null;
+  /**
+     * Clerk userId of the operator who issued the refund.
+     * @nullable
+     */
+  createdBy: string | null;
   createdAt: string;
   lines: RefundLine[];
 }

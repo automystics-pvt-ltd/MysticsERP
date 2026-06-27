@@ -2058,6 +2058,7 @@ export const ListSalesOrderRefundsResponseItem = zod.object({
   "warehouseId": zod.number().nullable(),
   "reason": zod.string().nullable(),
   "notes": zod.string().nullable(),
+  "createdBy": zod.string().nullable().describe('Clerk userId of the operator who issued the refund.'),
   "createdAt": zod.string(),
   "lines": zod.array(zod.object({
   "id": zod.number(),
@@ -2065,6 +2066,7 @@ export const ListSalesOrderRefundsResponseItem = zod.object({
   "itemId": zod.number(),
   "itemName": zod.string(),
   "sku": zod.string(),
+  "warehouseId": zod.number().nullable().describe('Warehouse where this line\'s items are restocked. Null if no restock for this line.'),
   "quantity": zod.number(),
   "unitPrice": zod.number(),
   "refundAmount": zod.number()
@@ -2092,7 +2094,8 @@ export const CreateSalesOrderRefundBody = zod.object({
   "lines": zod.array(zod.object({
   "salesOrderLineId": zod.number(),
   "quantity": zod.number().describe('Quantity of this item being returned\/refunded.'),
-  "refundAmount": zod.number().optional().describe('Money amount refunded for this line (informational).')
+  "refundAmount": zod.number().optional().describe('Money amount refunded for this line (informational).'),
+  "warehouseId": zod.number().nullish().describe('Per-line restock warehouse. Overrides the top-level warehouseId for this line. Null = no restock for this specific line.')
 })).optional().describe('Line-level breakdown for item-wise refunds. Each entry references a sales order line.')
 })
 

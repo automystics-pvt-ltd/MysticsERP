@@ -12,4 +12,9 @@ export interface CreateRefundLinePayload {
   quantity: number;
   /** Money amount refunded for this line (informational). */
   refundAmount?: number;
+  /**
+     * Per-line restock warehouse. Overrides the top-level warehouseId for this line. Null = no restock for this specific line.
+     * @nullable
+     */
+  warehouseId?: number | null;
 }

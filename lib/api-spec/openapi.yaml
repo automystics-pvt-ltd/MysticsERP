@@ -4263,6 +4263,7 @@ components:
         itemId: { type: integer }
         itemName: { type: string }
         sku: { type: string }
+        warehouseId: { type: ["integer", "null"], description: "Warehouse where this line's items are restocked. Null if no restock for this line." }
         quantity: { type: number }
         unitPrice: { type: number }
         refundAmount: { type: number }
@@ -4272,6 +4273,7 @@ components:
         - itemId
         - itemName
         - sku
+        - warehouseId
         - quantity
         - unitPrice
         - refundAmount
@@ -4292,6 +4294,7 @@ components:
         warehouseId: { type: ["integer", "null"] }
         reason: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
+        createdBy: { type: ["string", "null"], description: "Clerk userId of the operator who issued the refund." }
         createdAt: { type: string }
         lines:
           type: array
@@ -4307,6 +4310,7 @@ components:
         - warehouseId
         - reason
         - notes
+        - createdBy
         - createdAt
         - lines
 
@@ -4320,6 +4324,9 @@ components:
         refundAmount:
           type: number
           description: Money amount refunded for this line (informational).
+        warehouseId:
+          type: ["integer", "null"]
+          description: "Per-line restock warehouse. Overrides the top-level warehouseId for this line. Null = no restock for this specific line."
       required:
         - salesOrderLineId
         - quantity

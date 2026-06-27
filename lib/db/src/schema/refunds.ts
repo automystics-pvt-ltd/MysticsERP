@@ -28,6 +28,10 @@ export const refundsTable = pgTable(
     refundNumber: text("refund_number").notNull(),
     refundDate: date("refund_date").notNull(),
     /**
+     * Clerk userId of the operator who issued the refund.
+     */
+    createdBy: text("created_by"),
+    /**
      * Refund type:
      *   full       — entire order amount refunded
      *   partial    — a partial money amount (no per-line breakdown)
@@ -83,6 +87,13 @@ export const refundLinesTable = pgTable(
     itemId: integer("item_id")
       .notNull()
       .references(() => itemsTable.id, { onDelete: "restrict" }),
+    /**
+     * Warehouse where this line's items are restocked (if different from parent refund warehouse).
+     * Null means no restock for this line.
+     */
+    warehouseId: integer("warehouse_id").references(() => warehousesTable.id, {
+      onDelete: "set null",
+    }),
     /**
      * Quantity being returned/refunded for this line.
      */

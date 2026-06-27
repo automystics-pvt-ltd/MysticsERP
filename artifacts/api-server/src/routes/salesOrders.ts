@@ -1801,6 +1801,7 @@ function serializeRefund(
       itemId: number;
       itemName: string;
       sku: string;
+      warehouseId?: number | null;
       quantity: string;
       unitPrice: string;
       refundAmount: string;
@@ -1818,6 +1819,7 @@ function serializeRefund(
     warehouseId: r.warehouseId ?? null,
     reason: r.reason ?? null,
     notes: r.notes ?? null,
+    createdBy: r.createdBy ?? null,
     createdAt: r.createdAt.toISOString(),
     lines: r.lines.map((l) => ({
       id: l.id,
@@ -1825,6 +1827,7 @@ function serializeRefund(
       itemId: l.itemId,
       itemName: l.itemName,
       sku: l.sku,
+      warehouseId: l.warehouseId ?? null,
       quantity: toNum(l.quantity),
       unitPrice: toNum(l.unitPrice),
       refundAmount: toNum(l.refundAmount),
@@ -1874,6 +1877,7 @@ async function loadRefundsForOrder(orgId: number, orderId: number) {
         itemId: row.line.itemId,
         itemName: row.itemName,
         sku: row.sku,
+        warehouseId: row.line.warehouseId ?? null,
         quantity: row.line.quantity,
         unitPrice: row.line.unitPrice ?? "0",
         refundAmount: row.line.refundAmount,
@@ -1926,13 +1930,24 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
       return;
     }
     const restockItems = b.restockItems === true;
-    const warehouseId = b.warehouseId ? Number(b.warehouseId) : null;
-    if (restockItems && !warehouseId) {
+    // Global warehouse for full/partial restock; line-level warehouseId overrides this per line.
+    const globalWarehouseId = b.warehouseId ? Number(b.warehouseId) : null;
+    if (restockItems && !globalWarehouseId) {
       res.status(400).json({ error: "warehouseId is required when restockItems is true" });
       return;
     }
 
-    const rawLines: Array<{ salesOrderLineId: number; quantity: number; refundAmount?: number }> =
+    // Validate warehouse ownership upfront to avoid partial txn failures
+    if (restockItems && globalWarehouseId) {
+      const own = await assertOwnership({ organizationId: t.organizationId, warehouseIds: [globalWarehouseId] });
+      if (!own.ok) {
+        res.status(400).json({ error: "Invalid warehouseId" });
+        return;
+      }
+    }
+
+    // Explicit per-line payload (item_wise mode)
+    const rawLines: Array<{ salesOrderLineId: number; quantity: number; refundAmount?: number; warehouseId?: number }> =
       Array.isArray(b.lines) ? b.lines : [];
 
     const resolvedLines: Array<{
@@ -1941,6 +1956,7 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
       unitPrice: number;
       quantity: number;
       refundAmount: number;
+      lineWarehouseId: number | null; // per-line restock warehouse (null = no restock)
     }> = [];
 
     if (rawLines.length > 0) {
@@ -1990,27 +2006,23 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
           raw.refundAmount !== undefined && Number(raw.refundAmount) > 0
             ? Number(raw.refundAmount)
             : qty * unitPrice;
+        // Per-line warehouse overrides global; fall back to global; null = no restock for this line
+        const lineWarehouseId =
+          raw.warehouseId
+            ? Number(raw.warehouseId)
+            : restockItems
+            ? (globalWarehouseId ?? null)
+            : null;
         resolvedLines.push({
           salesOrderLineId: sol.id,
           itemId: sol.itemId,
           unitPrice,
           quantity: qty,
           refundAmount: lineRefundAmount,
+          lineWarehouseId,
         });
       }
     }
-
-    if (restockItems && warehouseId) {
-      const own = await assertOwnership({ organizationId: t.organizationId, warehouseIds: [warehouseId] });
-      if (!own.ok) {
-        res.status(400).json({ error: "Invalid warehouseId" });
-        return;
-      }
-    }
-
-    // Auto-derive refundType from the payload
-    const refundType =
-      resolvedLines.length > 0 ? "item_wise" : "partial";
 
     const refundedItemIds: number[] = [];
 
@@ -2068,19 +2080,55 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
           refundType: effectiveRefundType,
           refundAmount: toStr(refundAmount),
           restockItems,
-          warehouseId: warehouseId ?? null,
+          warehouseId: globalWarehouseId ?? null,
           reason: b.reason ? String(b.reason).trim() : null,
           notes: b.notes ? String(b.notes).trim() : null,
+          createdBy: t.userId != null ? String(t.userId) : null,
         })
         .returning();
 
-      if (resolvedLines.length > 0) {
+      // For full/partial refunds with restockItems=true, auto-fetch all shipped lines
+      // and use them as the restock source (same behavior as an item-wise refund that
+      // includes every shipped line at its full shipped quantity).
+      let restockLines = resolvedLines;
+      if (restockItems && globalWarehouseId && resolvedLines.length === 0) {
+        const shippedRows = await tx
+          .select({
+            id: salesOrderLinesTable.id,
+            itemId: salesOrderLinesTable.itemId,
+            unitPrice: salesOrderLinesTable.unitPrice,
+            quantityShipped: salesOrderLinesTable.quantityShipped,
+          })
+          .from(salesOrderLinesTable)
+          .where(
+            and(
+              eq(salesOrderLinesTable.salesOrderId, id),
+              sql`${salesOrderLinesTable.quantityShipped} > 0`,
+            ),
+          );
+        restockLines = shippedRows
+          .filter((r) => toNum(r.quantityShipped ?? "0") > 0)
+          .map((r) => ({
+            salesOrderLineId: r.id,
+            itemId: r.itemId,
+            unitPrice: toNum(r.unitPrice),
+            quantity: toNum(r.quantityShipped!),
+            refundAmount: toNum(r.unitPrice) * toNum(r.quantityShipped!),
+            lineWarehouseId: globalWarehouseId,
+          }));
+      }
+
+      // Write refund_lines for item_wise (explicit lines) or when restocking so we
+      // have a durable record of what was restocked.
+      const linesToRecord = resolvedLines.length > 0 ? resolvedLines : (restockItems ? restockLines : []);
+      if (linesToRecord.length > 0) {
         await tx.insert(refundLinesTable).values(
-          resolvedLines.map((l) => ({
+          linesToRecord.map((l) => ({
             organizationId: t.organizationId,
             refundId: inserted!.id,
             salesOrderLineId: l.salesOrderLineId,
             itemId: l.itemId,
+            warehouseId: l.lineWarehouseId ?? null,
             quantity: toStr(l.quantity),
             unitPrice: toStr(l.unitPrice),
             refundAmount: toStr(l.refundAmount),
@@ -2096,13 +2144,10 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
       const newBalanceDue = Math.max(0, orderTotal - newAmountPaid);
       let newPaymentStatus: string | null = order.paymentStatus ?? null;
       if (newAmountPaid <= 0) {
-        // All collected money has been refunded
         newPaymentStatus = "refunded";
       } else if (newBalanceDue <= 0.001) {
-        // Still has some amountPaid and fully covers the order
         newPaymentStatus = "paid";
       } else {
-        // Partial payment remaining
         newPaymentStatus = "partially_paid";
       }
 
@@ -2120,51 +2165,51 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
           ),
         );
 
-      if (restockItems && warehouseId && resolvedLines.length > 0) {
-        for (const l of resolvedLines) {
-          refundedItemIds.push(l.itemId);
-          const stockRows = await tx
-            .select()
-            .from(itemWarehouseStockTable)
+      // Process restock movements for lines that have a lineWarehouseId
+      for (const l of restockLines) {
+        if (!l.lineWarehouseId) continue;
+        refundedItemIds.push(l.itemId);
+        const stockRows = await tx
+          .select()
+          .from(itemWarehouseStockTable)
+          .where(
+            and(
+              eq(itemWarehouseStockTable.organizationId, t.organizationId),
+              eq(itemWarehouseStockTable.itemId, l.itemId),
+              eq(itemWarehouseStockTable.warehouseId, l.lineWarehouseId),
+            ),
+          )
+          .limit(1);
+        if (stockRows[0]) {
+          await tx
+            .update(itemWarehouseStockTable)
+            .set({
+              quantity: sql`${itemWarehouseStockTable.quantity} + ${toStr(l.quantity)}::numeric`,
+            })
             .where(
               and(
                 eq(itemWarehouseStockTable.organizationId, t.organizationId),
-                eq(itemWarehouseStockTable.itemId, l.itemId),
-                eq(itemWarehouseStockTable.warehouseId, warehouseId),
+                eq(itemWarehouseStockTable.id, stockRows[0].id),
               ),
-            )
-            .limit(1);
-          if (stockRows[0]) {
-            await tx
-              .update(itemWarehouseStockTable)
-              .set({
-                quantity: sql`${itemWarehouseStockTable.quantity} + ${toStr(l.quantity)}::numeric`,
-              })
-              .where(
-                and(
-                  eq(itemWarehouseStockTable.organizationId, t.organizationId),
-                  eq(itemWarehouseStockTable.id, stockRows[0].id),
-                ),
-              );
-          } else {
-            await tx.insert(itemWarehouseStockTable).values({
-              organizationId: t.organizationId,
-              itemId: l.itemId,
-              warehouseId,
-              quantity: toStr(l.quantity),
-            });
-          }
-          await tx.insert(stockMovementsTable).values({
+            );
+        } else {
+          await tx.insert(itemWarehouseStockTable).values({
             organizationId: t.organizationId,
             itemId: l.itemId,
-            warehouseId,
-            movementType: "refund_return",
+            warehouseId: l.lineWarehouseId,
             quantity: toStr(l.quantity),
-            referenceType: "refund",
-            referenceId: inserted!.id,
-            notes: `Refund ${inserted!.refundNumber} for order ${order.orderNumber}`,
           });
         }
+        await tx.insert(stockMovementsTable).values({
+          organizationId: t.organizationId,
+          itemId: l.itemId,
+          warehouseId: l.lineWarehouseId,
+          movementType: "refund_return",
+          quantity: toStr(l.quantity),
+          referenceType: "refund",
+          referenceId: inserted!.id,
+          notes: `Refund ${inserted!.refundNumber} for order ${order.orderNumber}`,
+        });
       }
 
       return inserted!;

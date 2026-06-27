@@ -1491,45 +1491,45 @@ export default function SalesOrderDetail() {
               />
             </div>
 
-            {/* Restock toggle (only meaningful in item_wise mode) */}
-            {refundMode === "item_wise" && (
-              <>
-                <div className="flex items-center gap-3 p-3 border rounded-md bg-muted/20">
-                  <input
-                    type="checkbox"
-                    id="refund-restock"
-                    checked={refundForm.restockItems}
-                    onChange={(e) => setRefundForm((f) => ({ ...f, restockItems: e.target.checked }))}
-                    className="h-4 w-4 rounded border-input"
-                    data-testid="checkbox-refund-restock"
-                  />
-                  <div>
-                    <label htmlFor="refund-restock" className="text-sm font-medium cursor-pointer">
-                      Restock returned items
-                    </label>
-                    <p className="text-xs text-muted-foreground">
-                      Add returned quantities back into warehouse stock.
-                    </p>
-                  </div>
-                </div>
-                {refundForm.restockItems && (
-                  <div className="space-y-1.5">
-                    <Label htmlFor="refund-warehouse">Restock to warehouse</Label>
-                    <select
-                      id="refund-warehouse"
-                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
-                      value={refundForm.warehouseId}
-                      onChange={(e) => setRefundForm((f) => ({ ...f, warehouseId: e.target.value }))}
-                      data-testid="select-refund-warehouse"
-                    >
-                      <option value="">Select warehouse...</option>
-                      {(warehousesQuery.data ?? []).map((w) => (
-                        <option key={w.id} value={String(w.id)}>{w.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </>
+            {/* Restock toggle — available for all refund modes */}
+            <div className="flex items-center gap-3 p-3 border rounded-md bg-muted/20">
+              <input
+                type="checkbox"
+                id="refund-restock"
+                checked={refundForm.restockItems}
+                onChange={(e) => setRefundForm((f) => ({ ...f, restockItems: e.target.checked }))}
+                className="h-4 w-4 rounded border-input"
+                data-testid="checkbox-refund-restock"
+              />
+              <div>
+                <label htmlFor="refund-restock" className="text-sm font-medium cursor-pointer">
+                  Restock returned items
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  {refundMode === "full"
+                    ? "Credit all shipped quantities back into warehouse stock."
+                    : refundMode === "partial"
+                    ? "Credit all shipped quantities back into warehouse stock."
+                    : "Add returned quantities back into warehouse stock."}
+                </p>
+              </div>
+            </div>
+            {refundForm.restockItems && (
+              <div className="space-y-1.5">
+                <Label htmlFor="refund-warehouse">Restock to warehouse</Label>
+                <select
+                  id="refund-warehouse"
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  value={refundForm.warehouseId}
+                  onChange={(e) => setRefundForm((f) => ({ ...f, warehouseId: e.target.value }))}
+                  data-testid="select-refund-warehouse"
+                >
+                  <option value="">Select warehouse...</option>
+                  {(warehousesQuery.data ?? []).map((w) => (
+                    <option key={w.id} value={String(w.id)}>{w.name}</option>
+                  ))}
+                </select>
+              </div>
             )}
           </div>
           <DialogFooter>
@@ -1557,9 +1557,9 @@ export default function SalesOrderDetail() {
                     refundAmount: amount,
                     reason: refundForm.reason.trim() || null,
                     notes: refundForm.notes.trim() || null,
-                    restockItems: refundMode === "item_wise" && refundForm.restockItems,
+                    restockItems: refundForm.restockItems,
                     warehouseId:
-                      refundMode === "item_wise" && refundForm.restockItems && refundForm.warehouseId
+                      refundForm.restockItems && refundForm.warehouseId
                         ? Number(refundForm.warehouseId)
                         : null,
                     lines: activeLines,
@@ -2064,7 +2064,7 @@ export default function SalesOrderDetail() {
       </Card>
 
       {/* ── Refunds ─────────────────────────────────────────────────────── */}
-      {(["confirmed","partially_shipped","shipped","delivered","invoiced","paid","returned"] as string[]).includes(order.status) && Number(order.amountPaid) > 0 && (
+      {((["confirmed","partially_shipped","shipped","delivered","invoiced","paid","returned"] as string[]).includes(order.status) || Number(order.amountPaid) > 0) && (
         <Card data-testid="card-refunds">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
             <CardTitle>Refunds</CardTitle>
@@ -2083,9 +2083,9 @@ export default function SalesOrderDetail() {
                       sku: l.sku,
                       maxQty: Number(l.quantityShipped),
                       unitPrice: Number(l.unitPrice),
-                      quantity: String(Number(l.quantityShipped)),
-                      refundAmount: String((Number(l.quantityShipped) * Number(l.unitPrice)).toFixed(2)),
-                      include: true,
+                      quantity: "0",
+                      refundAmount: "0.00",
+                      include: false,
                     }));
                   setRefundMode("full");
                   setRefundForm({

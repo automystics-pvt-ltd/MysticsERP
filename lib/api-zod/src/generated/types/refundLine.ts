@@ -12,6 +12,11 @@ export interface RefundLine {
   itemId: number;
   itemName: string;
   sku: string;
+  /**
+     * Warehouse where this line's items are restocked. Null if no restock for this line.
+     * @nullable
+     */
+  warehouseId: number | null;
   quantity: number;
   unitPrice: number;
   refundAmount: number;
