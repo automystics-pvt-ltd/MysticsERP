@@ -995,19 +995,41 @@ export default function SalesOrderDetail() {
               </div>
             )}
             {Number(order.taxTotal) > 0 && (
-              order.taxesIncluded && order.shopifyTaxLines && order.shopifyTaxLines.length > 0 ? (
-                order.shopifyTaxLines.map((tl, i) => (
-                  <div key={i} className="flex items-baseline gap-2">
-                    <span className="text-muted-foreground shrink-0">
-                      {i === 0 ? "Taxes" : ""}
-                    </span>
-                    <span className="text-xs text-muted-foreground/70 flex-1">
-                      {formatCurrency(Number(tl.price))} INR • {tl.title} {Math.round(tl.rate * 100)}%
-                    </span>
-                    <span className="text-sm text-muted-foreground italic shrink-0">Included</span>
-                  </div>
-                ))
+              order.taxesIncluded ? (
+                // Tax-inclusive path — show tax as informational, never add to total
+                order.shopifyTaxLines && order.shopifyTaxLines.length > 0 ? (
+                  // Shopify order-level tax breakdown available
+                  order.shopifyTaxLines.map((tl, i) => (
+                    <div key={i} className="flex items-baseline gap-2">
+                      <span className="text-muted-foreground shrink-0">
+                        {i === 0 ? "Taxes" : ""}
+                      </span>
+                      <span className="text-xs text-muted-foreground/70 flex-1">
+                        {formatCurrency(Number(tl.price))} INR • {tl.title} {Math.round(tl.rate * 100)}%
+                      </span>
+                      <span className="text-sm text-muted-foreground italic shrink-0">Included</span>
+                    </div>
+                  ))
+                ) : (
+                  // No order-level tax lines — aggregate from line items for display
+                  (() => {
+                    const firstTaxedLine = lines.find(l => Number(l.taxRate) > 0);
+                    const rateLabel = firstTaxedLine
+                      ? ` • GST ${Number(firstTaxedLine.taxRate)}%`
+                      : "";
+                    return (
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-muted-foreground shrink-0">Taxes</span>
+                        <span className="text-xs text-muted-foreground/70 flex-1">
+                          {formatCurrency(order.taxTotal)} INR{rateLabel}
+                        </span>
+                        <span className="text-sm text-muted-foreground italic shrink-0">Included</span>
+                      </div>
+                    );
+                  })()
+                )
               ) : (
+                // Standard additive tax — tax is added on top of prices
                 <>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Tax</span>
@@ -1865,7 +1887,9 @@ export default function SalesOrderDetail() {
                 <TableHead className="text-right">Shipped</TableHead>
                 <TableHead className="text-right">Unit Price</TableHead>
                 <TableHead className="text-right">Discount</TableHead>
-                <TableHead className="text-right">Tax</TableHead>
+                <TableHead className="text-right">
+                  Tax{order.taxesIncluded ? <span className="text-xs font-normal text-muted-foreground ml-1">(incl.)</span> : ""}
+                </TableHead>
                 <TableHead className="text-right">Line Total</TableHead>
               </TableRow>
             </TableHeader>
