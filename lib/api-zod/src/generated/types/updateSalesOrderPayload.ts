@@ -15,6 +15,11 @@ export interface UpdateSalesOrderPayload {
   expectedShipDate?: string | null;
   /** @nullable */
   notes?: string | null;
+  /**
+     * Free-text payment terms (e.g. 'Net 30', 'Cash on Delivery', 'Advance').
+     * @nullable
+     */
+  paymentTerms?: string | null;
   /** Optional order-level flat discount applied after line totals are summed. Preserved across edits. */
   orderDiscountAmount?: number;
   lines?: OrderLineInput[];

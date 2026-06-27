@@ -1133,6 +1133,11 @@ export interface SalesOrder {
   /** Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines. */
   shopifyTaxLines: SalesOrderShopifyTaxLines;
   /**
+     * Free-text payment terms (e.g. 'Net 30', 'Cash on Delivery', 'Advance'). Null when not set.
+     * @nullable
+     */
+  paymentTerms?: string | null;
+  /**
      * Shopify shipping line title (e.g. 'Standard Shipping'). Null for non-Shopify orders.
      * @nullable
      */
@@ -1212,6 +1217,27 @@ export interface SalesOrderDetail {
   lines: OrderLine[];
   shipments: Shipment[];
   paymentBreakdown: PaymentBreakdownEntry[];
+}
+
+/**
+ * Update tracking info on a shipment. All fields are optional; only supplied fields are changed.
+ */
+export interface UpdateShipmentPayload {
+  /**
+     * Air waybill / tracking number.
+     * @nullable
+     */
+  awb?: string | null;
+  /**
+     * Courier or carrier name.
+     * @nullable
+     */
+  courierName?: string | null;
+  /**
+     * Tracking URL for the customer to check delivery status.
+     * @nullable
+     */
+  trackingUrl?: string | null;
 }
 
 /**
@@ -2178,6 +2204,11 @@ export interface UpdateSalesOrderPayload {
   expectedShipDate?: string | null;
   /** @nullable */
   notes?: string | null;
+  /**
+     * Free-text payment terms (e.g. 'Net 30', 'Cash on Delivery', 'Advance').
+     * @nullable
+     */
+  paymentTerms?: string | null;
   /** Optional order-level flat discount applied after line totals are summed. Preserved across edits. */
   orderDiscountAmount?: number;
   lines?: OrderLineInput[];

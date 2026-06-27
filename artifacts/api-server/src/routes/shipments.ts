@@ -644,6 +644,83 @@ const CANCEL_REASON_CODES = new Set([
   "other",
 ]);
 
+router.patch("/shipments/:id", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const shipmentId = Number(req.params.id);
+    const b = (req.body ?? {}) as {
+      awb?: unknown;
+      courierName?: unknown;
+      trackingUrl?: unknown;
+    };
+
+    const trim = (v: unknown): string | null => {
+      if (v === undefined) return undefined as unknown as null;
+      if (v === null || (typeof v === "string" && v.trim() === "")) return null;
+      if (typeof v !== "string") return null;
+      return v.trim();
+    };
+
+    const awb = trim(b.awb);
+    const courierName = trim(b.courierName);
+    const trackingUrl = trim(b.trackingUrl);
+
+    const rows = await db
+      .select()
+      .from(shipmentsTable)
+      .where(
+        and(
+          eq(shipmentsTable.id, shipmentId),
+          eq(shipmentsTable.organizationId, t.organizationId),
+        ),
+      )
+      .limit(1);
+    const shipment = rows[0];
+    if (!shipment) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    if (shipment.status === "cancelled") {
+      res.status(400).json({ error: "Cannot edit a cancelled shipment." });
+      return;
+    }
+
+    const patch: Partial<typeof shipmentsTable.$inferInsert> = {};
+    if (awb !== undefined) patch.awb = awb;
+    if (courierName !== undefined) patch.courierName = courierName;
+    if (trackingUrl !== undefined) patch.trackingUrl = trackingUrl;
+
+    if (Object.keys(patch).length === 0) {
+      res.status(400).json({ error: "No fields to update." });
+      return;
+    }
+
+    await db
+      .update(shipmentsTable)
+      .set(patch)
+      .where(
+        and(
+          eq(shipmentsTable.id, shipmentId),
+          eq(shipmentsTable.organizationId, t.organizationId),
+        ),
+      );
+
+    const updated = { ...shipment, ...patch };
+    const salesOrderId = updated.salesOrderId;
+
+    // Push updated tracking to Shopify (fire-and-forget)
+    if (updated.shopifyFulfillmentId) {
+      pushFulfillmentToShopify(t.organizationId, salesOrderId, shipmentId);
+    }
+
+    const shipments = await loadShipmentsForOrder(t.organizationId, salesOrderId);
+    const result = shipments.find((s) => s.id === shipmentId);
+    res.json(result ?? null);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post("/shipments/:shipmentId/cancel", async (req, res, next) => {
   try {
     const t = req.tenant!;

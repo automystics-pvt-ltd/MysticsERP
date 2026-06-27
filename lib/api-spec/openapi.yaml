@@ -1119,6 +1119,35 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Shipment" }
 
+  /shipments/{id}:
+    patch:
+      operationId: updateShipment
+      tags: [shipments]
+      summary: Update tracking info on a shipment (AWB, courier, tracking URL)
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateShipmentPayload" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Shipment" }
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
   /shipments/{shipmentId}/cancel:
     post:
       operationId: cancelShipment
@@ -4049,6 +4078,9 @@ components:
                   channel_liable: { type: boolean }
                 required: [title, rate, price]
             - { type: "null" }
+        paymentTerms:
+          type: ["string", "null"]
+          description: "Free-text payment terms (e.g. 'Net 30', 'Cash on Delivery', 'Advance'). Null when not set."
         deliveryMethod:
           type: ["string", "null"]
           description: "Shopify shipping line title (e.g. 'Standard Shipping'). Null for non-Shopify orders."
@@ -4155,6 +4187,20 @@ components:
         - cancelledAt
         - createdAt
         - lines
+
+    UpdateShipmentPayload:
+      type: object
+      description: Update tracking info on a shipment. All fields are optional; only supplied fields are changed.
+      properties:
+        awb:
+          type: ["string", "null"]
+          description: "Air waybill / tracking number."
+        courierName:
+          type: ["string", "null"]
+          description: "Courier or carrier name."
+        trackingUrl:
+          type: ["string", "null"]
+          description: "Tracking URL for the customer to check delivery status."
 
     CancelShipmentBody:
       type: object
@@ -5304,6 +5350,9 @@ components:
         orderDate: { type: string }
         expectedShipDate: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }
+        paymentTerms:
+          type: ["string", "null"]
+          description: "Free-text payment terms (e.g. 'Net 30', 'Cash on Delivery', 'Advance')."
         orderDiscountAmount:
           type: number
           description: "Optional order-level flat discount applied after line totals are summed. Preserved across edits."

@@ -587,6 +587,7 @@ router.patch("/sales-orders/:id", async (req, res, next) => {
             ? String(b.expectedShipDate)
             : null,
       notes: b.notes === undefined ? existing.notes : b.notes,
+      paymentTerms: b.paymentTerms === undefined ? existing.paymentTerms : (b.paymentTerms || null),
     };
 
     if (Array.isArray(b.lines)) {

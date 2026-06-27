@@ -66,6 +66,11 @@ export interface SalesOrder {
   /** Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines. */
   shopifyTaxLines: SalesOrderShopifyTaxLines;
   /**
+     * Free-text payment terms (e.g. 'Net 30', 'Cash on Delivery', 'Advance'). Null when not set.
+     * @nullable
+     */
+  paymentTerms?: string | null;
+  /**
      * Shopify shipping line title (e.g. 'Standard Shipping'). Null for non-Shopify orders.
      * @nullable
      */

@@ -1223,6 +1223,7 @@ export const ListSalesOrdersResponseItem = zod.object({
   "price": zod.string(),
   "channel_liable": zod.boolean().optional()
 })),zod.null()]).describe('Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines.'),
+  "paymentTerms": zod.string().nullish().describe('Free-text payment terms (e.g. \'Net 30\', \'Cash on Delivery\', \'Advance\'). Null when not set.'),
   "deliveryMethod": zod.string().nullable().describe('Shopify shipping line title (e.g. \'Standard Shipping\'). Null for non-Shopify orders.'),
   "ewb": zod.union([zod.object({
   "number": zod.string(),
@@ -1326,6 +1327,7 @@ export const GetSalesOrderResponse = zod.object({
   "price": zod.string(),
   "channel_liable": zod.boolean().optional()
 })),zod.null()]).describe('Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines.'),
+  "paymentTerms": zod.string().nullish().describe('Free-text payment terms (e.g. \'Net 30\', \'Cash on Delivery\', \'Advance\'). Null when not set.'),
   "deliveryMethod": zod.string().nullable().describe('Shopify shipping line title (e.g. \'Standard Shipping\'). Null for non-Shopify orders.'),
   "ewb": zod.union([zod.object({
   "number": zod.string(),
@@ -1434,6 +1436,7 @@ export const UpdateSalesOrderBody = zod.object({
   "orderDate": zod.string().optional(),
   "expectedShipDate": zod.string().nullish(),
   "notes": zod.string().nullish(),
+  "paymentTerms": zod.string().nullish().describe('Free-text payment terms (e.g. \'Net 30\', \'Cash on Delivery\', \'Advance\').'),
   "orderDiscountAmount": zod.number().optional().describe('Optional order-level flat discount applied after line totals are summed. Preserved across edits.'),
   "lines": zod.array(zod.object({
   "itemId": zod.number(),
@@ -1481,6 +1484,7 @@ export const UpdateSalesOrderResponse = zod.object({
   "price": zod.string(),
   "channel_liable": zod.boolean().optional()
 })),zod.null()]).describe('Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines.'),
+  "paymentTerms": zod.string().nullish().describe('Free-text payment terms (e.g. \'Net 30\', \'Cash on Delivery\', \'Advance\'). Null when not set.'),
   "deliveryMethod": zod.string().nullable().describe('Shopify shipping line title (e.g. \'Standard Shipping\'). Null for non-Shopify orders.'),
   "ewb": zod.union([zod.object({
   "number": zod.string(),
@@ -1622,6 +1626,7 @@ export const UpdateSalesOrderStatusResponse = zod.object({
   "price": zod.string(),
   "channel_liable": zod.boolean().optional()
 })),zod.null()]).describe('Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines.'),
+  "paymentTerms": zod.string().nullish().describe('Free-text payment terms (e.g. \'Net 30\', \'Cash on Delivery\', \'Advance\'). Null when not set.'),
   "deliveryMethod": zod.string().nullable().describe('Shopify shipping line title (e.g. \'Standard Shipping\'). Null for non-Shopify orders.'),
   "ewb": zod.union([zod.object({
   "number": zod.string(),
@@ -1756,6 +1761,7 @@ export const ReturnSalesOrderResponse = zod.object({
   "price": zod.string(),
   "channel_liable": zod.boolean().optional()
 })),zod.null()]).describe('Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines.'),
+  "paymentTerms": zod.string().nullish().describe('Free-text payment terms (e.g. \'Net 30\', \'Cash on Delivery\', \'Advance\'). Null when not set.'),
   "deliveryMethod": zod.string().nullable().describe('Shopify shipping line title (e.g. \'Standard Shipping\'). Null for non-Shopify orders.'),
   "ewb": zod.union([zod.object({
   "number": zod.string(),
@@ -2013,6 +2019,50 @@ export const CreateSalesOrderShipmentBody = zod.object({
 })
 
 export const CreateSalesOrderShipmentResponse = zod.void()
+
+
+/**
+ * @summary Update tracking info on a shipment (AWB, courier, tracking URL)
+ */
+export const UpdateShipmentParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateShipmentBody = zod.object({
+  "awb": zod.string().nullish().describe('Air waybill \/ tracking number.'),
+  "courierName": zod.string().nullish().describe('Courier or carrier name.'),
+  "trackingUrl": zod.string().nullish().describe('Tracking URL for the customer to check delivery status.')
+}).describe('Update tracking info on a shipment. All fields are optional; only supplied fields are changed.')
+
+export const UpdateShipmentResponse = zod.object({
+  "id": zod.number(),
+  "salesOrderId": zod.number(),
+  "fulfillmentId": zod.number().nullish(),
+  "shipmentNumber": zod.string(),
+  "shipDate": zod.string(),
+  "status": zod.string(),
+  "notes": zod.string().nullable(),
+  "shiprocketOrderId": zod.string().nullable(),
+  "shiprocketShipmentId": zod.string().nullable(),
+  "awb": zod.string().nullable(),
+  "courierName": zod.string().nullable(),
+  "labelUrl": zod.string().nullable(),
+  "trackingUrl": zod.string().nullable(),
+  "trackingStatus": zod.string().nullable(),
+  "lastTrackedAt": zod.string().nullable(),
+  "cancelReasonCode": zod.string().nullable().describe('When `status=\"cancelled\"`, the reason code captured at cancel time (e.g. `customer_changed_mind`, `damaged`, `wrong_item`, `defective`, `pricing_error`, `duplicate`, `other`). NULL on active shipments.'),
+  "cancelReasonNotes": zod.string().nullable().describe('Optional free-text notes captured alongside the cancel reason. NULL on active shipments.'),
+  "cancelledAt": zod.string().nullable(),
+  "createdAt": zod.string(),
+  "lines": zod.array(zod.object({
+  "id": zod.number(),
+  "shipmentId": zod.number(),
+  "salesOrderLineId": zod.number(),
+  "itemName": zod.string(),
+  "sku": zod.string(),
+  "quantity": zod.number()
+}))
+})
 
 
 export const CancelShipmentParams = zod.object({

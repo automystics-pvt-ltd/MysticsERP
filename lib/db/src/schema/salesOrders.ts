@@ -98,6 +98,11 @@ export const salesOrdersTable = pgTable(
     posSessionId: integer("pos_session_id").references(() => posSessionsTable.id, {
       onDelete: "set null",
     }),
+    /**
+     * Free-text payment terms set by the operator (e.g. "Net 30", "Cash on Delivery",
+     * "Advance", "Due on receipt"). Informational only — does not affect payment tracking.
+     */
+    paymentTerms: text("payment_terms"),
     /** Shipping method name synced from Shopify (e.g. "Standard Shipping"). */
     deliveryMethod: text("delivery_method"),
     /**

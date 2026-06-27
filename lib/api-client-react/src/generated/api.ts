@@ -204,6 +204,7 @@ import type {
   UpdateOrganizationBody,
   UpdatePurchaseOrderPayload,
   UpdateSalesOrderPayload,
+  UpdateShipmentPayload,
   UpdateStockTransferPayload,
   UpdateSupplierPayload,
   UpdateTeamMemberPermissionsPayload,
@@ -4723,6 +4724,77 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getCreateSalesOrderShipmentMutationOptions(options));
+    }
+
+export const getUpdateShipmentUrl = (id: number,) => {
+
+
+
+
+  return `/api/shipments/${id}`
+}
+
+/**
+ * @summary Update tracking info on a shipment (AWB, courier, tracking URL)
+ */
+export const updateShipment = async (id: number,
+    updateShipmentPayload: UpdateShipmentPayload, options?: RequestInit): Promise<Shipment> => {
+
+  return customFetch<Shipment>(getUpdateShipmentUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateShipmentPayload)
+  }
+);}
+
+
+
+
+export const getUpdateShipmentMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateShipment>>, TError,{id: number;data: BodyType<UpdateShipmentPayload>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateShipment>>, TError,{id: number;data: BodyType<UpdateShipmentPayload>}, TContext> => {
+
+const mutationKey = ['updateShipment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateShipment>>, {id: number;data: BodyType<UpdateShipmentPayload>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateShipment(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateShipmentMutationResult = NonNullable<Awaited<ReturnType<typeof updateShipment>>>
+    export type UpdateShipmentMutationBody = BodyType<UpdateShipmentPayload>
+    export type UpdateShipmentMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Update tracking info on a shipment (AWB, courier, tracking URL)
+ */
+export const useUpdateShipment = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateShipment>>, TError,{id: number;data: BodyType<UpdateShipmentPayload>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateShipment>>,
+        TError,
+        {id: number;data: BodyType<UpdateShipmentPayload>},
+        TContext
+      > => {
+      return useMutation(getUpdateShipmentMutationOptions(options));
     }
 
 export const getCancelShipmentUrl = (shipmentId: number,) => {

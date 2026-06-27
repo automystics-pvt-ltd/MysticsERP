@@ -303,6 +303,7 @@ export * from './updateOrganizationBody';
 export * from './updateOrganizationBodyTaxMode';
 export * from './updatePurchaseOrderPayload';
 export * from './updateSalesOrderPayload';
+export * from './updateShipmentPayload';
 export * from './updateStockTransferPayload';
 export * from './updateSupplierPayload';
 export * from './updateTeamMemberPermissionsPayload';

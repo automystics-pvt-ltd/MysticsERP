@@ -26,6 +26,8 @@ import {
   useListCustomerPayments,
   useDeleteCustomerPayment,
   useResendShippingConfirmation,
+  useUpdateShipment,
+  useUpdateSalesOrder,
 } from "@workspace/api-client-react";
 import { normalizeRole } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
@@ -85,6 +87,15 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { useMemo } from "react";
 import { useRecordVisit } from "@/lib/recentRecords";
 
@@ -278,6 +289,52 @@ export default function SalesOrderDetail() {
   const [downloadingOrder, setDownloadingOrder] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [thermalPrinting, setThermalPrinting] = useState(false);
+
+  // Edit tracking dialog state
+  const [editTrackingId, setEditTrackingId] = useState<number | null>(null);
+  const [trackingForm, setTrackingForm] = useState({ awb: "", courierName: "", trackingUrl: "" });
+
+  // Edit payment terms dialog state
+  const [editPaymentTermsOpen, setEditPaymentTermsOpen] = useState(false);
+  const [paymentTermsForm, setPaymentTermsForm] = useState("");
+
+  const updateShipmentMutation = useUpdateShipment({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetSalesOrderQueryKey(orderId) });
+        queryClient.invalidateQueries({ queryKey: getListSalesOrderShipmentsQueryKey(orderId) });
+        setEditTrackingId(null);
+        toast({ title: "Tracking info updated" });
+      },
+      onError: (err: unknown) => {
+        const e = err as { response?: { data?: { error?: string } } };
+        toast({
+          title: "Could not update tracking",
+          description: e.response?.data?.error ?? "Please try again.",
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const updateSalesOrderMutation = useUpdateSalesOrder({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetSalesOrderQueryKey(orderId) });
+        queryClient.invalidateQueries({ queryKey: getListSalesOrdersQueryKey() });
+        setEditPaymentTermsOpen(false);
+        toast({ title: "Payment terms updated" });
+      },
+      onError: (err: unknown) => {
+        const e = err as { response?: { data?: { error?: string } } };
+        toast({
+          title: "Could not update payment terms",
+          description: e.response?.data?.error ?? "Please try again.",
+          variant: "destructive",
+        });
+      },
+    },
+  });
   // Per-shipment cancel-reason form state. Keyed by shipment id so two
   // cancel dialogs on the same page can't trample each other.
   const [cancelReason, setCancelReason] = useState<
@@ -804,7 +861,7 @@ export default function SalesOrderDetail() {
 
       <div className="grid md:grid-cols-2 gap-6">
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
             <CardTitle>Order Details</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -825,6 +882,28 @@ export default function SalesOrderDetail() {
                 <p className="text-sm font-medium text-muted-foreground">Customer</p>
                 <Link href="/customers" className="text-primary hover:underline">{order.walkinName || order.customerName}</Link>
               </div>
+            </div>
+            <div className="pt-4 border-t flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-muted-foreground mb-1">Payment Terms</p>
+                <p className="text-sm" data-testid="text-payment-terms">
+                  {(order as typeof order & { paymentTerms?: string | null }).paymentTerms || <span className="text-muted-foreground italic">Not set</span>}
+                </p>
+              </div>
+              <Can module="sales_orders" action="approve">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="shrink-0 h-7 px-2 text-muted-foreground"
+                  data-testid="btn-edit-payment-terms"
+                  onClick={() => {
+                    setPaymentTermsForm((order as typeof order & { paymentTerms?: string | null }).paymentTerms ?? "");
+                    setEditPaymentTermsOpen(true);
+                  }}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+              </Can>
             </div>
             {order.notes && (
               <div className="pt-4 border-t">
@@ -1151,6 +1230,107 @@ export default function SalesOrderDetail() {
         );
       })()}
 
+      {/* Edit Tracking Dialog */}
+      <Dialog
+        open={editTrackingId !== null}
+        onOpenChange={(open) => { if (!open) setEditTrackingId(null); }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Tracking Info</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-tracking-awb">AWB / Tracking Number</Label>
+              <Input
+                id="edit-tracking-awb"
+                value={trackingForm.awb}
+                onChange={(e) => setTrackingForm((f) => ({ ...f, awb: e.target.value }))}
+                placeholder="e.g. 1234567890"
+                data-testid="input-tracking-awb"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-tracking-courier">Courier / Carrier</Label>
+              <Input
+                id="edit-tracking-courier"
+                value={trackingForm.courierName}
+                onChange={(e) => setTrackingForm((f) => ({ ...f, courierName: e.target.value }))}
+                placeholder="e.g. Delhivery, BlueDart, DTDC"
+                data-testid="input-tracking-courier"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-tracking-url">Tracking URL</Label>
+              <Input
+                id="edit-tracking-url"
+                value={trackingForm.trackingUrl}
+                onChange={(e) => setTrackingForm((f) => ({ ...f, trackingUrl: e.target.value }))}
+                placeholder="https://..."
+                data-testid="input-tracking-url"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditTrackingId(null)}>Cancel</Button>
+            <Button
+              disabled={updateShipmentMutation.isPending}
+              data-testid="btn-save-tracking"
+              onClick={() => {
+                if (editTrackingId === null) return;
+                updateShipmentMutation.mutate({
+                  id: editTrackingId,
+                  data: {
+                    awb: trackingForm.awb || null,
+                    courierName: trackingForm.courierName || null,
+                    trackingUrl: trackingForm.trackingUrl || null,
+                  },
+                });
+              }}
+            >
+              {updateShipmentMutation.isPending ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Payment Terms Dialog */}
+      <Dialog open={editPaymentTermsOpen} onOpenChange={setEditPaymentTermsOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Payment Terms</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-payment-terms">Payment Terms</Label>
+              <Input
+                id="edit-payment-terms"
+                value={paymentTermsForm}
+                onChange={(e) => setPaymentTermsForm(e.target.value)}
+                placeholder="e.g. Net 30, Cash on Delivery, Advance"
+                data-testid="input-payment-terms"
+              />
+              <p className="text-xs text-muted-foreground">Informational only — does not affect payment tracking.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditPaymentTermsOpen(false)}>Cancel</Button>
+            <Button
+              disabled={updateSalesOrderMutation.isPending}
+              data-testid="btn-save-payment-terms"
+              onClick={() => {
+                updateSalesOrderMutation.mutate({
+                  id: orderId,
+                  data: { paymentTerms: paymentTermsForm.trim() || null },
+                });
+              }}
+            >
+              {updateSalesOrderMutation.isPending ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <EwbPanel
         orderId={order.id}
         orderNumber={order.orderNumber}
@@ -1305,6 +1485,23 @@ export default function SalesOrderDetail() {
                             <a href={s.trackingUrl} target="_blank" rel="noopener noreferrer">
                               <Truck className="mr-1.5 h-3 w-3" /> Track
                             </a>
+                          </Button>
+                        )}
+                        {s.status !== "cancelled" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setTrackingForm({
+                                awb: s.awb ?? "",
+                                courierName: s.courierName ?? "",
+                                trackingUrl: s.trackingUrl ?? "",
+                              });
+                              setEditTrackingId(s.id);
+                            }}
+                            data-testid={`btn-edit-tracking-${s.id}`}
+                          >
+                            <Pencil className="mr-1.5 h-3 w-3" /> Edit Tracking
                           </Button>
                         )}
                         {s.status !== "cancelled" && !s.awb && (
