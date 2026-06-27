@@ -204,6 +204,7 @@ export async function loadInvoiceForOrder(
       orderDate: order.orderDate,
       expectedShipDate: order.expectedShipDate,
       notes: order.notes,
+      paymentTerms: order.paymentTerms,
       subtotal: order.subtotal,
       taxTotal: order.taxTotal,
       total: order.total,

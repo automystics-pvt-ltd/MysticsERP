@@ -27,6 +27,7 @@ interface Props {
   orderNumber: string;
   customerId: number;
   customerName: string;
+  paymentTerms?: string | null;
 }
 
 export function SendInvoiceDialog({
@@ -36,6 +37,7 @@ export function SendInvoiceDialog({
   orderNumber,
   customerId,
   customerName,
+  paymentTerms,
 }: Props) {
   const customerQuery = useGetCustomer(customerId, {
     query: {
@@ -47,9 +49,13 @@ export function SendInvoiceDialog({
 
   const [to, setTo] = useState("");
   const [subject, setSubject] = useState(`Invoice ${orderNumber}`);
-  const [body, setBody] = useState(
-    `Hi ${customerName},\n\nPlease find attached invoice ${orderNumber} for your records.\n\nThanks!`,
-  );
+
+  function buildBody() {
+    const termsLine = paymentTerms ? `\nPayment terms: ${paymentTerms}\n` : "";
+    return `Hi ${customerName},\n\nPlease find attached invoice ${orderNumber} for your records.${termsLine}\n\nThanks!`;
+  }
+
+  const [body, setBody] = useState(buildBody);
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -58,11 +64,10 @@ export function SendInvoiceDialog({
     if (open) {
       setTo(defaultRecipient);
       setSubject(`Invoice ${orderNumber}`);
-      setBody(
-        `Hi ${customerName},\n\nPlease find attached invoice ${orderNumber} for your records.\n\nThanks!`,
-      );
+      setBody(buildBody());
     }
-  }, [open, defaultRecipient, customerName, orderNumber]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, defaultRecipient, customerName, orderNumber, paymentTerms]);
 
   const sendMutation = useEmailSalesOrderInvoice({
     mutation: {

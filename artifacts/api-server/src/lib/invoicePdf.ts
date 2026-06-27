@@ -57,6 +57,7 @@ export interface InvoicePdfOrder {
   orderDate: string;
   expectedShipDate?: string | null;
   notes?: string | null;
+  paymentTerms?: string | null;
   subtotal: number | string;
   taxTotal: number | string;
   total: number | string;
@@ -248,6 +249,9 @@ export async function renderInvoicePdf(
   ];
   if (order.expectedShipDate) {
     metaPairs.push(["Due / ship by", fmtDate(order.expectedShipDate)]);
+  }
+  if (order.paymentTerms) {
+    metaPairs.push(["Payment terms", order.paymentTerms]);
   }
   if (customer.placeOfSupply) {
     metaPairs.push(["Place of supply", customer.placeOfSupply]);

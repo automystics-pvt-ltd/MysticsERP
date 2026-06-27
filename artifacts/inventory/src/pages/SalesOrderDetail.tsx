@@ -1684,6 +1684,7 @@ export default function SalesOrderDetail() {
         orderNumber={order.orderNumber}
         customerId={order.customerId}
         customerName={order.customerName}
+        paymentTerms={(order as typeof order & { paymentTerms?: string | null }).paymentTerms}
       />
 
       <NewShipmentDialog
