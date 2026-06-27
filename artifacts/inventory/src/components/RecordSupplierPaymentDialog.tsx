@@ -90,7 +90,7 @@ export function RecordSupplierPaymentDialog({
 
   const { data: suppliersData } = useListSuppliers(
     {},
-    { query: { enabled: open && showSupplierPicker } },
+    { query: { enabled: open && showSupplierPicker, queryKey: getListSuppliersQueryKey() } },
   );
   const suppliers = suppliersData?.suppliers ?? [];
 
