@@ -1411,6 +1411,7 @@ export default function SalesOrderDetail() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Sent</TableHead>
+                    <TableHead>Type</TableHead>
                     <TableHead>Recipient</TableHead>
                     <TableHead>Subject</TableHead>
                     <TableHead>Status</TableHead>
@@ -1420,6 +1421,11 @@ export default function SalesOrderDetail() {
                   {emailLogQuery.data.map((e) => (
                     <TableRow key={e.id} data-testid={`email-log-${e.id}`}>
                       <TableCell>{formatDate(e.sentAt)}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {e.kind === "shipping_confirmation"
+                          ? "Shipping confirmation"
+                          : "Invoice"}
+                      </TableCell>
                       <TableCell>{e.recipient}</TableCell>
                       <TableCell className="text-sm">{e.subject}</TableCell>
                       <TableCell>
@@ -1444,7 +1450,7 @@ export default function SalesOrderDetail() {
               </Table>
             ) : (
               <p className="text-sm text-muted-foreground">
-                No invoice emails sent yet. Use "Send to customer" to email this invoice.
+                No emails sent yet for this order.
               </p>
             )}
           </CardContent>
