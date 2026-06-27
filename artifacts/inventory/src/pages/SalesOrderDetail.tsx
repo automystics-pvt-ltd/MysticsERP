@@ -402,7 +402,7 @@ export default function SalesOrderDetail() {
     // (a) global restock is toggled on (full/partial mode), or
     // (b) item-wise mode is active — per-line restock checkboxes need options immediately
     query: {
-      enabled: refundDialogOpen && (refundForm.restockItems || refundForm.refundType === "item_wise"),
+      enabled: refundDialogOpen && (refundForm.restockItems || refundMode === "item_wise"),
       queryKey: getListWarehousesQueryKey(),
     },
   });
@@ -1257,7 +1257,7 @@ export default function SalesOrderDetail() {
                           )}
                         </div>
                       );
-                    } else {
+                    } else if (entry.kind === "reversal") {
                       return (
                         <div key={`reversal-${idx}`} className="relative flex items-start gap-3 pl-7">
                           <div className="absolute left-0 top-1 h-[22px] w-[22px] rounded-full bg-orange-100 dark:bg-orange-900/20 border-2 border-background ring-1 ring-orange-300 dark:ring-orange-800/40 flex items-center justify-center">
@@ -1282,8 +1282,7 @@ export default function SalesOrderDetail() {
                           </div>
                         </div>
                       );
-                    }
-                    if (entry.kind === "refund") {
+                    } else if (entry.kind === "refund") {
                       const refundTypeLabel =
                         entry.refundType === "full" ? "Full Refund" :
                         entry.refundType === "partial" ? "Partial Refund" : "Item-wise Refund";
@@ -1314,6 +1313,7 @@ export default function SalesOrderDetail() {
                         </div>
                       );
                     }
+                    return null;
                   })}
                 </div>
               </div>

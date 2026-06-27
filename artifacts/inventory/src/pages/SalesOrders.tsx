@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { AlertCircle, AlertTriangle, IndianRupee, Plus, Receipt, X, Package } from "lucide-react";
+import { AlertCircle, AlertTriangle, ChevronDown, ChevronUp, ChevronsUpDown, IndianRupee, Plus, Receipt, X, Package } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TablePagination } from "@/components/TablePagination";
 import { getEinvoiceFixSummary } from "@/lib/einvoiceFixes";
@@ -82,6 +82,43 @@ function isEinvoiceEligible(order: SalesOrderRow): boolean {
 }
 
 const PAGE_SIZE_OPTIONS = [15, 25, 50, 100];
+
+type SortKey = "date" | "created" | "total";
+
+function SortableHead({
+  label,
+  sortKey,
+  current,
+  dir,
+  onSort,
+  className,
+}: {
+  label: string;
+  sortKey: SortKey;
+  current: string;
+  dir: string;
+  onSort: (key: SortKey, dir: "asc" | "desc") => void;
+  className?: string;
+}) {
+  const active = current === sortKey;
+  const nextDir = active && dir === "desc" ? "asc" : "desc";
+  const Icon = active ? (dir === "asc" ? ChevronUp : ChevronDown) : ChevronsUpDown;
+  return (
+    <TableHead className={className}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey, nextDir)}
+        className={cn(
+          "inline-flex items-center gap-1 rounded px-0.5 -mx-0.5 transition-colors hover:text-foreground select-none whitespace-nowrap",
+          active ? "text-foreground font-semibold" : "text-muted-foreground",
+        )}
+      >
+        {label}
+        <Icon className={cn("h-3.5 w-3.5 shrink-0", active ? "opacity-80" : "opacity-40")} />
+      </button>
+    </TableHead>
+  );
+}
 
 const SO_STATUS_VALUES = [
   "all", "outstanding", "draft", "confirmed", "partially_shipped",
@@ -220,6 +257,11 @@ export default function SalesOrders() {
 
   const showSelection = einvoiceAvailable;
 
+  const handleSort = (key: SortKey, dir: "asc" | "desc") => {
+    setMany({ sort: key, sortDir: dir });
+    setPage(1);
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -334,10 +376,10 @@ export default function SalesOrders() {
                   />
                 </TableHead>
               )}
-              <TableHead>Order #</TableHead>
-              <TableHead>Date</TableHead>
+              <SortableHead label="Order #" sortKey="created" current={sortBy} dir={sortDir} onSort={handleSort} />
+              <SortableHead label="Date" sortKey="date" current={sortBy} dir={sortDir} onSort={handleSort} />
               <TableHead>Customer</TableHead>
-              <TableHead className="text-right">Total</TableHead>
+              <SortableHead label="Total" sortKey="total" current={sortBy} dir={sortDir} onSort={handleSort} className="text-right" />
               {overdueFilter && <TableHead className="text-right">Days Overdue</TableHead>}
               <TableHead>Payment</TableHead>
               <TableHead>Fulfillment</TableHead>
