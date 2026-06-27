@@ -50,6 +50,11 @@ export interface Organization {
   taxMode: OrganizationTaxMode;
   /** When true, transactions that would reduce warehouse stock below zero are permitted. */
   allowNegativeStock: boolean;
+  /**
+     * Default invoice email body template. Supports placeholders: {{orderNumber}}, {{customerName}}, {{paymentTerms}}. When set, this is pre-filled into the Send Invoice dialog.
+     * @nullable
+     */
+  invoiceEmailTemplate: string | null;
   /** @nullable */
   maxOrderDiscountPercent: number | null;
   /** @nullable */

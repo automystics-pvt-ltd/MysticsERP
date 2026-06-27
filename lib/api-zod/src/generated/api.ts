@@ -271,6 +271,7 @@ export const GetMeResponse = zod.object({
   "defaultPaymentTermsDays": zod.number().describe('Default payment terms in days (e.g. 7, 15, 30, 45, 60, 90). Used to derive due dates and compute overdue receivables on the dashboard and AR aging report.'),
   "taxMode": zod.enum(['exclusive', 'inclusive']).describe('Tax mode for orders. \'exclusive\': tax is added on top of the unit price. \'inclusive\': the unit price already contains the tax.'),
   "allowNegativeStock": zod.boolean().describe('When true, transactions that would reduce warehouse stock below zero are permitted.'),
+  "invoiceEmailTemplate": zod.string().nullable().describe('Default invoice email body template. Supports placeholders: {{orderNumber}}, {{customerName}}, {{paymentTerms}}. When set, this is pre-filled into the Send Invoice dialog.'),
   "maxOrderDiscountPercent": zod.number().nullable(),
   "maxOrderDiscountAmount": zod.number().nullable(),
   "createdAt": zod.string()
@@ -305,6 +306,7 @@ export const GetCurrentOrganizationResponse = zod.object({
   "defaultPaymentTermsDays": zod.number().describe('Default payment terms in days (e.g. 7, 15, 30, 45, 60, 90). Used to derive due dates and compute overdue receivables on the dashboard and AR aging report.'),
   "taxMode": zod.enum(['exclusive', 'inclusive']).describe('Tax mode for orders. \'exclusive\': tax is added on top of the unit price. \'inclusive\': the unit price already contains the tax.'),
   "allowNegativeStock": zod.boolean().describe('When true, transactions that would reduce warehouse stock below zero are permitted.'),
+  "invoiceEmailTemplate": zod.string().nullable().describe('Default invoice email body template. Supports placeholders: {{orderNumber}}, {{customerName}}, {{paymentTerms}}. When set, this is pre-filled into the Send Invoice dialog.'),
   "maxOrderDiscountPercent": zod.number().nullable(),
   "maxOrderDiscountAmount": zod.number().nullable(),
   "createdAt": zod.string()
@@ -327,6 +329,7 @@ export const UpdateCurrentOrganizationBody = zod.object({
   "defaultPaymentTermsDays": zod.number().optional(),
   "taxMode": zod.enum(['exclusive', 'inclusive']).optional(),
   "allowNegativeStock": zod.boolean().optional(),
+  "invoiceEmailTemplate": zod.string().nullish(),
   "maxOrderDiscountPercent": zod.number().nullish(),
   "maxOrderDiscountAmount": zod.number().nullish()
 })
@@ -355,6 +358,7 @@ export const UpdateCurrentOrganizationResponse = zod.object({
   "defaultPaymentTermsDays": zod.number().describe('Default payment terms in days (e.g. 7, 15, 30, 45, 60, 90). Used to derive due dates and compute overdue receivables on the dashboard and AR aging report.'),
   "taxMode": zod.enum(['exclusive', 'inclusive']).describe('Tax mode for orders. \'exclusive\': tax is added on top of the unit price. \'inclusive\': the unit price already contains the tax.'),
   "allowNegativeStock": zod.boolean().describe('When true, transactions that would reduce warehouse stock below zero are permitted.'),
+  "invoiceEmailTemplate": zod.string().nullable().describe('Default invoice email body template. Supports placeholders: {{orderNumber}}, {{customerName}}, {{paymentTerms}}. When set, this is pre-filled into the Send Invoice dialog.'),
   "maxOrderDiscountPercent": zod.number().nullable(),
   "maxOrderDiscountAmount": zod.number().nullable(),
   "createdAt": zod.string()
@@ -4177,6 +4181,7 @@ export const CompleteOnboardingResponse = zod.object({
   "defaultPaymentTermsDays": zod.number().describe('Default payment terms in days (e.g. 7, 15, 30, 45, 60, 90). Used to derive due dates and compute overdue receivables on the dashboard and AR aging report.'),
   "taxMode": zod.enum(['exclusive', 'inclusive']).describe('Tax mode for orders. \'exclusive\': tax is added on top of the unit price. \'inclusive\': the unit price already contains the tax.'),
   "allowNegativeStock": zod.boolean().describe('When true, transactions that would reduce warehouse stock below zero are permitted.'),
+  "invoiceEmailTemplate": zod.string().nullable().describe('Default invoice email body template. Supports placeholders: {{orderNumber}}, {{customerName}}, {{paymentTerms}}. When set, this is pre-filled into the Send Invoice dialog.'),
   "maxOrderDiscountPercent": zod.number().nullable(),
   "maxOrderDiscountAmount": zod.number().nullable(),
   "createdAt": zod.string()
@@ -5241,6 +5246,7 @@ export const UpdateOrganizationBarcodeSettingsResponse = zod.object({
   "defaultPaymentTermsDays": zod.number().describe('Default payment terms in days (e.g. 7, 15, 30, 45, 60, 90). Used to derive due dates and compute overdue receivables on the dashboard and AR aging report.'),
   "taxMode": zod.enum(['exclusive', 'inclusive']).describe('Tax mode for orders. \'exclusive\': tax is added on top of the unit price. \'inclusive\': the unit price already contains the tax.'),
   "allowNegativeStock": zod.boolean().describe('When true, transactions that would reduce warehouse stock below zero are permitted.'),
+  "invoiceEmailTemplate": zod.string().nullable().describe('Default invoice email body template. Supports placeholders: {{orderNumber}}, {{customerName}}, {{paymentTerms}}. When set, this is pre-filled into the Send Invoice dialog.'),
   "maxOrderDiscountPercent": zod.number().nullable(),
   "maxOrderDiscountAmount": zod.number().nullable(),
   "createdAt": zod.string()

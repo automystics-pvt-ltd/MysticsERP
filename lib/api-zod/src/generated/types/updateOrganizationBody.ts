@@ -33,6 +33,8 @@ export interface UpdateOrganizationBody {
   taxMode?: UpdateOrganizationBodyTaxMode;
   allowNegativeStock?: boolean;
   /** @nullable */
+  invoiceEmailTemplate?: string | null;
+  /** @nullable */
   maxOrderDiscountPercent?: number | null;
   /** @nullable */
   maxOrderDiscountAmount?: number | null;

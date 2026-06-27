@@ -3350,10 +3350,13 @@ components:
         allowNegativeStock:
           type: boolean
           description: When true, transactions that would reduce warehouse stock below zero are permitted.
+        invoiceEmailTemplate:
+          type: ["string", "null"]
+          description: "Default invoice email body template. Supports placeholders: {{orderNumber}}, {{customerName}}, {{paymentTerms}}. When set, this is pre-filled into the Send Invoice dialog."
         maxOrderDiscountPercent: { type: ["number", "null"] }
         maxOrderDiscountAmount: { type: ["number", "null"] }
         createdAt: { type: string }
-      required: [id, name, slug, currency, timezone, plan, subscriptionStatus, createdAt, gstNumber, addressLine1, addressLine2, city, state, postalCode, country, logoUrl, invoiceFooter, currentPeriodEnd, onboardingCompletedAt, barcodePrefix, barcodeFormat, defaultPaymentTermsDays, taxMode, allowNegativeStock, maxOrderDiscountPercent, maxOrderDiscountAmount]
+      required: [id, name, slug, currency, timezone, plan, subscriptionStatus, createdAt, gstNumber, addressLine1, addressLine2, city, state, postalCode, country, logoUrl, invoiceFooter, currentPeriodEnd, onboardingCompletedAt, barcodePrefix, barcodeFormat, defaultPaymentTermsDays, taxMode, allowNegativeStock, maxOrderDiscountPercent, maxOrderDiscountAmount, invoiceEmailTemplate]
 
     UpdateBarcodeSettingsBody:
       type: object
@@ -3394,6 +3397,7 @@ components:
           type: string
           enum: [exclusive, inclusive]
         allowNegativeStock: { type: boolean }
+        invoiceEmailTemplate: { type: ["string", "null"] }
         maxOrderDiscountPercent: { type: ["number", "null"] }
         maxOrderDiscountAmount: { type: ["number", "null"] }
 

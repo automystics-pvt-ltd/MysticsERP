@@ -90,6 +90,7 @@ router.patch("/organizations/current", async (req, res, next) => {
       "skuMode",
       "defaultPaymentTermsDays",
       "allowNegativeStock",
+      "invoiceEmailTemplate",
     ]) {
       if (k in body) updates[k] = body[k];
     }

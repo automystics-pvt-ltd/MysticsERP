@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   useEmailSalesOrderInvoice,
   useGetCustomer,
+  useGetCurrentOrganization,
   getGetCustomerQueryKey,
   getListSalesOrderEmailLogQueryKey,
 } from "@/lib/queryKeys";
@@ -30,6 +31,16 @@ interface Props {
   paymentTerms?: string | null;
 }
 
+function applyTemplate(
+  template: string,
+  vars: { orderNumber: string; customerName: string; paymentTerms: string },
+): string {
+  return template
+    .replace(/\{\{orderNumber\}\}/g, vars.orderNumber)
+    .replace(/\{\{customerName\}\}/g, vars.customerName)
+    .replace(/\{\{paymentTerms\}\}/g, vars.paymentTerms);
+}
+
 export function SendInvoiceDialog({
   open,
   onOpenChange,
@@ -45,17 +56,29 @@ export function SendInvoiceDialog({
       queryKey: getGetCustomerQueryKey(customerId),
     },
   });
+  const { data: org } = useGetCurrentOrganization({
+    query: { enabled: open },
+  } as any);
+
   const defaultRecipient = customerQuery.data?.email ?? "";
 
   const [to, setTo] = useState("");
   const [subject, setSubject] = useState(`Invoice ${orderNumber}`);
 
-  function buildBody() {
+  function buildBody(orgTemplate?: string | null) {
     const termsLine = paymentTerms ? `\nPayment terms: ${paymentTerms}\n` : "";
+    const template = orgTemplate ?? null;
+    if (template) {
+      return applyTemplate(template, {
+        orderNumber,
+        customerName,
+        paymentTerms: paymentTerms ?? "",
+      });
+    }
     return `Hi ${customerName},\n\nPlease find attached invoice ${orderNumber} for your records.${termsLine}\n\nThanks!`;
   }
 
-  const [body, setBody] = useState(buildBody);
+  const [body, setBody] = useState(() => buildBody());
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -64,10 +87,10 @@ export function SendInvoiceDialog({
     if (open) {
       setTo(defaultRecipient);
       setSubject(`Invoice ${orderNumber}`);
-      setBody(buildBody());
+      setBody(buildBody((org as any)?.invoiceEmailTemplate));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, defaultRecipient, customerName, orderNumber, paymentTerms]);
+  }, [open, defaultRecipient, customerName, orderNumber, paymentTerms, org]);
 
   const sendMutation = useEmailSalesOrderInvoice({
     mutation: {

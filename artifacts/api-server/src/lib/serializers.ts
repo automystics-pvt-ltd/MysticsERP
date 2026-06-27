@@ -83,6 +83,8 @@ export function serializeOrganization(o: Organization) {
       (o as unknown as { skuNextNumber?: number | null }).skuNextNumber ?? 1,
     defaultPaymentTermsDays:
       (o as unknown as { defaultPaymentTermsDays?: number | null }).defaultPaymentTermsDays ?? 30,
+    invoiceEmailTemplate:
+      (o as unknown as { invoiceEmailTemplate?: string | null }).invoiceEmailTemplate ?? null,
     createdAt: o.createdAt.toISOString(),
   };
 }

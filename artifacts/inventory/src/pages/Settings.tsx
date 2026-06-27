@@ -47,6 +47,7 @@ const orgSchema = z.object({
     .optional()
     .or(z.literal("")),
   invoiceFooter: z.string().optional().or(z.literal("")),
+  invoiceEmailTemplate: z.string().optional().or(z.literal("")),
   defaultPaymentTermsDays: z.coerce
     .number()
     .int()
@@ -86,6 +87,7 @@ export default function Settings() {
       country: "India",
       logoUrl: "",
       invoiceFooter: "",
+      invoiceEmailTemplate: "",
       defaultPaymentTermsDays: 30,
       taxMode: "exclusive" as "exclusive" | "inclusive",
     }
@@ -105,6 +107,7 @@ export default function Settings() {
         country: org.country || "India",
         logoUrl: org.logoUrl || "",
         invoiceFooter: org.invoiceFooter || "",
+        invoiceEmailTemplate: (org as any).invoiceEmailTemplate || "",
         defaultPaymentTermsDays: org.defaultPaymentTermsDays ?? 30,
         taxMode: ((org as any).taxMode ?? "exclusive") as "exclusive" | "inclusive",
       });
@@ -123,6 +126,7 @@ export default function Settings() {
         country: data.country || null,
         logoUrl: data.logoUrl || null,
         invoiceFooter: data.invoiceFooter || null,
+        invoiceEmailTemplate: (data as any).invoiceEmailTemplate || null,
         defaultPaymentTermsDays: data.defaultPaymentTermsDays,
         taxMode: data.taxMode,
       } as any
@@ -409,6 +413,31 @@ export default function Settings() {
                       </FormControl>
                       <FormDescription>
                         Appears at the bottom of every invoice PDF.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="invoiceEmailTemplate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Default invoice email body</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          {...field}
+                          rows={5}
+                          placeholder={`Hi {{customerName}},\n\nPlease find attached invoice {{orderNumber}} for your records.\nPayment terms: {{paymentTerms}}\n\nThanks!`}
+                          data-testid="input-org-invoice-email-template"
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Pre-filled into the email body when sending an invoice. Use{" "}
+                        <code className="text-xs font-mono bg-muted px-1 rounded">{"{{orderNumber}}"}</code>,{" "}
+                        <code className="text-xs font-mono bg-muted px-1 rounded">{"{{customerName}}"}</code>, and{" "}
+                        <code className="text-xs font-mono bg-muted px-1 rounded">{"{{paymentTerms}}"}</code>{" "}
+                        as placeholders.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
