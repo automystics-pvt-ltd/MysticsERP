@@ -305,8 +305,12 @@ function derivePaymentStatus(
   balanceDue: number,
 ): string | null {
   if (stored !== "paid" && stored !== "partially_paid") return stored;
+  // Check balance first: if nothing is owed the order is fully paid regardless
+  // of whether amountPaid was recorded (e.g. Shopify orders where Shopify tracks
+  // the payment and we don't record a manual amountPaid entry).
+  if (balanceDue <= 0) return "paid";
   if (amountPaid <= 0) return null;
-  return balanceDue <= 0 ? "paid" : "partially_paid";
+  return "partially_paid";
 }
 
 export function serializeSalesOrder(

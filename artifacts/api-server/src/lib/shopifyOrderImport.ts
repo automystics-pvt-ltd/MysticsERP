@@ -303,7 +303,18 @@ export async function importShopifyOrder(
       const unitPrice = toNum(li.price);
       const lineSubtotal = unitPrice * qty;
       const taxAmount = li.tax_lines.reduce((s, tl) => s + toNum(tl.price), 0);
-      const taxRate = lineSubtotal > 0 ? (taxAmount / lineSubtotal) * 100 : 0;
+      // For tax-inclusive shops the price already contains the tax portion.
+      // Use Shopify's own rate when available (exact), otherwise derive it.
+      const taxesIncluded = o.taxes_included === true;
+      const taxRate =
+        taxesIncluded && li.tax_lines[0]
+          ? li.tax_lines[0].rate * 100
+          : lineSubtotal > 0
+            ? (taxAmount / lineSubtotal) * 100
+            : 0;
+      // lineTotal: for tax-inclusive items the tax is already inside the price,
+      // so the customer owes exactly lineSubtotal (not lineSubtotal + taxAmount).
+      const lineTotal = taxesIncluded ? lineSubtotal : lineSubtotal + taxAmount;
       lineRecords.push({
         itemId: item.id,
         sourceWarehouseId: resolveSourceWarehouse(li),
@@ -313,20 +324,23 @@ export async function importShopifyOrder(
         taxRate: toStr(taxRate),
         lineSubtotal: toStr(lineSubtotal),
         lineTax: toStr(taxAmount),
-        lineTotal: toStr(lineSubtotal + taxAmount),
+        lineTotal: toStr(lineTotal),
       });
     }
 
+    const taxesIncluded = o.taxes_included === true;
     const subtotal = lineRecords.reduce((s, l) => s + toNum(l.lineSubtotal), 0);
     const taxTotal = lineRecords.reduce((s, l) => s + toNum(l.lineTax), 0);
-    const total = subtotal + taxTotal;
+    // For tax-inclusive orders the subtotal already contains the tax; don't add it again.
+    const total = taxesIncluded ? subtotal : subtotal + taxTotal;
     const orderNumber = nextOrderNumber("SO");
+    // "paid" is a payment state, not a fulfillment state — use "confirmed" so the
+    // order stays editable (record payment, ship, etc.) and PAYABLE_SALES_STATUSES
+    // logic works correctly.
     const status =
-      o.financial_status === "paid"
-        ? "paid"
-        : o.fulfillment_status === "fulfilled"
-          ? "shipped"
-          : "confirmed";
+      o.fulfillment_status === "fulfilled"
+        ? "shipped"
+        : "confirmed";
 
     // Use Shopify Warehouse as the order's warehouse so that ERP
     // shipments created later will deduct stock from there (where
