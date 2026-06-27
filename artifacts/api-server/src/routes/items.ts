@@ -322,8 +322,22 @@ router.get("/items", async (req, res, next) => {
       // In paginated mode, the SQL EXISTS subquery already handled this.
       if (pgNum === null) {
         const assignedIds = new Set(warehouseStockMap.keys());
+        // Variant parents hold no stock themselves — their children do.
+        // Build the set of parent IDs whose children have stock at this
+        // warehouse so the parent appears in the picker and its variants
+        // are reachable. Without this, children are fetched but orphaned
+        // (parent missing from topLevel) and the picker hides them.
+        const parentIdsWithStock = new Set<number>();
+        for (const r of rows) {
+          if (r.parentItemId != null && assignedIds.has(r.id)) {
+            parentIdsWithStock.add(r.parentItemId);
+          }
+        }
         rows = rows.filter(
-          (r) => r.isBundle || assignedIds.has(r.id),
+          (r) =>
+            r.isBundle ||
+            assignedIds.has(r.id) ||
+            parentIdsWithStock.has(r.id),
         );
       }
     }
