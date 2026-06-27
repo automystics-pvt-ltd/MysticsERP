@@ -1937,15 +1937,6 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
       return;
     }
 
-    // Validate warehouse ownership upfront to avoid partial txn failures
-    if (restockItems && globalWarehouseId) {
-      const own = await assertOwnership({ organizationId: t.organizationId, warehouseIds: [globalWarehouseId] });
-      if (!own.ok) {
-        res.status(400).json({ error: "Invalid warehouseId" });
-        return;
-      }
-    }
-
     // Explicit per-line payload (item_wise mode)
     const rawLines: Array<{ salesOrderLineId: number; quantity: number; refundAmount?: number; warehouseId?: number }> =
       Array.isArray(b.lines) ? b.lines : [];
@@ -2021,6 +2012,25 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
           refundAmount: lineRefundAmount,
           lineWarehouseId,
         });
+      }
+    }
+
+    // Validate ownership for ALL warehouse IDs: global + every per-line override.
+    // This must happen after resolvedLines is built so per-line warehouseId values
+    // are available. Prevents a caller from injecting a foreign org's warehouse ID
+    // via the lines payload.
+    {
+      const allWarehouseIds = new Set<number>();
+      if (globalWarehouseId) allWarehouseIds.add(globalWarehouseId);
+      for (const l of resolvedLines) {
+        if (l.lineWarehouseId) allWarehouseIds.add(l.lineWarehouseId);
+      }
+      if (allWarehouseIds.size > 0) {
+        const own = await assertOwnership({ organizationId: t.organizationId, warehouseIds: [...allWarehouseIds] });
+        if (!own.ok) {
+          res.status(400).json({ error: "One or more warehouseId values are invalid" });
+          return;
+        }
       }
     }
 
