@@ -182,6 +182,11 @@ router.get("/sales-orders", async (req, res, next) => {
         WHERE cpa.sales_order_id = ${salesOrdersTable.id}
         AND cp.mode = 'card'
       )`,
+      itemCount: sql<number>`(
+        SELECT COUNT(*)
+        FROM sales_order_lines sol
+        WHERE sol.sales_order_id = ${salesOrdersTable.id}
+      )`,
     };
 
     const serializeRow = (r: {
@@ -193,6 +198,7 @@ router.get("/sales-orders", async (req, res, next) => {
       cashPaid: string;
       upiPaid: string;
       cardPaid: string;
+      itemCount: number;
     }) => ({
       ...serializeSalesOrder(
         r.order,
@@ -204,6 +210,7 @@ router.get("/sales-orders", async (req, res, next) => {
       cashPaid: Number(r.cashPaid),
       upiPaid: Number(r.upiPaid),
       cardPaid: Number(r.cardPaid),
+      itemCount: Number(r.itemCount),
     });
 
     if (rawPage !== null && !Number.isNaN(rawPage)) {

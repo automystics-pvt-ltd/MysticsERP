@@ -4061,7 +4061,10 @@ components:
             - { $ref: "#/components/schemas/EinvoiceDetails" }
             - { type: "null" }
         createdAt: { type: string }
-      required: [id, orderNumber, customerId, customerName, walkinName, customerGstNumber, warehouseId, warehouseName, status, orderDate, expectedShipDate, subtotal, taxTotal, total, discountTotal, orderDiscountAmount, amountPaid, balanceDue, cashPaid, upiPaid, cardPaid, notes, orderType, saleChannel, paymentStatus, shopifyOrderId, shopifyFulfillmentStatus, shopifyTaxLines, deliveryMethod, ewb, einvoice, createdAt]
+        itemCount:
+          type: integer
+          description: "Number of distinct line items in this order."
+      required: [id, orderNumber, customerId, customerName, walkinName, customerGstNumber, warehouseId, warehouseName, status, orderDate, expectedShipDate, subtotal, taxTotal, total, discountTotal, orderDiscountAmount, amountPaid, balanceDue, cashPaid, upiPaid, cardPaid, notes, orderType, saleChannel, paymentStatus, shopifyOrderId, shopifyFulfillmentStatus, shopifyTaxLines, deliveryMethod, ewb, einvoice, createdAt, itemCount]
 
     SalesOrderDetail:
       type: object

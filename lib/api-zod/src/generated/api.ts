@@ -1252,7 +1252,8 @@ export const ListSalesOrdersResponseItem = zod.object({
   "cancelReason": zod.string().nullable(),
   "cancellable": zod.boolean()
 }),zod.null()]),
-  "createdAt": zod.string()
+  "createdAt": zod.string(),
+  "itemCount": zod.number().describe('Number of distinct line items in this order.')
 })
 export const ListSalesOrdersResponse = zod.array(ListSalesOrdersResponseItem)
 
@@ -1353,7 +1354,8 @@ export const GetSalesOrderResponse = zod.object({
   "cancelReason": zod.string().nullable(),
   "cancellable": zod.boolean()
 }),zod.null()]),
-  "createdAt": zod.string()
+  "createdAt": zod.string(),
+  "itemCount": zod.number().describe('Number of distinct line items in this order.')
 }),
   "lines": zod.array(zod.object({
   "id": zod.number(),
@@ -1506,7 +1508,8 @@ export const UpdateSalesOrderResponse = zod.object({
   "cancelReason": zod.string().nullable(),
   "cancellable": zod.boolean()
 }),zod.null()]),
-  "createdAt": zod.string()
+  "createdAt": zod.string(),
+  "itemCount": zod.number().describe('Number of distinct line items in this order.')
 }),
   "lines": zod.array(zod.object({
   "id": zod.number(),
@@ -1645,7 +1648,8 @@ export const UpdateSalesOrderStatusResponse = zod.object({
   "cancelReason": zod.string().nullable(),
   "cancellable": zod.boolean()
 }),zod.null()]),
-  "createdAt": zod.string()
+  "createdAt": zod.string(),
+  "itemCount": zod.number().describe('Number of distinct line items in this order.')
 }),
   "lines": zod.array(zod.object({
   "id": zod.number(),
@@ -1777,7 +1781,8 @@ export const ReturnSalesOrderResponse = zod.object({
   "cancelReason": zod.string().nullable(),
   "cancellable": zod.boolean()
 }),zod.null()]),
-  "createdAt": zod.string()
+  "createdAt": zod.string(),
+  "itemCount": zod.number().describe('Number of distinct line items in this order.')
 }),
   "lines": zod.array(zod.object({
   "id": zod.number(),

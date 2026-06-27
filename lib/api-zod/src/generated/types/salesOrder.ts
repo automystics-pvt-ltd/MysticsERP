@@ -73,4 +73,6 @@ export interface SalesOrder {
   ewb: EwbDetails | null;
   einvoice: EinvoiceDetails | null;
   createdAt: string;
+  /** Number of distinct line items in this order. */
+  itemCount: number;
 }

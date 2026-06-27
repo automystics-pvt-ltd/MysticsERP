@@ -57,6 +57,7 @@ const SalesOrders = lazy(() => import("@/pages/SalesOrders"));
 const SalesOrderNew = lazy(() => import("@/pages/SalesOrderNew"));
 const SalesOrderEdit = lazy(() => import("@/pages/SalesOrderEdit"));
 const SalesOrderDetail = lazy(() => import("@/pages/SalesOrderDetail"));
+const PackingSlip = lazy(() => import("@/pages/PackingSlip"));
 const Payments = lazy(() => import("@/pages/Payments"));
 const PaymentDetail = lazy(() => import("@/pages/PaymentDetail"));
 const PurchaseOrders = lazy(() => import("@/pages/PurchaseOrders"));
@@ -198,6 +199,13 @@ function ProtectedRoutes() {
     <OrgMeta />
     <ForbiddenNavigator />
     <UnauthenticatedNavigator />
+    <Switch>
+      <Route path="/sales-orders/:id/packing-slip">
+        <Suspense fallback={<RouteFallback />}>
+          <PackingSlip />
+        </Suspense>
+      </Route>
+      <Route path="/*?">
     <AppShell>
       <RouteErrorBoundary>
       <Suspense fallback={<RouteFallback />}>
@@ -297,6 +305,8 @@ function ProtectedRoutes() {
       </Suspense>
       </RouteErrorBoundary>
     </AppShell>
+      </Route>
+    </Switch>
     </>
   );
 }

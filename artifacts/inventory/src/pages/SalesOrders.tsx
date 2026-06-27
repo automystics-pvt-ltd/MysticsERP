@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { AlertCircle, AlertTriangle, IndianRupee, Plus, Receipt, Search, ArrowUpDown, X } from "lucide-react";
+import { AlertCircle, AlertTriangle, IndianRupee, Plus, Receipt, X, Package } from "lucide-react";
 import { TablePagination } from "@/components/TablePagination";
 import { StatusBadge } from "@/components/StatusBadge";
 import { getEinvoiceFixSummary } from "@/lib/einvoiceFixes";
@@ -339,10 +339,8 @@ export default function SalesOrders() {
               <TableHead>Customer</TableHead>
               <TableHead>Status</TableHead>
               {overdueFilter && <TableHead className="text-right">Days Overdue</TableHead>}
-              <TableHead className="text-right">Discount</TableHead>
-              <TableHead className="text-right">Cash</TableHead>
-              <TableHead className="text-right">UPI</TableHead>
-              <TableHead className="text-right">Card</TableHead>
+              <TableHead className="text-right">Items</TableHead>
+              <TableHead>Delivery</TableHead>
               <TableHead className="text-right">Total</TableHead>
               <TableHead className="w-[140px]"></TableHead>
             </TableRow>
@@ -357,10 +355,8 @@ export default function SalesOrders() {
                   <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
                   {overdueFilter && <TableCell><Skeleton className="h-5 w-14 rounded-full ml-auto" /></TableCell>}
-                  <TableCell><Skeleton className="h-4 w-16 ml-auto" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-16 ml-auto" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-16 ml-auto" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-16 ml-auto" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-8 ml-auto" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-20 ml-auto" /></TableCell>
                   <TableCell />
                 </TableRow>
@@ -368,7 +364,7 @@ export default function SalesOrders() {
             ) : orders.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={(showSelection ? 11 : 10) + (overdueFilter ? 1 : 0)}
+                  colSpan={(showSelection ? 8 : 7) + (overdueFilter ? 1 : 0)}
                   className="h-24 text-center text-muted-foreground"
                 >
                   {overdueFilter
@@ -383,9 +379,6 @@ export default function SalesOrders() {
                 const canPay =
                   PAYABLE_STATUSES.has(order.status) && balance > 0;
                 const eligible = isEinvoiceEligible(order);
-                const cash = order.cashPaid ?? 0;
-                const upi = order.upiPaid ?? 0;
-                const card = order.cardPaid ?? 0;
                 return (
                   <TableRow key={order.id} data-testid={`row-so-${order.id}`}>
                     {showSelection && (
@@ -581,23 +574,22 @@ export default function SalesOrders() {
                         })()}
                       </TableCell>
                     )}
-                    <TableCell className="text-right">
-                      {Number(order.discountTotal) > 0 ? (
-                        <span className="text-green-600 dark:text-green-400">
-                          -{formatCurrency(order.discountTotal)}
+                    <TableCell className="text-right tabular-nums">
+                      {(order.itemCount ?? 0) > 0 ? (
+                        <span className="flex items-center justify-end gap-1 text-sm">
+                          <Package className="h-3.5 w-3.5 text-muted-foreground" />
+                          {order.itemCount}
                         </span>
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-right">
-                      {cash > 0 ? formatCurrency(cash) : <span className="text-muted-foreground">—</span>}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {upi > 0 ? formatCurrency(upi) : <span className="text-muted-foreground">—</span>}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {card > 0 ? formatCurrency(card) : <span className="text-muted-foreground">—</span>}
+                    <TableCell>
+                      {order.deliveryMethod ? (
+                        <span className="text-sm text-muted-foreground">{order.deliveryMethod}</span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-right font-medium">
                       {formatCurrency(order.total)}
@@ -625,23 +617,13 @@ export default function SalesOrders() {
                 );
               })}
               {(() => {
-                const totalDisc = orders.reduce((s, o) => s + Number(o.discountTotal ?? 0), 0);
-                const totalCash = orders.reduce((s, o) => s + (o.cashPaid ?? 0), 0);
-                const totalUpi = orders.reduce((s, o) => s + (o.upiPaid ?? 0), 0);
-                const totalCard = orders.reduce((s, o) => s + (o.cardPaid ?? 0), 0);
                 const totalAmt = orders.reduce((s, o) => s + Number(o.total ?? 0), 0);
-                const colsBefore = (showSelection ? 5 : 4) + (overdueFilter ? 1 : 0);
+                const colsBefore = (showSelection ? 6 : 5) + (overdueFilter ? 1 : 0);
                 return (
                   <TableRow className="border-t-2 font-semibold bg-muted/30">
                     <TableCell colSpan={colsBefore} className="text-muted-foreground text-sm">
                       Page Total ({orders.length} order{orders.length !== 1 ? "s" : ""})
                     </TableCell>
-                    <TableCell className="text-right text-green-600 dark:text-green-400">
-                      {totalDisc > 0 ? `-${formatCurrency(totalDisc)}` : "—"}
-                    </TableCell>
-                    <TableCell className="text-right">{totalCash > 0 ? formatCurrency(totalCash) : "—"}</TableCell>
-                    <TableCell className="text-right">{totalUpi > 0 ? formatCurrency(totalUpi) : "—"}</TableCell>
-                    <TableCell className="text-right">{totalCard > 0 ? formatCurrency(totalCard) : "—"}</TableCell>
                     <TableCell className="text-right">{formatCurrency(totalAmt)}</TableCell>
                     <TableCell />
                   </TableRow>

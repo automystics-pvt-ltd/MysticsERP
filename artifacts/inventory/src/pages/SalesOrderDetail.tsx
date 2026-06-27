@@ -48,7 +48,16 @@ import {
   Trash2,
   ExternalLink,
   CreditCard,
+  MoreHorizontal,
+  ClipboardList,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Fragment, useState } from "react";
 import { RecordPaymentDialog } from "@/components/RecordPaymentDialog";
 import { EwbPanel } from "@/components/EwbPanel";
@@ -255,6 +264,7 @@ export default function SalesOrderDetail() {
 
   const [returnReason, setReturnReason] = useState("");
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const handleReturn = () => {
     returnMutation.mutate({ id: orderId, data: { notes: returnReason.trim() || null } });
@@ -571,18 +581,6 @@ export default function SalesOrderDetail() {
               </Button>
             )}
           </Can>
-          {["draft", "confirmed", "invoiced", "paid"].includes(order.status) && canEditBillsForUser && (
-            <Button
-              size="sm"
-              variant="outline"
-              asChild
-              data-testid="btn-edit-order"
-            >
-              <Link href={`/sales-orders/${order.id}/edit`}>
-                <Pencil className="mr-1.5 h-4 w-4" /> Edit Bill
-              </Link>
-            </Button>
-          )}
           <Can module="sales_orders" action="approve">
             {canShip && !allFullyShipped && (
               <Button
@@ -630,34 +628,66 @@ export default function SalesOrderDetail() {
               <XCircle className="mr-1.5 h-4 w-4" /> Cancel Order
             </Button>
           )}
-          {canEditBillsForUser && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button size="sm" variant="destructive" data-testid="btn-delete-order">
-                  <Trash2 className="mr-1.5 h-4 w-4" /> Delete Bill
+          {(canEditBillsForUser || ["confirmed", "partially_shipped", "shipped", "delivered"].includes(order.status)) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" data-testid="btn-more-actions">
+                  <MoreHorizontal className="h-4 w-4" />
                 </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete this bill?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This will permanently delete <strong>{order.orderNumber}</strong>. This action cannot be undone.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    onClick={() => deleteMutation.mutate({ id: order.id })}
-                    disabled={deleteMutation.isPending}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {["draft", "confirmed", "invoiced", "paid"].includes(order.status) && canEditBillsForUser && (
+                  <DropdownMenuItem asChild data-testid="btn-edit-order">
+                    <Link href={`/sales-orders/${order.id}/edit`}>
+                      <Pencil className="mr-2 h-4 w-4" /> Edit Bill
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                {["confirmed", "partially_shipped", "shipped", "delivered"].includes(order.status) && (
+                  <DropdownMenuItem
+                    data-testid="btn-print-packing-slip"
+                    onClick={() => window.open(`/sales-orders/${order.id}/packing-slip`, "_blank")}
                   >
-                    Delete
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+                    <ClipboardList className="mr-2 h-4 w-4" /> Print Packing Slip
+                  </DropdownMenuItem>
+                )}
+                {canEditBillsForUser && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      data-testid="btn-delete-order"
+                      onClick={() => setDeleteDialogOpen(true)}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" /> Delete Bill
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
+
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete this bill?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete <strong>{order.orderNumber}</strong>. This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => deleteMutation.mutate({ id: order.id })}
+                disabled={deleteMutation.isPending}
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         {/* Document & utility actions */}
         <div className="flex flex-wrap gap-2">
           <Can module="sales_orders" action="print">
