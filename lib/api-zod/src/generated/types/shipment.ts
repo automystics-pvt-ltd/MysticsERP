@@ -10,6 +10,8 @@ import type { ShipmentLine } from './shipmentLine';
 export interface Shipment {
   id: number;
   salesOrderId: number;
+  /** @nullable */
+  fulfillmentId?: number | null;
   shipmentNumber: string;
   shipDate: string;
   status: string;

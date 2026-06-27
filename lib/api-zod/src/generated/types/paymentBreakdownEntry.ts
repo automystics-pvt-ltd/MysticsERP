@@ -7,8 +7,11 @@
  */
 
 export interface PaymentBreakdownEntry {
+  paymentId: number;
   mode: string;
   /** @nullable */
   referenceNumber: string | null;
+  /** @nullable */
+  paymentDate: string | null;
   amount: number;
 }

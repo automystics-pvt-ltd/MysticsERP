@@ -4048,10 +4048,12 @@ components:
     PaymentBreakdownEntry:
       type: object
       properties:
+        paymentId: { type: integer }
         mode: { type: string }
         referenceNumber: { type: ["string", "null"] }
+        paymentDate: { type: ["string", "null"] }
         amount: { type: number }
-      required: [mode, referenceNumber, amount]
+      required: [paymentId, mode, referenceNumber, paymentDate, amount]
 
     ShipmentLine:
       type: object
@@ -4069,6 +4071,7 @@ components:
       properties:
         id: { type: integer }
         salesOrderId: { type: integer }
+        fulfillmentId: { type: ["integer", "null"] }
         shipmentNumber: { type: string }
         shipDate: { type: string }
         status: { type: string }

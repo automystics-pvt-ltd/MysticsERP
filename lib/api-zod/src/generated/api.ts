@@ -374,6 +374,7 @@ export const ListWarehousesResponseItem = zod.object({
   "state": zod.string().nullable(),
   "country": zod.string().nullable(),
   "isDefault": zod.boolean(),
+  "isSystem": zod.boolean(),
   "isVirtual": zod.boolean(),
   "jobWorkerSupplierId": zod.number().nullable(),
   "shopifyLocationId": zod.string().nullable(),
@@ -409,6 +410,7 @@ export const GetWarehouseResponse = zod.object({
   "state": zod.string().nullable(),
   "country": zod.string().nullable(),
   "isDefault": zod.boolean(),
+  "isSystem": zod.boolean(),
   "isVirtual": zod.boolean(),
   "jobWorkerSupplierId": zod.number().nullable(),
   "shopifyLocationId": zod.string().nullable(),
@@ -441,6 +443,7 @@ export const UpdateWarehouseResponse = zod.object({
   "state": zod.string().nullable(),
   "country": zod.string().nullable(),
   "isDefault": zod.boolean(),
+  "isSystem": zod.boolean(),
   "isVirtual": zod.boolean(),
   "jobWorkerSupplierId": zod.number().nullable(),
   "shopifyLocationId": zod.string().nullable(),
@@ -1358,6 +1361,7 @@ export const GetSalesOrderResponse = zod.object({
   "shipments": zod.array(zod.object({
   "id": zod.number(),
   "salesOrderId": zod.number(),
+  "fulfillmentId": zod.number().nullish(),
   "shipmentNumber": zod.string(),
   "shipDate": zod.string(),
   "status": zod.string(),
@@ -1384,8 +1388,10 @@ export const GetSalesOrderResponse = zod.object({
 }))
 })),
   "paymentBreakdown": zod.array(zod.object({
+  "paymentId": zod.number(),
   "mode": zod.string(),
   "referenceNumber": zod.string().nullable(),
+  "paymentDate": zod.string().nullable(),
   "amount": zod.number()
 }))
 })
@@ -1500,6 +1506,7 @@ export const UpdateSalesOrderResponse = zod.object({
   "shipments": zod.array(zod.object({
   "id": zod.number(),
   "salesOrderId": zod.number(),
+  "fulfillmentId": zod.number().nullish(),
   "shipmentNumber": zod.string(),
   "shipDate": zod.string(),
   "status": zod.string(),
@@ -1526,8 +1533,10 @@ export const UpdateSalesOrderResponse = zod.object({
 }))
 })),
   "paymentBreakdown": zod.array(zod.object({
+  "paymentId": zod.number(),
   "mode": zod.string(),
   "referenceNumber": zod.string().nullable(),
+  "paymentDate": zod.string().nullable(),
   "amount": zod.number()
 }))
 })
@@ -1628,6 +1637,7 @@ export const UpdateSalesOrderStatusResponse = zod.object({
   "shipments": zod.array(zod.object({
   "id": zod.number(),
   "salesOrderId": zod.number(),
+  "fulfillmentId": zod.number().nullish(),
   "shipmentNumber": zod.string(),
   "shipDate": zod.string(),
   "status": zod.string(),
@@ -1654,8 +1664,10 @@ export const UpdateSalesOrderStatusResponse = zod.object({
 }))
 })),
   "paymentBreakdown": zod.array(zod.object({
+  "paymentId": zod.number(),
   "mode": zod.string(),
   "referenceNumber": zod.string().nullable(),
+  "paymentDate": zod.string().nullable(),
   "amount": zod.number()
 }))
 })
@@ -1749,6 +1761,7 @@ export const ReturnSalesOrderResponse = zod.object({
   "shipments": zod.array(zod.object({
   "id": zod.number(),
   "salesOrderId": zod.number(),
+  "fulfillmentId": zod.number().nullish(),
   "shipmentNumber": zod.string(),
   "shipDate": zod.string(),
   "status": zod.string(),
@@ -1775,8 +1788,10 @@ export const ReturnSalesOrderResponse = zod.object({
 }))
 })),
   "paymentBreakdown": zod.array(zod.object({
+  "paymentId": zod.number(),
   "mode": zod.string(),
   "referenceNumber": zod.string().nullable(),
+  "paymentDate": zod.string().nullable(),
   "amount": zod.number()
 }))
 })
@@ -1891,6 +1906,7 @@ export const ListSalesOrderShipmentsParams = zod.object({
 export const ListSalesOrderShipmentsResponseItem = zod.object({
   "id": zod.number(),
   "salesOrderId": zod.number(),
+  "fulfillmentId": zod.number().nullish(),
   "shipmentNumber": zod.string(),
   "shipDate": zod.string(),
   "status": zod.string(),
@@ -1951,6 +1967,7 @@ export const CancelShipmentBody = zod.object({
 export const CancelShipmentResponse = zod.object({
   "id": zod.number(),
   "salesOrderId": zod.number(),
+  "fulfillmentId": zod.number().nullish(),
   "shipmentNumber": zod.string(),
   "shipDate": zod.string(),
   "status": zod.string(),
@@ -3450,6 +3467,7 @@ export const BookShiprocketShipmentResponse = zod.object({
   "shipment": zod.object({
   "id": zod.number(),
   "salesOrderId": zod.number(),
+  "fulfillmentId": zod.number().nullish(),
   "shipmentNumber": zod.string(),
   "shipDate": zod.string(),
   "status": zod.string(),

@@ -14,12 +14,15 @@ import {
   fulfillmentLinesTable,
   fulfillmentScansTable,
   warehousesTable,
+  customersTable,
 } from "@workspace/db";
 import { tenantMiddleware } from "../lib/tenant";
 import { nextOrderNumber } from "../lib/orderHelpers";
 import { toNum, toStr } from "../lib/numeric";
 import { pushFulfillmentToShopify, pushStockToShopify } from "../lib/shopifyOutbound";
 import { serializeShipment } from "../lib/serializers";
+import { sendShippingConfirmationEmail } from "../lib/email";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 router.use(tenantMiddleware);
@@ -1084,6 +1087,48 @@ router.post("/fulfillments/:id/dispatch", async (req, res, next) => {
 
     const data = await loadFulfillmentWithLines(t.organizationId, fulfillmentId);
     res.json(data);
+
+    // Fire-and-forget: send shipping confirmation email to the customer
+    void (async () => {
+      try {
+        const rows = await db
+          .select({
+            customerEmail: customersTable.email,
+            customerName: customersTable.name,
+            orderNumber: salesOrdersTable.orderNumber,
+          })
+          .from(salesOrdersTable)
+          .innerJoin(customersTable, eq(customersTable.id, salesOrdersTable.customerId))
+          .where(
+            and(
+              eq(salesOrdersTable.id, result.salesOrderId),
+              eq(salesOrdersTable.organizationId, t.organizationId),
+            ),
+          )
+          .limit(1);
+        const row = rows[0];
+        if (!row?.customerEmail) return;
+
+        const items = (data?.lines ?? []).map((l) => ({
+          itemName: l.itemName,
+          sku: l.sku,
+          quantity: toNum(l.quantityPicked),
+        }));
+
+        await sendShippingConfirmationEmail({
+          to: row.customerEmail,
+          customerName: row.customerName,
+          orderNumber: row.orderNumber,
+          courierName,
+          awbNumber,
+          trackingUrl,
+          items,
+        });
+        logger.info({ fulfillmentId, orderNumber: row.orderNumber }, "dispatch: shipping confirmation email sent");
+      } catch (err) {
+        logger.warn({ err, fulfillmentId }, "dispatch: could not send shipping confirmation email");
+      }
+    })();
   } catch (err) {
     next(err);
   }

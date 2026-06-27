@@ -20,7 +20,12 @@ import {
   useGetMe,
   useRecordPrint,
 } from "@/lib/queryKeys";
-import { useDeleteSalesOrder, getListCustomerPaymentsQueryKey } from "@workspace/api-client-react";
+import {
+  useDeleteSalesOrder,
+  getListCustomerPaymentsQueryKey,
+  useListCustomerPayments,
+  useDeleteCustomerPayment,
+} from "@workspace/api-client-react";
 import { normalizeRole } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,6 +45,8 @@ import {
   Printer,
   Receipt,
   Trash2,
+  ExternalLink,
+  CreditCard,
 } from "lucide-react";
 import { Fragment, useState } from "react";
 import { RecordPaymentDialog } from "@/components/RecordPaymentDialog";
@@ -197,6 +204,23 @@ export default function SalesOrderDetail() {
         const e = err as { response?: { data?: { error?: string } } };
         toast({
           title: "Could not delete",
+          description: e.response?.data?.error ?? "Please try again.",
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const deletePaymentMutation = useDeleteCustomerPayment({
+    mutation: {
+      onSuccess: () => {
+        invalidateAll();
+        toast({ title: "Payment deleted" });
+      },
+      onError: (err: unknown) => {
+        const e = err as { response?: { data?: { error?: string } } };
+        toast({
+          title: "Could not delete payment",
           description: e.response?.data?.error ?? "Please try again.",
           variant: "destructive",
         });
@@ -449,6 +473,29 @@ export default function SalesOrderDetail() {
         badge={
           <div className="flex items-center gap-1.5">
             <StatusBadge status={order.status} />
+            {order.paymentStatus && order.paymentStatus !== "pending" && (
+              <Badge
+                variant="outline"
+                className={
+                  order.paymentStatus === "paid"
+                    ? "text-[10px] font-medium bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40"
+                    : order.paymentStatus === "partially_paid"
+                      ? "text-[10px] font-medium bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40"
+                      : order.paymentStatus === "refunded"
+                        ? "text-[10px] font-medium bg-red-50 text-red-700 border-red-300 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800/40"
+                        : "text-[10px] font-medium"
+                }
+                data-testid="badge-payment-status-header"
+              >
+                {order.paymentStatus === "paid"
+                  ? "Paid"
+                  : order.paymentStatus === "partially_paid"
+                    ? "Partially Paid"
+                    : order.paymentStatus === "refunded"
+                      ? "Refunded"
+                      : order.paymentStatus}
+              </Badge>
+            )}
             {order.shopifyOrderId && (
               <Badge
                 variant="outline"
@@ -782,26 +829,81 @@ export default function SalesOrderDetail() {
 
       {orderDetail.paymentBreakdown.length > 0 && (
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-              Payment Breakdown
-            </CardTitle>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+                <CreditCard className="h-4 w-4" /> Payment History
+              </CardTitle>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              {orderDetail.paymentBreakdown.map((p, i) => (
-                <div key={i} className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium capitalize">
-                      {p.mode === "upi" ? "UPI" : p.mode === "cash" ? "Cash" : p.mode === "card" ? "Card" : p.mode === "bank" ? "Bank Transfer" : p.mode === "razorpay" ? "Razorpay" : (p.mode ?? "").charAt(0).toUpperCase() + (p.mode ?? "").slice(1)}
-                    </span>
-                    {p.referenceNumber && (
-                      <span className="text-muted-foreground text-xs">#{p.referenceNumber}</span>
-                    )}
-                  </div>
-                  <span className="font-medium">{formatCurrency(p.amount)}</span>
-                </div>
-              ))}
+            <div className="relative">
+              <div className="absolute left-[11px] top-0 bottom-0 w-px bg-border" />
+              <div className="space-y-4">
+                {orderDetail.paymentBreakdown.map((p) => {
+                  const modeLabel =
+                    p.mode === "upi" ? "UPI" :
+                    p.mode === "cash" ? "Cash" :
+                    p.mode === "card" ? "Card" :
+                    p.mode === "bank" ? "Bank Transfer" :
+                    p.mode === "razorpay" ? "Razorpay" :
+                    (p.mode ?? "").charAt(0).toUpperCase() + (p.mode ?? "").slice(1);
+                  return (
+                    <div key={p.paymentId} className="relative flex items-start gap-3 pl-7">
+                      <div className="absolute left-0 top-1 h-[22px] w-[22px] rounded-full bg-primary/10 border-2 border-background ring-1 ring-primary/30 flex items-center justify-center">
+                        <IndianRupee className="h-2.5 w-2.5 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-sm">{modeLabel}</span>
+                            {p.referenceNumber && (
+                              <span className="text-xs text-muted-foreground">#{p.referenceNumber}</span>
+                            )}
+                          </div>
+                          <span className="font-semibold text-sm tabular-nums">{formatCurrency(p.amount)}</span>
+                        </div>
+                        {p.paymentDate && (
+                          <p className="text-xs text-muted-foreground mt-0.5">{formatDate(p.paymentDate)}</p>
+                        )}
+                      </div>
+                      <Can module="payments" action="delete">
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6 text-muted-foreground hover:text-destructive shrink-0"
+                              data-testid={`btn-delete-payment-${p.paymentId}`}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete this payment?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This will permanently remove the {modeLabel} payment of {formatCurrency(p.amount)}. Stock and order status will not be affected.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                onClick={() => deletePaymentMutation.mutate({ id: p.paymentId })}
+                                disabled={deletePaymentMutation.isPending}
+                                data-testid={`btn-confirm-delete-payment-${p.paymentId}`}
+                              >
+                                Delete payment
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </Can>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -953,7 +1055,7 @@ export default function SalesOrderDetail() {
 
       <Card data-testid="card-shipments">
         <CardHeader>
-          <CardTitle>Shipments</CardTitle>
+          <CardTitle>Fulfillments</CardTitle>
         </CardHeader>
         <CardContent>
           {shipments.length === 0 ? (
@@ -962,195 +1064,177 @@ export default function SalesOrderDetail() {
             </p>
           ) : (
             <div className="space-y-4">
-              {shipments.map((s) => (
-                <div
-                  key={s.id}
-                  className="border rounded-md p-4 space-y-3"
-                  data-testid={`shipment-${s.id}`}
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div className="font-medium">{s.shipmentNumber}</div>
-                      <div className="text-xs text-muted-foreground">
-                        Shipped {formatDate(s.shipDate)}
-                      </div>
-                      {(s.awb || s.courierName) && (
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {s.courierName ? `${s.courierName} · ` : ""}
-                          {s.awb ? `AWB ${s.awb}` : ""}
+              {shipments.map((s) => {
+                const enriched = s as typeof s & { fulfillmentId?: number | null };
+                return (
+                  <div
+                    key={s.id}
+                    className="border rounded-lg overflow-hidden"
+                    data-testid={`shipment-${s.id}`}
+                  >
+                    {/* Card header stripe */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-muted/40 border-b">
+                      <div className="flex items-center gap-3">
+                        <div className="h-8 w-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+                          <Package className="h-4 w-4 text-primary" />
                         </div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {s.status === "cancelled" && <StatusBadge status={s.status} />}
-                      {s.trackingStatus && (
-                        <Badge
-                          variant="outline"
-                          data-testid={`shipment-tracking-status-${s.id}`}
-                        >
-                          {s.trackingStatus.replace(/_/g, " ")}
-                        </Badge>
-                      )}
-                      {s.status !== "cancelled" && !s.awb && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setBookShipmentId(s.id)}
-                          data-testid={`btn-book-shiprocket-${s.id}`}
-                        >
-                          <Truck className="mr-2 h-4 w-4" /> Book on Shiprocket
-                        </Button>
-                      )}
-                      {s.labelUrl && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          asChild
-                          data-testid={`btn-print-label-${s.id}`}
-                        >
-                          <a
-                            href={s.labelUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-sm">{s.shipmentNumber}</span>
+                            {s.status === "cancelled" && <StatusBadge status={s.status} />}
+                            {s.trackingStatus && (
+                              <Badge variant="outline" className="text-[10px]" data-testid={`shipment-tracking-status-${s.id}`}>
+                                {s.trackingStatus.replace(/_/g, " ")}
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            Shipped {formatDate(s.shipDate)}
+                            {s.courierName && ` · ${s.courierName}`}
+                            {s.awb && ` · AWB ${s.awb}`}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {enriched.fulfillmentId && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            asChild
+                            data-testid={`btn-view-fulfillment-${s.id}`}
                           >
-                            <FileDown className="mr-2 h-4 w-4" /> Label
-                          </a>
-                        </Button>
-                      )}
-                      {s.trackingUrl && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          asChild
-                          data-testid={`btn-track-shipment-${s.id}`}
-                        >
-                          <a
-                            href={s.trackingUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                            <Link href={`/fulfillments/${enriched.fulfillmentId}`}>
+                              <ExternalLink className="mr-1.5 h-3 w-3" /> Fulfillment
+                            </Link>
+                          </Button>
+                        )}
+                        {s.labelUrl && (
+                          <Button size="sm" variant="outline" asChild data-testid={`btn-print-label-${s.id}`}>
+                            <a href={s.labelUrl} target="_blank" rel="noopener noreferrer">
+                              <FileDown className="mr-1.5 h-3 w-3" /> Label
+                            </a>
+                          </Button>
+                        )}
+                        {s.trackingUrl && (
+                          <Button size="sm" variant="outline" asChild data-testid={`btn-track-shipment-${s.id}`}>
+                            <a href={s.trackingUrl} target="_blank" rel="noopener noreferrer">
+                              <Truck className="mr-1.5 h-3 w-3" /> Track
+                            </a>
+                          </Button>
+                        )}
+                        {s.status !== "cancelled" && !s.awb && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setBookShipmentId(s.id)}
+                            data-testid={`btn-book-shiprocket-${s.id}`}
                           >
-                            <Package className="mr-2 h-4 w-4" /> Track
-                          </a>
-                        </Button>
-                      )}
-                      {s.status !== "cancelled" && canCancelShipments && (
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={cancelShipmentMutation.isPending}
-                              data-testid={`btn-cancel-shipment-${s.id}`}
-                            >
-                              Cancel shipment
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Cancel this shipment?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Stock will be added back to {order.warehouseName} and the line quantities will be available to ship again.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <div className="space-y-2 py-2">
-                              <label
-                                htmlFor={`cancel-reason-${s.id}`}
-                                className="text-sm font-medium"
-                              >
-                                Reason
-                              </label>
-                              <select
-                                id={`cancel-reason-${s.id}`}
-                                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                value={getReason(s.id).code}
-                                onChange={(e) =>
-                                  setReason(s.id, { code: e.target.value })
-                                }
-                                data-testid={`select-cancel-reason-${s.id}`}
-                              >
-                                <option value="">(not specified)</option>
-                                <option value="customer_changed_mind">
-                                  Customer changed mind
-                                </option>
-                                <option value="damaged">Damaged</option>
-                                <option value="wrong_item">Wrong item</option>
-                                <option value="defective">Defective</option>
-                                <option value="pricing_error">
-                                  Pricing error
-                                </option>
-                                <option value="duplicate">Duplicate</option>
-                                <option value="other">Other</option>
-                              </select>
-                              <label
-                                htmlFor={`cancel-notes-${s.id}`}
-                                className="text-sm font-medium block pt-2"
-                              >
-                                Notes (optional)
-                              </label>
-                              <textarea
-                                id={`cancel-notes-${s.id}`}
-                                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                                rows={2}
-                                maxLength={1000}
-                                value={getReason(s.id).notes}
-                                onChange={(e) =>
-                                  setReason(s.id, { notes: e.target.value })
-                                }
-                                data-testid={`textarea-cancel-notes-${s.id}`}
-                              />
-                            </div>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Keep shipment</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => {
-                                  const r = getReason(s.id);
-                                  cancelShipmentMutation.mutate({
-                                    shipmentId: s.id,
-                                    data: {
-                                      ...(r.code
-                                        ? { reasonCode: r.code as never }
-                                        : {}),
-                                      ...(r.notes.trim()
-                                        ? { reasonNotes: r.notes.trim() }
-                                        : {}),
-                                    },
-                                  });
-                                }}
-                                data-testid={`btn-confirm-cancel-shipment-${s.id}`}
+                            <Truck className="mr-1.5 h-3 w-3" /> Book on Shiprocket
+                          </Button>
+                        )}
+                        {s.status !== "cancelled" && canCancelShipments && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-muted-foreground hover:text-destructive"
                                 disabled={cancelShipmentMutation.isPending}
+                                data-testid={`btn-cancel-shipment-${s.id}`}
                               >
-                                Cancel shipment
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      )}
+                                Cancel
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Cancel this shipment?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Stock will be added back to {order.warehouseName} and the line quantities will be available to ship again.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <div className="space-y-2 py-2">
+                                <label
+                                  htmlFor={`cancel-reason-${s.id}`}
+                                  className="text-sm font-medium"
+                                >
+                                  Reason
+                                </label>
+                                <select
+                                  id={`cancel-reason-${s.id}`}
+                                  className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                  value={getReason(s.id).code}
+                                  onChange={(e) => setReason(s.id, { code: e.target.value })}
+                                  data-testid={`select-cancel-reason-${s.id}`}
+                                >
+                                  <option value="">(not specified)</option>
+                                  <option value="customer_changed_mind">Customer changed mind</option>
+                                  <option value="damaged">Damaged</option>
+                                  <option value="wrong_item">Wrong item</option>
+                                  <option value="defective">Defective</option>
+                                  <option value="pricing_error">Pricing error</option>
+                                  <option value="duplicate">Duplicate</option>
+                                  <option value="other">Other</option>
+                                </select>
+                                <label
+                                  htmlFor={`cancel-notes-${s.id}`}
+                                  className="text-sm font-medium block pt-2"
+                                >
+                                  Notes (optional)
+                                </label>
+                                <textarea
+                                  id={`cancel-notes-${s.id}`}
+                                  className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                                  rows={2}
+                                  maxLength={1000}
+                                  value={getReason(s.id).notes}
+                                  onChange={(e) => setReason(s.id, { notes: e.target.value })}
+                                  data-testid={`textarea-cancel-notes-${s.id}`}
+                                />
+                              </div>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Keep shipment</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => {
+                                    const r = getReason(s.id);
+                                    cancelShipmentMutation.mutate({
+                                      shipmentId: s.id,
+                                      data: {
+                                        ...(r.code ? { reasonCode: r.code as never } : {}),
+                                        ...(r.notes.trim() ? { reasonNotes: r.notes.trim() } : {}),
+                                      },
+                                    });
+                                  }}
+                                  data-testid={`btn-confirm-cancel-shipment-${s.id}`}
+                                  disabled={cancelShipmentMutation.isPending}
+                                >
+                                  Cancel shipment
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  {s.notes && (
-                    <p className="text-sm text-muted-foreground">{s.notes}</p>
-                  )}
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Item</TableHead>
-                        <TableHead className="text-right">Quantity</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
+                    {/* Items list */}
+                    <div className="divide-y">
                       {s.lines.map((sl) => (
-                        <TableRow key={sl.id}>
-                          <TableCell>
-                            <div className="font-medium">{sl.itemName}</div>
+                        <div key={sl.id} className="flex items-center justify-between px-4 py-2.5">
+                          <div>
+                            <div className="text-sm font-medium">{sl.itemName}</div>
                             <div className="text-xs text-muted-foreground">{sl.sku}</div>
-                          </TableCell>
-                          <TableCell className="text-right">{sl.quantity}</TableCell>
-                        </TableRow>
+                          </div>
+                          <div className="text-sm font-medium tabular-nums">×{sl.quantity}</div>
+                        </div>
                       ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              ))}
+                    </div>
+                    {s.notes && (
+                      <div className="px-4 py-2.5 border-t bg-muted/20">
+                        <p className="text-xs text-muted-foreground">{s.notes}</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </CardContent>

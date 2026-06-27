@@ -1132,6 +1132,8 @@ export interface ShipmentLine {
 export interface Shipment {
   id: number;
   salesOrderId: number;
+  /** @nullable */
+  fulfillmentId?: number | null;
   shipmentNumber: string;
   shipDate: string;
   status: string;
@@ -1170,9 +1172,12 @@ export interface Shipment {
 }
 
 export interface PaymentBreakdownEntry {
+  paymentId: number;
   mode: string;
   /** @nullable */
   referenceNumber: string | null;
+  /** @nullable */
+  paymentDate: string | null;
   amount: number;
 }
 

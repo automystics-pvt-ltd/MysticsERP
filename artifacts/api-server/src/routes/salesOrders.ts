@@ -16,6 +16,7 @@ import {
   emailLogTable,
   itemBundleComponentsTable,
   organizationsTable,
+  fulfillmentsTable,
 } from "@workspace/db";
 import { tenantMiddleware, assertOwnership, findParentItems } from "../lib/tenant";
 import {
@@ -300,10 +301,33 @@ async function loadDetail(orgId: number, orderId: number) {
     .innerJoin(itemsTable, eq(itemsTable.id, salesOrderLinesTable.itemId))
     .where(eq(salesOrderLinesTable.salesOrderId, orderId));
   const shipments = await loadShipmentsForOrder(orgId, orderId);
+
+  // Reverse-lookup fulfillment IDs for each shipment so the UI can link to /fulfillments/:id
+  const fulfillmentRows = await db // org-scope-allow: organizationId + salesOrderId constrain to the already-verified order
+    .select({ id: fulfillmentsTable.id, shipmentId: fulfillmentsTable.shipmentId })
+    .from(fulfillmentsTable)
+    .where(
+      and(
+        eq(fulfillmentsTable.organizationId, orgId),
+        eq(fulfillmentsTable.salesOrderId, orderId),
+      ),
+    );
+  const shipmentToFulfillmentId = new Map(
+    fulfillmentRows
+      .filter((f) => f.shipmentId !== null)
+      .map((f) => [f.shipmentId!, f.id]),
+  );
+  const shipmentsWithFulfillment = shipments.map((s) => ({
+    ...s,
+    fulfillmentId: shipmentToFulfillmentId.get(s.id) ?? null,
+  }));
+
   const paymentBreakdownRows = await db
     .select({
+      paymentId: customerPaymentsTable.id,
       mode: customerPaymentsTable.mode,
       referenceNumber: customerPaymentsTable.referenceNumber,
+      paymentDate: customerPaymentsTable.paymentDate,
       amount: sql<string>`SUM(${customerPaymentAllocationsTable.amount})`,
     })
     .from(customerPaymentAllocationsTable)
@@ -357,11 +381,13 @@ async function loadDetail(orgId: number, orderId: number) {
       ),
     ),
     paymentBreakdown: paymentBreakdownRows.map((r) => ({
+      paymentId: r.paymentId,
       mode: r.mode,
       referenceNumber: r.referenceNumber,
+      paymentDate: r.paymentDate,
       amount: toNum(r.amount),
     })),
-    shipments,
+    shipments: shipmentsWithFulfillment,
   };
 }
 
