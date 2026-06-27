@@ -2056,16 +2056,20 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
       const order = orderRows[0];
       if (!order) throw new Error("NOT_FOUND");
 
-      if (!(REFUNDABLE_ORDER_STATUSES as readonly string[]).includes(order.status)) {
-        throw new Error(
-          `INVALID_STATUS:Refunds can only be issued for orders with status: ${REFUNDABLE_ORDER_STATUSES.join(", ")}`,
-        );
-      }
-
       // amountPaid here reflects the running balance AFTER prior refunds have already
       // decremented it (each refund immediately updates the column). So just compare
       // against the current locked value — no need to subtract alreadyRefunded again.
       const amountPaid = toNum(order.amountPaid ?? "0");
+
+      // Eligibility: allow refund if the order is in a normally refundable status OR
+      // if any money has already been collected (amountPaid > 0) — e.g. a cancelled
+      // order that still holds a balance needs to be refundable too.
+      const statusAllowed = (REFUNDABLE_ORDER_STATUSES as readonly string[]).includes(order.status);
+      if (!statusAllowed && amountPaid <= 0.001) {
+        throw new Error(
+          `INVALID_STATUS:Refunds require a refundable order status (${REFUNDABLE_ORDER_STATUSES.join(", ")}) or a positive collected balance`,
+        );
+      }
       if (refundAmount > amountPaid + 0.001) {
         throw new Error(
           `OVER_REFUND:Refund amount (${refundAmount.toFixed(2)}) exceeds the amount available to refund (${amountPaid.toFixed(2)})`,
@@ -2089,7 +2093,12 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
           refundDate: b.refundDate,
           refundType: effectiveRefundType,
           refundAmount: toStr(refundAmount),
-          restockItems,
+          // Derive restockItems server-side: true if the global flag is set OR
+          // if any explicit line carries a per-line warehouse (item-wise restock).
+          // This ensures the timeline "Restocked" chip is accurate regardless of mode.
+          restockItems:
+            restockItems ||
+            resolvedLines.some((l) => l.lineWarehouseId != null),
           warehouseId: globalWarehouseId ?? null,
           reason: b.reason ? String(b.reason).trim() : null,
           notes: b.notes ? String(b.notes).trim() : null,

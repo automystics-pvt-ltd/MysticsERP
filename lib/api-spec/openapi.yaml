@@ -1071,7 +1071,7 @@ paths:
           application/json:
             schema: { $ref: "#/components/schemas/CreateRefundPayload" }
       responses:
-        "201":
+        "200":
           description: Refund created
           content:
             application/json:

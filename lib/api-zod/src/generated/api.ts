@@ -2099,7 +2099,31 @@ export const CreateSalesOrderRefundBody = zod.object({
 })).optional().describe('Line-level breakdown for item-wise refunds. Each entry references a sales order line.')
 })
 
-export const CreateSalesOrderRefundResponse = zod.void()
+export const CreateSalesOrderRefundResponse = zod.object({
+  "id": zod.number(),
+  "salesOrderId": zod.number(),
+  "refundNumber": zod.string(),
+  "refundDate": zod.string(),
+  "refundType": zod.enum(['full', 'partial', 'item_wise']).describe('full — entire paid amount; partial — money-only partial; item_wise — per-line breakdown.'),
+  "refundAmount": zod.number(),
+  "restockItems": zod.boolean(),
+  "warehouseId": zod.number().nullable(),
+  "reason": zod.string().nullable(),
+  "notes": zod.string().nullable(),
+  "createdBy": zod.string().nullable().describe('Clerk userId of the operator who issued the refund.'),
+  "createdAt": zod.string(),
+  "lines": zod.array(zod.object({
+  "id": zod.number(),
+  "salesOrderLineId": zod.number(),
+  "itemId": zod.number(),
+  "itemName": zod.string(),
+  "sku": zod.string(),
+  "warehouseId": zod.number().nullable().describe('Warehouse where this line\'s items are restocked. Null if no restock for this line.'),
+  "quantity": zod.number(),
+  "unitPrice": zod.number(),
+  "refundAmount": zod.number()
+}))
+})
 
 
 export const ListSalesOrderEmailLogParams = zod.object({
