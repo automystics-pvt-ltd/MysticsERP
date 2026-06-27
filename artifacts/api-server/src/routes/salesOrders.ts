@@ -17,6 +17,8 @@ import {
   itemBundleComponentsTable,
   organizationsTable,
   fulfillmentsTable,
+  refundsTable,
+  refundLinesTable,
 } from "@workspace/db";
 import { tenantMiddleware, assertOwnership, findParentItems } from "../lib/tenant";
 import {
@@ -1772,6 +1774,330 @@ router.get("/sales-orders/:id/email-log", async (req, res, next) => {
       )
       .orderBy(desc(emailLogTable.sentAt));
     res.json(rows.map(serializeEmailLog));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Refunds
+// ---------------------------------------------------------------------------
+
+const REFUNDABLE_ORDER_STATUSES = [
+  "confirmed",
+  "partially_shipped",
+  "shipped",
+  "delivered",
+  "invoiced",
+  "paid",
+  "returned",
+] as const;
+
+function serializeRefund(
+  r: typeof refundsTable.$inferSelect & {
+    lines: Array<{
+      id: number;
+      salesOrderLineId: number;
+      itemId: number;
+      itemName: string;
+      sku: string;
+      quantity: string;
+      refundAmount: string;
+    }>;
+  },
+) {
+  return {
+    id: r.id,
+    salesOrderId: r.salesOrderId,
+    refundNumber: r.refundNumber,
+    refundDate: r.refundDate,
+    refundAmount: toNum(r.refundAmount),
+    restockItems: r.restockItems,
+    warehouseId: r.warehouseId ?? null,
+    reason: r.reason ?? null,
+    notes: r.notes ?? null,
+    createdAt: r.createdAt.toISOString(),
+    lines: r.lines.map((l) => ({
+      id: l.id,
+      salesOrderLineId: l.salesOrderLineId,
+      itemId: l.itemId,
+      itemName: l.itemName,
+      sku: l.sku,
+      quantity: toNum(l.quantity),
+      refundAmount: toNum(l.refundAmount),
+    })),
+  };
+}
+
+async function loadRefundsForOrder(orgId: number, orderId: number) {
+  const refunds = await db
+    .select()
+    .from(refundsTable)
+    .where(
+      and(
+        eq(refundsTable.organizationId, orgId),
+        eq(refundsTable.salesOrderId, orderId),
+      ),
+    )
+    .orderBy(desc(refundsTable.createdAt));
+  if (refunds.length === 0) return [];
+  const refundIds = refunds.map((r) => r.id);
+  const lineRows = await db
+    .select({
+      line: refundLinesTable,
+      itemName: itemsTable.name,
+      sku: itemsTable.sku,
+    })
+    .from(refundLinesTable)
+    .innerJoin(itemsTable, eq(itemsTable.id, refundLinesTable.itemId))
+    .where(
+      and(
+        eq(refundLinesTable.organizationId, orgId),
+        inArray(refundLinesTable.refundId, refundIds),
+      ),
+    );
+  const linesByRefund = new Map<number, typeof lineRows>();
+  for (const r of lineRows) {
+    const arr = linesByRefund.get(r.line.refundId) ?? [];
+    arr.push(r);
+    linesByRefund.set(r.line.refundId, arr);
+  }
+  return refunds.map((r) =>
+    serializeRefund({
+      ...r,
+      lines: (linesByRefund.get(r.id) ?? []).map((row) => ({
+        id: row.line.id,
+        salesOrderLineId: row.line.salesOrderLineId,
+        itemId: row.line.itemId,
+        itemName: row.itemName,
+        sku: row.sku,
+        quantity: row.line.quantity,
+        refundAmount: row.line.refundAmount,
+      })),
+    }),
+  );
+}
+
+router.get("/sales-orders/:id/refunds", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      res.status(400).json({ error: "Invalid sales order id" });
+      return;
+    }
+    const orderRows = await db
+      .select({ id: salesOrdersTable.id })
+      .from(salesOrdersTable)
+      .where(and(eq(salesOrdersTable.id, id), eq(salesOrdersTable.organizationId, t.organizationId)))
+      .limit(1);
+    if (!orderRows[0]) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    const refunds = await loadRefundsForOrder(t.organizationId, id);
+    res.json(refunds);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/sales-orders/:id/refunds", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      res.status(400).json({ error: "Invalid sales order id" });
+      return;
+    }
+
+    const b = req.body ?? {};
+    const refundAmount = Number(b.refundAmount);
+    if (!Number.isFinite(refundAmount) || refundAmount < 0) {
+      res.status(400).json({ error: "refundAmount must be a non-negative number" });
+      return;
+    }
+    if (!b.refundDate || typeof b.refundDate !== "string") {
+      res.status(400).json({ error: "refundDate is required (YYYY-MM-DD)" });
+      return;
+    }
+    const restockItems = b.restockItems === true;
+    const warehouseId = b.warehouseId ? Number(b.warehouseId) : null;
+    if (restockItems && !warehouseId) {
+      res.status(400).json({ error: "warehouseId is required when restockItems is true" });
+      return;
+    }
+
+    const orderRows = await db
+      .select({
+        id: salesOrdersTable.id,
+        status: salesOrdersTable.status,
+        orderNumber: salesOrdersTable.orderNumber,
+        warehouseId: salesOrdersTable.warehouseId,
+        amountPaid: salesOrdersTable.amountPaid,
+      })
+      .from(salesOrdersTable)
+      .where(and(eq(salesOrdersTable.id, id), eq(salesOrdersTable.organizationId, t.organizationId)))
+      .limit(1);
+    const order = orderRows[0];
+    if (!order) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    if (!(REFUNDABLE_ORDER_STATUSES as readonly string[]).includes(order.status)) {
+      res.status(400).json({
+        error: `Refunds can only be issued for orders with status: ${REFUNDABLE_ORDER_STATUSES.join(", ")}`,
+      });
+      return;
+    }
+
+    if (restockItems && warehouseId) {
+      const own = await assertOwnership({ organizationId: t.organizationId, warehouseIds: [warehouseId] });
+      if (!own.ok) {
+        res.status(400).json({ error: "Invalid warehouseId" });
+        return;
+      }
+    }
+
+    const rawLines: Array<{ salesOrderLineId: number; quantity: number; refundAmount?: number }> =
+      Array.isArray(b.lines) ? b.lines : [];
+
+    const resolvedLines: Array<{
+      salesOrderLineId: number;
+      itemId: number;
+      quantity: number;
+      refundAmount: number;
+    }> = [];
+
+    if (rawLines.length > 0) {
+      const solIds = rawLines.map((l) => Number(l.salesOrderLineId)).filter((n) => Number.isFinite(n) && n > 0);
+      if (solIds.length !== rawLines.length) {
+        res.status(400).json({ error: "Each line must have a valid salesOrderLineId" });
+        return;
+      }
+      const solRows = await db
+        .select({
+          id: salesOrderLinesTable.id,
+          itemId: salesOrderLinesTable.itemId,
+          quantityShipped: salesOrderLinesTable.quantityShipped,
+          salesOrderId: salesOrderLinesTable.salesOrderId,
+        })
+        .from(salesOrderLinesTable)
+        .where(
+          and(
+            eq(salesOrderLinesTable.salesOrderId, id),
+            inArray(salesOrderLinesTable.id, solIds),
+          ),
+        );
+      if (solRows.length !== solIds.length) {
+        res.status(400).json({ error: "One or more salesOrderLineId values are invalid for this order" });
+        return;
+      }
+      const solMap = new Map(solRows.map((r) => [r.id, r]));
+      for (const raw of rawLines) {
+        const qty = Number(raw.quantity);
+        if (!Number.isFinite(qty) || qty <= 0) {
+          res.status(400).json({ error: "Each line quantity must be > 0" });
+          return;
+        }
+        const sol = solMap.get(Number(raw.salesOrderLineId))!;
+        resolvedLines.push({
+          salesOrderLineId: sol.id,
+          itemId: sol.itemId,
+          quantity: qty,
+          refundAmount: Number(raw.refundAmount ?? 0) || 0,
+        });
+      }
+    }
+
+    const refundedItemIds: number[] = [];
+
+    const newRefund = await db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(refundsTable)
+        .values({
+          organizationId: t.organizationId,
+          salesOrderId: id,
+          refundNumber: nextOrderNumber("RFD"),
+          refundDate: b.refundDate,
+          refundAmount: toStr(refundAmount),
+          restockItems,
+          warehouseId: warehouseId ?? null,
+          reason: b.reason ? String(b.reason).trim() : null,
+          notes: b.notes ? String(b.notes).trim() : null,
+        })
+        .returning();
+
+      if (resolvedLines.length > 0) {
+        await tx.insert(refundLinesTable).values(
+          resolvedLines.map((l) => ({
+            organizationId: t.organizationId,
+            refundId: inserted!.id,
+            salesOrderLineId: l.salesOrderLineId,
+            itemId: l.itemId,
+            quantity: toStr(l.quantity),
+            refundAmount: toStr(l.refundAmount),
+          })),
+        );
+      }
+
+      if (restockItems && warehouseId && resolvedLines.length > 0) {
+        for (const l of resolvedLines) {
+          refundedItemIds.push(l.itemId);
+          const stockRows = await tx
+            .select()
+            .from(itemWarehouseStockTable)
+            .where(
+              and(
+                eq(itemWarehouseStockTable.organizationId, t.organizationId),
+                eq(itemWarehouseStockTable.itemId, l.itemId),
+                eq(itemWarehouseStockTable.warehouseId, warehouseId),
+              ),
+            )
+            .limit(1);
+          if (stockRows[0]) {
+            await tx
+              .update(itemWarehouseStockTable)
+              .set({
+                quantity: sql`${itemWarehouseStockTable.quantity} + ${toStr(l.quantity)}::numeric`,
+              })
+              .where(
+                and(
+                  eq(itemWarehouseStockTable.organizationId, t.organizationId),
+                  eq(itemWarehouseStockTable.id, stockRows[0].id),
+                ),
+              );
+          } else {
+            await tx.insert(itemWarehouseStockTable).values({
+              organizationId: t.organizationId,
+              itemId: l.itemId,
+              warehouseId,
+              quantity: toStr(l.quantity),
+            });
+          }
+          await tx.insert(stockMovementsTable).values({
+            organizationId: t.organizationId,
+            itemId: l.itemId,
+            warehouseId,
+            movementType: "sales_return",
+            quantity: toStr(l.quantity),
+            referenceType: "refund",
+            referenceId: inserted!.id,
+            notes: `Refund ${inserted!.refundNumber} for order ${order.orderNumber}`,
+          });
+        }
+      }
+
+      return inserted!;
+    });
+
+    for (const itemId of new Set(refundedItemIds)) {
+      pushStockToShopify(t.organizationId, itemId);
+    }
+
+    const refunds = await loadRefundsForOrder(t.organizationId, id);
+    const created = refunds.find((r) => r.id === newRefund.id);
+    res.status(201).json(created);
   } catch (err) {
     next(err);
   }

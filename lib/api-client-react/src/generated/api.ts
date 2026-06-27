@@ -55,6 +55,7 @@ import type {
   CreateJobWorkOrderPayload,
   CreatePaymentLinkPayload,
   CreatePurchaseOrderPayload,
+  CreateRefundPayload,
   CreateSalesOrderPayload,
   CreateShipmentPayload,
   CreateStockTransferPayload,
@@ -154,6 +155,7 @@ import type {
   ReceivablesAgingReport,
   ReceiveJobWorkOutputPayload,
   ReconcileShopifyOrdersParams,
+  Refund,
   ResetPasswordBody,
   ReturnOrderPayload,
   ReturnsReport,
@@ -4377,6 +4379,154 @@ export const useResendShippingConfirmation = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getResendShippingConfirmationMutationOptions(options));
+    }
+
+export const getListSalesOrderRefundsUrl = (id: number,) => {
+
+
+
+
+  return `/api/sales-orders/${id}/refunds`
+}
+
+/**
+ * @summary List refunds issued for a sales order
+ */
+export const listSalesOrderRefunds = async (id: number, options?: RequestInit): Promise<Refund[]> => {
+
+  return customFetch<Refund[]>(getListSalesOrderRefundsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSalesOrderRefundsQueryKey = (id: number,) => {
+    return [
+    `/api/sales-orders/${id}/refunds`
+    ] as const;
+    }
+
+
+export const getListSalesOrderRefundsQueryOptions = <TData = Awaited<ReturnType<typeof listSalesOrderRefunds>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSalesOrderRefunds>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSalesOrderRefundsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSalesOrderRefunds>>> = ({ signal }) => listSalesOrderRefunds(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSalesOrderRefunds>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSalesOrderRefundsQueryResult = NonNullable<Awaited<ReturnType<typeof listSalesOrderRefunds>>>
+export type ListSalesOrderRefundsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List refunds issued for a sales order
+ */
+
+export function useListSalesOrderRefunds<TData = Awaited<ReturnType<typeof listSalesOrderRefunds>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSalesOrderRefunds>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSalesOrderRefundsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateSalesOrderRefundUrl = (id: number,) => {
+
+
+
+
+  return `/api/sales-orders/${id}/refunds`
+}
+
+/**
+ * @summary Issue a refund (full, partial, or item-wise) for a sales order
+ */
+export const createSalesOrderRefund = async (id: number,
+    createRefundPayload: CreateRefundPayload, options?: RequestInit): Promise<Refund> => {
+
+  return customFetch<Refund>(getCreateSalesOrderRefundUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createRefundPayload)
+  }
+);}
+
+
+
+
+export const getCreateSalesOrderRefundMutationOptions = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalesOrderRefund>>, TError,{id: number;data: BodyType<CreateRefundPayload>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSalesOrderRefund>>, TError,{id: number;data: BodyType<CreateRefundPayload>}, TContext> => {
+
+const mutationKey = ['createSalesOrderRefund'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSalesOrderRefund>>, {id: number;data: BodyType<CreateRefundPayload>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  createSalesOrderRefund(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateSalesOrderRefundMutationResult = NonNullable<Awaited<ReturnType<typeof createSalesOrderRefund>>>
+    export type CreateSalesOrderRefundMutationBody = BodyType<CreateRefundPayload>
+    export type CreateSalesOrderRefundMutationError = ErrorType<ErrorEnvelope>
+
+    /**
+ * @summary Issue a refund (full, partial, or item-wise) for a sales order
+ */
+export const useCreateSalesOrderRefund = <TError = ErrorType<ErrorEnvelope>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalesOrderRefund>>, TError,{id: number;data: BodyType<CreateRefundPayload>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createSalesOrderRefund>>,
+        TError,
+        {id: number;data: BodyType<CreateRefundPayload>},
+        TContext
+      > => {
+      return useMutation(getCreateSalesOrderRefundMutationOptions(options));
     }
 
 export const getListSalesOrderEmailLogUrl = (id: number,) => {

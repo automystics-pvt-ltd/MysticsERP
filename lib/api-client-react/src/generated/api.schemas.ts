@@ -1229,6 +1229,67 @@ export interface SalesOrderDetail {
   paymentBreakdown: PaymentBreakdownEntry[];
 }
 
+export interface RefundLine {
+  id: number;
+  salesOrderLineId: number;
+  itemId: number;
+  itemName: string;
+  sku: string;
+  quantity: number;
+  refundAmount: number;
+}
+
+export interface Refund {
+  id: number;
+  salesOrderId: number;
+  refundNumber: string;
+  refundDate: string;
+  refundAmount: number;
+  restockItems: boolean;
+  /** @nullable */
+  warehouseId: number | null;
+  /** @nullable */
+  reason: string | null;
+  /** @nullable */
+  notes: string | null;
+  createdAt: string;
+  lines: RefundLine[];
+}
+
+export interface CreateRefundLinePayload {
+  salesOrderLineId: number;
+  /** Quantity of this item being returned/refunded. */
+  quantity: number;
+  /** Money amount refunded for this line (informational). */
+  refundAmount?: number;
+}
+
+export interface CreateRefundPayload {
+  /** Date of the refund (YYYY-MM-DD). */
+  refundDate: string;
+  /** Total money amount being refunded to the customer. */
+  refundAmount: number;
+  /** When true, returned item quantities are added back into warehouse stock. */
+  restockItems?: boolean;
+  /**
+     * Warehouse where restocked items are credited. Required when restockItems=true.
+     * @nullable
+     */
+  warehouseId?: number | null;
+  /**
+     * Reason for the refund (e.g. 'Damaged goods', 'Customer changed mind').
+     * @nullable
+     */
+  reason?: string | null;
+  /**
+     * Internal notes about this refund.
+     * @nullable
+     */
+  notes?: string | null;
+  /** Line-level breakdown for item-wise refunds. Each entry references a sales order line. */
+  lines?: CreateRefundLinePayload[];
+}
+
 /**
  * Update tracking info on a shipment. All fields are optional; only supplied fields are changed.
  */

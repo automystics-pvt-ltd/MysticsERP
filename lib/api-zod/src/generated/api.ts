@@ -2040,6 +2040,63 @@ export const ResendShippingConfirmationParams = zod.object({
 export const ResendShippingConfirmationResponse = zod.void()
 
 
+/**
+ * @summary List refunds issued for a sales order
+ */
+export const ListSalesOrderRefundsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListSalesOrderRefundsResponseItem = zod.object({
+  "id": zod.number(),
+  "salesOrderId": zod.number(),
+  "refundNumber": zod.string(),
+  "refundDate": zod.string(),
+  "refundAmount": zod.number(),
+  "restockItems": zod.boolean(),
+  "warehouseId": zod.number().nullable(),
+  "reason": zod.string().nullable(),
+  "notes": zod.string().nullable(),
+  "createdAt": zod.string(),
+  "lines": zod.array(zod.object({
+  "id": zod.number(),
+  "salesOrderLineId": zod.number(),
+  "itemId": zod.number(),
+  "itemName": zod.string(),
+  "sku": zod.string(),
+  "quantity": zod.number(),
+  "refundAmount": zod.number()
+}))
+})
+export const ListSalesOrderRefundsResponse = zod.array(ListSalesOrderRefundsResponseItem)
+
+
+/**
+ * @summary Issue a refund (full, partial, or item-wise) for a sales order
+ */
+export const CreateSalesOrderRefundParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const createSalesOrderRefundBodyRestockItemsDefault = false;
+
+export const CreateSalesOrderRefundBody = zod.object({
+  "refundDate": zod.string().describe('Date of the refund (YYYY-MM-DD).'),
+  "refundAmount": zod.number().describe('Total money amount being refunded to the customer.'),
+  "restockItems": zod.boolean().default(createSalesOrderRefundBodyRestockItemsDefault).describe('When true, returned item quantities are added back into warehouse stock.'),
+  "warehouseId": zod.number().nullish().describe('Warehouse where restocked items are credited. Required when restockItems=true.'),
+  "reason": zod.string().nullish().describe('Reason for the refund (e.g. \'Damaged goods\', \'Customer changed mind\').'),
+  "notes": zod.string().nullish().describe('Internal notes about this refund.'),
+  "lines": zod.array(zod.object({
+  "salesOrderLineId": zod.number(),
+  "quantity": zod.number().describe('Quantity of this item being returned\/refunded.'),
+  "refundAmount": zod.number().optional().describe('Money amount refunded for this line (informational).')
+})).optional().describe('Line-level breakdown for item-wise refunds. Each entry references a sales order line.')
+})
+
+export const CreateSalesOrderRefundResponse = zod.void()
+
+
 export const ListSalesOrderEmailLogParams = zod.object({
   "id": zod.coerce.number()
 })

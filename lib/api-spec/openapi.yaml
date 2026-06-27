@@ -1044,6 +1044,49 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/EmailLog" }
 
+  /sales-orders/{id}/refunds:
+    get:
+      operationId: listSalesOrderRefunds
+      tags: [sales-orders]
+      summary: List refunds issued for a sales order
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Refund" }
+    post:
+      operationId: createSalesOrderRefund
+      tags: [sales-orders]
+      summary: Issue a refund (full, partial, or item-wise) for a sales order
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateRefundPayload" }
+      responses:
+        "201":
+          description: Refund created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Refund" }
+        "400":
+          description: Invalid input or order not in a refundable status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "404":
+          description: Sales order not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
   /sales-orders/{id}/email-log:
     get:
       operationId: listSalesOrderEmailLog
@@ -4211,6 +4254,98 @@ components:
         - cancelledAt
         - createdAt
         - lines
+
+    RefundLine:
+      type: object
+      properties:
+        id: { type: integer }
+        salesOrderLineId: { type: integer }
+        itemId: { type: integer }
+        itemName: { type: string }
+        sku: { type: string }
+        quantity: { type: number }
+        refundAmount: { type: number }
+      required:
+        - id
+        - salesOrderLineId
+        - itemId
+        - itemName
+        - sku
+        - quantity
+        - refundAmount
+
+    Refund:
+      type: object
+      properties:
+        id: { type: integer }
+        salesOrderId: { type: integer }
+        refundNumber: { type: string }
+        refundDate: { type: string }
+        refundAmount: { type: number }
+        restockItems: { type: boolean }
+        warehouseId: { type: ["integer", "null"] }
+        reason: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+        createdAt: { type: string }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/RefundLine" }
+      required:
+        - id
+        - salesOrderId
+        - refundNumber
+        - refundDate
+        - refundAmount
+        - restockItems
+        - warehouseId
+        - reason
+        - notes
+        - createdAt
+        - lines
+
+    CreateRefundLinePayload:
+      type: object
+      properties:
+        salesOrderLineId: { type: integer }
+        quantity:
+          type: number
+          description: Quantity of this item being returned/refunded.
+        refundAmount:
+          type: number
+          description: Money amount refunded for this line (informational).
+      required:
+        - salesOrderLineId
+        - quantity
+
+    CreateRefundPayload:
+      type: object
+      properties:
+        refundDate:
+          type: string
+          description: "Date of the refund (YYYY-MM-DD)."
+        refundAmount:
+          type: number
+          description: "Total money amount being refunded to the customer."
+        restockItems:
+          type: boolean
+          description: "When true, returned item quantities are added back into warehouse stock."
+          default: false
+        warehouseId:
+          type: ["integer", "null"]
+          description: "Warehouse where restocked items are credited. Required when restockItems=true."
+        reason:
+          type: ["string", "null"]
+          description: "Reason for the refund (e.g. 'Damaged goods', 'Customer changed mind')."
+        notes:
+          type: ["string", "null"]
+          description: "Internal notes about this refund."
+        lines:
+          type: array
+          description: "Line-level breakdown for item-wise refunds. Each entry references a sales order line."
+          items: { $ref: "#/components/schemas/CreateRefundLinePayload" }
+      required:
+        - refundDate
+        - refundAmount
 
     UpdateShipmentPayload:
       type: object

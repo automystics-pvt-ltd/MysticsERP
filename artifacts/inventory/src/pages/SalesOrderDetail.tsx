@@ -28,6 +28,11 @@ import {
   useResendShippingConfirmation,
   useUpdateShipment,
   useUpdateSalesOrderPaymentMeta,
+  useListSalesOrderRefunds,
+  useCreateSalesOrderRefund,
+  getListSalesOrderRefundsQueryKey,
+  useListWarehouses,
+  getListWarehousesQueryKey,
 } from "@workspace/api-client-react";
 import { normalizeRole } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
@@ -52,6 +57,7 @@ import {
   CreditCard,
   MoreHorizontal,
   ClipboardList,
+  RotateCcw,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -303,6 +309,18 @@ export default function SalesOrderDetail() {
     paymentTerms: "",
   });
 
+  // Refund dialog state
+  const [refundDialogOpen, setRefundDialogOpen] = useState(false);
+  const [refundForm, setRefundForm] = useState({
+    refundDate: new Date().toISOString().slice(0, 10),
+    refundAmount: "",
+    reason: "",
+    notes: "",
+    restockItems: false,
+    warehouseId: "",
+    lines: [] as Array<{ salesOrderLineId: number; itemId: number; itemName: string; sku: string; maxQty: number; quantity: string; refundAmount: string }>,
+  });
+
   const updateShipmentMutation = useUpdateShipment({
     mutation: {
       onSuccess: () => {
@@ -341,6 +359,35 @@ export default function SalesOrderDetail() {
       },
     },
   });
+  const createRefundMutation = useCreateSalesOrderRefund({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListSalesOrderRefundsQueryKey(orderId) });
+        queryClient.invalidateQueries({ queryKey: getGetSalesOrderQueryKey(orderId) });
+        queryClient.invalidateQueries({ queryKey: getListSalesOrdersQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getListStockMovementsQueryKey({ salesOrderId: orderId }) });
+        setRefundDialogOpen(false);
+        toast({ title: "Refund recorded" });
+      },
+      onError: (err: unknown) => {
+        const e = err as { response?: { data?: { error?: string } } };
+        toast({
+          title: "Could not create refund",
+          description: e.response?.data?.error ?? "Please try again.",
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const refundsQuery = useListSalesOrderRefunds(orderId, {
+    query: { enabled: !!orderId, queryKey: getListSalesOrderRefundsQueryKey(orderId) },
+  });
+
+  const warehousesQuery = useListWarehouses(undefined, {
+    query: { enabled: refundDialogOpen && refundForm.restockItems, queryKey: getListWarehousesQueryKey() },
+  });
+
   // Per-shipment cancel-reason form state. Keyed by shipment id so two
   // cancel dialogs on the same page can't trample each other.
   const [cancelReason, setCancelReason] = useState<
@@ -1219,6 +1266,193 @@ export default function SalesOrderDetail() {
         presetSalesOrderBalance={Number(order.balanceDue)}
       />
 
+      {/* ── Issue Refund dialog ──────────────────────────────────────────── */}
+      <Dialog open={refundDialogOpen} onOpenChange={setRefundDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Issue Refund</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="refund-date">Refund date</Label>
+                <Input
+                  id="refund-date"
+                  type="date"
+                  value={refundForm.refundDate}
+                  onChange={(e) => setRefundForm((f) => ({ ...f, refundDate: e.target.value }))}
+                  data-testid="input-refund-date"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="refund-amount">Refund amount (₹)</Label>
+                <Input
+                  id="refund-amount"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={refundForm.refundAmount}
+                  onChange={(e) => setRefundForm((f) => ({ ...f, refundAmount: e.target.value }))}
+                  placeholder="0.00"
+                  data-testid="input-refund-amount"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="refund-reason">Reason</Label>
+              <Input
+                id="refund-reason"
+                value={refundForm.reason}
+                onChange={(e) => setRefundForm((f) => ({ ...f, reason: e.target.value }))}
+                placeholder="e.g. Damaged goods, Customer changed mind"
+                data-testid="input-refund-reason"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="refund-notes">Internal notes (optional)</Label>
+              <Textarea
+                id="refund-notes"
+                rows={2}
+                value={refundForm.notes}
+                onChange={(e) => setRefundForm((f) => ({ ...f, notes: e.target.value }))}
+                data-testid="textarea-refund-notes"
+              />
+            </div>
+            {refundForm.lines.length > 0 && (
+              <div className="space-y-2">
+                <Label>Item-wise breakdown (optional)</Label>
+                <p className="text-xs text-muted-foreground">
+                  Adjust quantities and amounts per item, or leave blank to record a money-only refund.
+                </p>
+                <div className="border rounded-md overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/40 border-b">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-medium">Item</th>
+                        <th className="text-right px-3 py-2 font-medium w-24">Qty</th>
+                        <th className="text-right px-3 py-2 font-medium w-28">Amount (₹)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {refundForm.lines.map((l, idx) => (
+                        <tr key={l.salesOrderLineId}>
+                          <td className="px-3 py-2">
+                            <div className="font-medium">{l.itemName}</div>
+                            <div className="text-xs text-muted-foreground">{l.sku}</div>
+                          </td>
+                          <td className="px-3 py-2">
+                            <Input
+                              type="number"
+                              min={0}
+                              max={l.maxQty}
+                              step="1"
+                              value={l.quantity}
+                              onChange={(e) =>
+                                setRefundForm((f) => ({
+                                  ...f,
+                                  lines: f.lines.map((x, i) => i === idx ? { ...x, quantity: e.target.value } : x),
+                                }))
+                              }
+                              className="h-7 text-right text-sm w-20 ml-auto"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <Input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              value={l.refundAmount}
+                              onChange={(e) =>
+                                setRefundForm((f) => ({
+                                  ...f,
+                                  lines: f.lines.map((x, i) => i === idx ? { ...x, refundAmount: e.target.value } : x),
+                                }))
+                              }
+                              className="h-7 text-right text-sm w-24 ml-auto"
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            <div className="flex items-center gap-3 p-3 border rounded-md bg-muted/20">
+              <input
+                type="checkbox"
+                id="refund-restock"
+                checked={refundForm.restockItems}
+                onChange={(e) => setRefundForm((f) => ({ ...f, restockItems: e.target.checked }))}
+                className="h-4 w-4 rounded border-input"
+                data-testid="checkbox-refund-restock"
+              />
+              <div>
+                <label htmlFor="refund-restock" className="text-sm font-medium cursor-pointer">
+                  Restock items
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  Add returned item quantities back into warehouse stock.
+                </p>
+              </div>
+            </div>
+            {refundForm.restockItems && (
+              <div className="space-y-1.5">
+                <Label htmlFor="refund-warehouse">Restock to warehouse</Label>
+                <select
+                  id="refund-warehouse"
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  value={refundForm.warehouseId}
+                  onChange={(e) => setRefundForm((f) => ({ ...f, warehouseId: e.target.value }))}
+                  data-testid="select-refund-warehouse"
+                >
+                  <option value="">Select warehouse...</option>
+                  {(warehousesQuery.data ?? []).map((w) => (
+                    <option key={w.id} value={String(w.id)}>{w.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRefundDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                const amount = Number(refundForm.refundAmount);
+                if (!refundForm.refundDate || isNaN(amount) || amount < 0) return;
+                const hasLines = refundForm.lines.some((l) => Number(l.quantity) > 0);
+                createRefundMutation.mutate({
+                  id: orderId,
+                  data: {
+                    refundDate: refundForm.refundDate,
+                    refundAmount: amount,
+                    reason: refundForm.reason.trim() || null,
+                    notes: refundForm.notes.trim() || null,
+                    restockItems: refundForm.restockItems,
+                    warehouseId: refundForm.restockItems && refundForm.warehouseId ? Number(refundForm.warehouseId) : null,
+                    lines: hasLines
+                      ? refundForm.lines
+                          .filter((l) => Number(l.quantity) > 0)
+                          .map((l) => ({
+                            salesOrderLineId: l.salesOrderLineId,
+                            quantity: Number(l.quantity),
+                            refundAmount: Number(l.refundAmount) || 0,
+                          }))
+                      : [],
+                  },
+                });
+              }}
+              disabled={createRefundMutation.isPending || !refundForm.refundDate || !refundForm.refundAmount}
+              data-testid="btn-confirm-refund"
+            >
+              {createRefundMutation.isPending ? "Saving..." : "Record Refund"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <SendInvoiceDialog
         open={sendInvoiceOpen}
         onOpenChange={setSendInvoiceOpen}
@@ -1701,6 +1935,106 @@ export default function SalesOrderDetail() {
           )}
         </CardContent>
       </Card>
+
+      {/* ── Refunds ─────────────────────────────────────────────────────── */}
+      {(["confirmed","partially_shipped","shipped","delivered","invoiced","paid","returned"] as string[]).includes(order.status) && (
+        <Card data-testid="card-refunds">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+            <CardTitle>Refunds</CardTitle>
+            <Can module="sales_orders" action="edit">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const defaultLines = lines
+                    .filter((l) => Number(l.quantityShipped) > 0)
+                    .map((l) => ({
+                      salesOrderLineId: l.id,
+                      itemId: l.itemId,
+                      itemName: l.itemName,
+                      sku: l.sku,
+                      maxQty: Number(l.quantityShipped),
+                      quantity: String(Number(l.quantityShipped)),
+                      refundAmount: "0",
+                    }));
+                  setRefundForm({
+                    refundDate: new Date().toISOString().slice(0, 10),
+                    refundAmount: String(Number(order.total)),
+                    reason: "",
+                    notes: "",
+                    restockItems: false,
+                    warehouseId: String(order.warehouseId),
+                    lines: defaultLines,
+                  });
+                  setRefundDialogOpen(true);
+                }}
+                data-testid="btn-new-refund"
+              >
+                <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Issue Refund
+              </Button>
+            </Can>
+          </CardHeader>
+          <CardContent>
+            {refundsQuery.isLoading ? (
+              <Skeleton className="h-12 w-full" />
+            ) : refundsQuery.data && refundsQuery.data.length > 0 ? (
+              <div className="space-y-3">
+                {refundsQuery.data.map((r) => (
+                  <div key={r.id} className="border rounded-lg overflow-hidden" data-testid={`refund-${r.id}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-muted/40 border-b">
+                      <div className="flex items-center gap-3">
+                        <div className="h-8 w-8 rounded-md bg-orange-100 dark:bg-orange-900/20 flex items-center justify-center shrink-0">
+                          <RotateCcw className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+                        </div>
+                        <div>
+                          <div className="font-semibold text-sm">{r.refundNumber}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {formatDate(r.refundDate)}
+                            {r.reason && ` · ${r.reason}`}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-semibold text-sm text-orange-700 dark:text-orange-400">
+                          -{formatCurrency(r.refundAmount)}
+                        </div>
+                        {r.restockItems && (
+                          <div className="text-xs text-muted-foreground">Items restocked</div>
+                        )}
+                      </div>
+                    </div>
+                    {r.lines.length > 0 && (
+                      <div className="divide-y">
+                        {r.lines.map((l) => (
+                          <div key={l.id} className="flex items-center justify-between px-4 py-2.5">
+                            <div>
+                              <div className="text-sm font-medium">{l.itemName}</div>
+                              <div className="text-xs text-muted-foreground">{l.sku}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm tabular-nums">×{l.quantity}</div>
+                              {l.refundAmount > 0 && (
+                                <div className="text-xs text-muted-foreground">{formatCurrency(l.refundAmount)}</div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {r.notes && (
+                      <div className="px-4 py-2.5 border-t bg-muted/20">
+                        <p className="text-xs text-muted-foreground">{r.notes}</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No refunds recorded for this order.</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {canInvoice && (
         <Card data-testid="card-email-log">
