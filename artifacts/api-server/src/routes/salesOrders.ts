@@ -29,7 +29,7 @@ import { toNum, toStr } from "../lib/numeric";
 import { pushStockToShopify } from "../lib/shopifyOutbound";
 import { loadShipmentsForOrder } from "./shipments";
 import { loadInvoiceForOrder } from "../lib/invoiceData";
-import { sendEmail, EmailNotConfiguredError } from "../lib/email";
+import { sendEmail, sendShippingConfirmationEmail, EmailNotConfiguredError } from "../lib/email";
 import { signInvoiceUrl } from "../lib/invoiceLinks";
 import { getActivePaymentLink } from "./paymentLinks";
 import { logger } from "../lib/logger";
@@ -1437,6 +1437,193 @@ router.post("/sales-orders/:id/invoice/email", async (req, res, next) => {
             salesOrderId: id,
             kind: "invoice",
             recipient: to,
+            subject,
+            status: "sent",
+            errorMessage: null,
+            sentByUserId: t.userId,
+            sentAt: new Date().toISOString(),
+            warning: "Email sent but the activity record could not be saved.",
+          }
+        : serializeEmailLog(logRow),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── POST /sales-orders/:id/resend-shipping-confirmation ─────────────────────
+
+const SHIPPABLE_STATUSES = new Set([
+  "shipped",
+  "partially_shipped",
+  "delivered",
+  "invoiced",
+  "paid",
+]);
+
+router.post("/sales-orders/:id/resend-shipping-confirmation", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      res.status(400).json({ error: "Invalid sales order id" });
+      return;
+    }
+
+    // Load the order + customer in one query
+    const orderRows = await db
+      .select({
+        status: salesOrdersTable.status,
+        orderNumber: salesOrdersTable.orderNumber,
+        customerEmail: customersTable.email,
+        customerName: customersTable.name,
+      })
+      .from(salesOrdersTable)
+      .innerJoin(customersTable, eq(customersTable.id, salesOrdersTable.customerId))
+      .where(
+        and(
+          eq(salesOrdersTable.id, id),
+          eq(salesOrdersTable.organizationId, t.organizationId),
+        ),
+      )
+      .limit(1);
+
+    const order = orderRows[0];
+    if (!order) {
+      res.status(404).json({ error: "Sales order not found" });
+      return;
+    }
+    if (!SHIPPABLE_STATUSES.has(order.status)) {
+      res.status(400).json({
+        error: `Shipping confirmation can only be resent for shipped orders. Current status: ${order.status}.`,
+      });
+      return;
+    }
+    if (!order.customerEmail) {
+      res.status(400).json({ error: "Customer does not have an email address on file." });
+      return;
+    }
+
+    // Find the most recent non-cancelled shipment for this order
+    const shipmentRows = await db
+      .select({
+        id: shipmentsTable.id,
+        shipmentNumber: shipmentsTable.shipmentNumber,
+        courierName: shipmentsTable.courierName,
+        awbNumber: shipmentsTable.awb,
+        trackingUrl: shipmentsTable.trackingUrl,
+      })
+      .from(shipmentsTable)
+      .where(
+        and(
+          eq(shipmentsTable.salesOrderId, id),
+          eq(shipmentsTable.organizationId, t.organizationId),
+          sql`${shipmentsTable.status} != 'cancelled'`,
+        ),
+      )
+      .orderBy(desc(shipmentsTable.createdAt))
+      .limit(1);
+
+    const shipment = shipmentRows[0];
+    if (!shipment) {
+      res.status(400).json({ error: "No active shipments found for this order." });
+      return;
+    }
+
+    // Load shipment lines → items
+    const lineRows = await db
+      .select({
+        itemName: itemsTable.name,
+        sku: itemsTable.sku,
+        quantity: shipmentLinesTable.quantity,
+      })
+      .from(shipmentLinesTable)
+      .innerJoin(salesOrderLinesTable, eq(salesOrderLinesTable.id, shipmentLinesTable.salesOrderLineId))
+      .innerJoin(itemsTable, eq(itemsTable.id, salesOrderLinesTable.itemId))
+      .where(
+        and(
+          eq(shipmentLinesTable.shipmentId, shipment.id),
+          eq(shipmentLinesTable.organizationId, t.organizationId),
+        ),
+      );
+
+    const items = lineRows.map((l) => ({
+      itemName: l.itemName,
+      sku: l.sku,
+      quantity: toNum(l.quantity),
+    }));
+
+    const subject = `Your order ${order.orderNumber} has been dispatched`;
+    let sendError: unknown = null;
+    try {
+      const emailResult = await sendShippingConfirmationEmail({
+        to: order.customerEmail,
+        customerName: order.customerName,
+        orderNumber: order.orderNumber,
+        courierName: shipment.courierName ?? null,
+        awbNumber: shipment.awbNumber ?? null,
+        trackingUrl: shipment.trackingUrl ?? null,
+        items,
+      });
+      if (emailResult === null) {
+        res.status(503).json({ error: "Email is not configured on this server." });
+        return;
+      }
+    } catch (err) {
+      sendError = err;
+    }
+
+    const sendStatus: "sent" | "failed" = sendError ? "failed" : "sent";
+    const errorMessage = sendError
+      ? sendError instanceof Error
+        ? sendError.message
+        : "Email send failed"
+      : null;
+
+    let logRow:
+      | typeof emailLogTable.$inferSelect
+      | { synthetic: true; status: "sent" | "failed"; errorMessage: string | null };
+    try {
+      const inserted = await db
+        .insert(emailLogTable)
+        .values({
+          organizationId: t.organizationId,
+          salesOrderId: id,
+          kind: "shipping_confirmation",
+          recipient: order.customerEmail,
+          subject,
+          status: sendStatus,
+          errorMessage,
+          sentByUserId: t.userId,
+        })
+        .returning();
+      logRow = inserted[0]!;
+    } catch (logErr) {
+      logger.error(
+        { err: logErr, salesOrderId: id, sendStatus },
+        "Failed to write email_log row for resend-shipping-confirmation",
+      );
+      logRow = { synthetic: true, status: sendStatus, errorMessage };
+    }
+
+    if (sendError) {
+      const httpStatus =
+        sendError instanceof EmailNotConfiguredError ? 503 : 502;
+      res.status(httpStatus).json({
+        error: errorMessage,
+        emailLog: "synthetic" in logRow ? null : serializeEmailLog(logRow),
+      });
+      return;
+    }
+
+    res.status(201).json(
+      "synthetic" in logRow
+        ? {
+            id: -1,
+            organizationId: t.organizationId,
+            salesOrderId: id,
+            kind: "shipping_confirmation",
+            recipient: order.customerEmail,
             subject,
             status: "sent",
             errorMessage: null,

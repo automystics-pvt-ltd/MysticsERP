@@ -25,6 +25,7 @@ import {
   getListCustomerPaymentsQueryKey,
   useListCustomerPayments,
   useDeleteCustomerPayment,
+  useResendShippingConfirmation,
 } from "@workspace/api-client-react";
 import { normalizeRole } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
@@ -204,6 +205,23 @@ export default function SalesOrderDetail() {
         const e = err as { response?: { data?: { error?: string } } };
         toast({
           title: "Could not delete",
+          description: e.response?.data?.error ?? "Please try again.",
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const resendShippingMutation = useResendShippingConfirmation({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListSalesOrderEmailLogQueryKey(orderId) });
+        toast({ title: "Shipping confirmation sent", description: "The customer has been emailed." });
+      },
+      onError: (err: unknown) => {
+        const e = err as { response?: { data?: { error?: string } } };
+        toast({
+          title: "Could not send email",
           description: e.response?.data?.error ?? "Please try again.",
           variant: "destructive",
         });
@@ -655,6 +673,18 @@ export default function SalesOrderDetail() {
               </>
             )}
           </Can>
+          {INVOICEABLE_STATUSES.has(order.status) && order.status !== "returned" && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={resendShippingMutation.isPending}
+              data-testid="btn-resend-shipping-confirmation"
+              onClick={() => resendShippingMutation.mutate({ id: orderId })}
+            >
+              <Truck className="mr-1.5 h-4 w-4" />
+              {resendShippingMutation.isPending ? "Sending..." : "Resend Shipping Confirmation"}
+            </Button>
+          )}
           {RETURNABLE_SALES_STATUSES.includes(order.status) && (
             <Button
               size="sm"

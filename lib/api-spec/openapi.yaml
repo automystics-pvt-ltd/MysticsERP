@@ -1012,6 +1012,20 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/EmailLog" }
 
+  /sales-orders/{id}/resend-shipping-confirmation:
+    post:
+      operationId: resendShippingConfirmation
+      tags: [sales-orders]
+      summary: Resend the shipping confirmation email for the most recent active shipment
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "201":
+          description: Email sent
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmailLog" }
+
   /sales-orders/{id}/email-log:
     get:
       operationId: listSalesOrderEmailLog

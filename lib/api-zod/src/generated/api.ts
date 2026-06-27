@@ -1824,6 +1824,16 @@ export const EmailSalesOrderInvoiceBody = zod.object({
 export const EmailSalesOrderInvoiceResponse = zod.void()
 
 
+/**
+ * @summary Resend the shipping confirmation email for the most recent active shipment
+ */
+export const ResendShippingConfirmationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ResendShippingConfirmationResponse = zod.void()
+
+
 export const ListSalesOrderEmailLogParams = zod.object({
   "id": zod.coerce.number()
 })

@@ -4242,6 +4242,76 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       return useMutation(getEmailSalesOrderInvoiceMutationOptions(options));
     }
 
+export const getResendShippingConfirmationUrl = (id: number,) => {
+
+
+
+
+  return `/api/sales-orders/${id}/resend-shipping-confirmation`
+}
+
+/**
+ * @summary Resend the shipping confirmation email for the most recent active shipment
+ */
+export const resendShippingConfirmation = async (id: number, options?: RequestInit): Promise<EmailLog> => {
+
+  return customFetch<EmailLog>(getResendShippingConfirmationUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getResendShippingConfirmationMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resendShippingConfirmation>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resendShippingConfirmation>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['resendShippingConfirmation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resendShippingConfirmation>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  resendShippingConfirmation(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResendShippingConfirmationMutationResult = NonNullable<Awaited<ReturnType<typeof resendShippingConfirmation>>>
+
+    export type ResendShippingConfirmationMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Resend the shipping confirmation email for the most recent active shipment
+ */
+export const useResendShippingConfirmation = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resendShippingConfirmation>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resendShippingConfirmation>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getResendShippingConfirmationMutationOptions(options));
+    }
+
 export const getListSalesOrderEmailLogUrl = (id: number,) => {
 
 
