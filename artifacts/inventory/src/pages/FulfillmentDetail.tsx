@@ -19,7 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { BarcodeScannerDialog } from "@/components/BarcodeScannerDialog";
 import {
   CheckCircle2, Circle, Scan, Package, Truck,
-  ExternalLink, AlertCircle, Check, Minus, Plus, Camera,
+  ExternalLink, AlertCircle, Check, Camera,
   Printer, History, AlertTriangle, Warehouse,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -351,13 +351,26 @@ function PickStep({
   const [scanCode, setScanCode] = useState("");
   const [cameraOpen, setCameraOpen] = useState(false);
   const [quantities, setQuantities] = useState<Record<number, number>>(
-    () => Object.fromEntries(fulfillment.lines.map((l) => [l.id, l.quantityPicked])),
+    () => Object.fromEntries(fulfillment.lines.map((l) => [l.id, l.quantityRequired])),
   );
   const [lastScannedLineId, setLastScannedLineId] = useState<number | null>(null);
   const [lastScanOk, setLastScanOk] = useState<{ itemName: string } | null>(null);
 
   useEffect(() => {
     scanInputRef.current?.focus();
+  }, []);
+
+  // Auto-populate: set every line's picked quantity to the required quantity on mount.
+  useEffect(() => {
+    const linesToSet = fulfillment.lines.filter(
+      (l) => l.quantityPicked !== l.quantityRequired,
+    );
+    if (linesToSet.length > 0) {
+      updateLinesMutation.mutate(
+        linesToSet.map((l) => ({ fulfillmentLineId: l.id, quantityPicked: l.quantityRequired })),
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const updateLinesMutation = useMutation({
@@ -427,26 +440,6 @@ function PickStep({
   const handleCameraDetect = (code: string) => {
     setCameraOpen(false);
     scanMutation.mutate(code);
-  };
-
-  const handleQtyChange = (lineId: number, delta: number) => {
-    const line = fulfillment.lines.find((l) => l.id === lineId)!;
-    const current = quantities[lineId] ?? 0;
-    const newQty = Math.max(0, Math.min(line.quantityRequired, current + delta));
-    setQuantities((prev) => ({ ...prev, [lineId]: newQty }));
-    updateLinesMutation.mutate([{ fulfillmentLineId: lineId, quantityPicked: newQty }]);
-  };
-
-  const handleQtyInput = (lineId: number, val: string) => {
-    const line = fulfillment.lines.find((l) => l.id === lineId)!;
-    const n = parseFloat(val);
-    if (Number.isFinite(n) && n >= 0) {
-      setQuantities((prev) => ({ ...prev, [lineId]: Math.min(n, line.quantityRequired) }));
-    }
-  };
-
-  const handleQtyBlur = (lineId: number) => {
-    updateLinesMutation.mutate([{ fulfillmentLineId: lineId, quantityPicked: quantities[lineId] ?? 0 }]);
   };
 
   const allPicked = fulfillment.lines.every((l) => (quantities[l.id] ?? 0) > 0);
@@ -572,38 +565,8 @@ function PickStep({
                     </div>
 
                     <div className="text-right shrink-0">
-                      <p className="text-xs text-muted-foreground">Required</p>
+                      <p className="text-xs text-muted-foreground">Qty</p>
                       <p className="text-sm font-semibold">{line.quantityRequired}</p>
-                    </div>
-
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => handleQtyChange(line.id, -1)}
-                        disabled={picked <= 0}
-                      >
-                        <Minus className="h-3 w-3" />
-                      </Button>
-                      <Input
-                        type="number"
-                        min={0}
-                        max={line.quantityRequired}
-                        value={String(picked)}
-                        onChange={(e) => handleQtyInput(line.id, e.target.value)}
-                        onBlur={() => handleQtyBlur(line.id)}
-                        className="w-16 h-7 text-center text-sm px-1"
-                      />
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => handleQtyChange(line.id, 1)}
-                        disabled={picked >= line.quantityRequired}
-                      >
-                        <Plus className="h-3 w-3" />
-                      </Button>
                     </div>
                   </div>
 
