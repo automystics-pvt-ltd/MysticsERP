@@ -349,6 +349,7 @@ export function serializeSalesOrder(
     shopifyOrderId: o.shopifyOrderId,
     shopifyFulfillmentStatus: o.shopifyFulfillmentStatus ?? null,
     shopifyTaxLines: (o.shopifyTaxLines as Array<{ title: string; rate: number; price: string; channel_liable?: boolean }> | null) ?? null,
+    taxesIncluded: o.taxesIncluded ?? false,
     paymentTerms: o.paymentTerms ?? null,
     paymentMethod: o.paymentMethod ?? null,
     paymentReference: o.paymentReference ?? null,

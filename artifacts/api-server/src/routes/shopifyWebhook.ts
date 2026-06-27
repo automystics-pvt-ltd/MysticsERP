@@ -183,10 +183,14 @@ router.post("/webhooks/shopify", async (req, res, next) => {
               if (o.tax_lines && o.tax_lines.length > 0) {
                 updates["shopifyTaxLines"] = o.tax_lines;
               }
+              // Always sync taxes_included so display stays correct if Shopify changes it
+              if (o.taxes_included != null) {
+                updates["taxesIncluded"] = o.taxes_included === true;
+              }
 
               await db
                 .update(salesOrdersTable)
-                .set(updates as { paymentStatus?: string | null; status?: string; deliveryMethod?: string | null; shopifyFulfillmentStatus?: string | null; shopifyTaxLines?: unknown })
+                .set(updates as { paymentStatus?: string | null; status?: string; deliveryMethod?: string | null; shopifyFulfillmentStatus?: string | null; shopifyTaxLines?: unknown; taxesIncluded?: boolean })
                 .where(
                   and(
                     eq(salesOrdersTable.organizationId, org.id),

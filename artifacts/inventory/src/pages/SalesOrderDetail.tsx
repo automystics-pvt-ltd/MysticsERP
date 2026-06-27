@@ -981,31 +981,49 @@ export default function SalesOrderDetail() {
           <CardContent className="space-y-4">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Subtotal</span>
-              <span>{formatCurrency(order.subtotal)}</span>
+              <div className="text-right">
+                <span className="text-xs text-muted-foreground mr-2">
+                  {lines.length} {lines.length === 1 ? "item" : "items"}
+                </span>
+                <span>{formatCurrency(order.subtotal)}</span>
+              </div>
             </div>
             {Number(order.discountTotal ?? 0) > 0 && (
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground pl-3 italic">Includes {formatCurrency(order.discountTotal)} discount</span>
               </div>
             )}
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Tax</span>
-              <span>{formatCurrency(order.taxTotal)}</span>
-            </div>
-            {order.shopifyTaxLines && order.shopifyTaxLines.length > 0 && (
-              <div className="space-y-1 pl-3 border-l-2 border-muted">
-                {order.shopifyTaxLines.map((tl, i) => (
-                  <div key={i} className="flex justify-between text-xs text-muted-foreground">
-                    <span>
-                      {tl.title} {Math.round(tl.rate * 100)}%
-                      {tl.channel_liable === false && (
-                        <span className="ml-1 text-[10px] italic">(Included)</span>
-                      )}
+            {Number(order.taxTotal) > 0 && (
+              order.taxesIncluded && order.shopifyTaxLines && order.shopifyTaxLines.length > 0 ? (
+                order.shopifyTaxLines.map((tl, i) => (
+                  <div key={i} className="flex items-baseline gap-2">
+                    <span className="text-muted-foreground shrink-0">
+                      {i === 0 ? "Taxes" : ""}
                     </span>
-                    <span>{formatCurrency(Number(tl.price))}</span>
+                    <span className="text-xs text-muted-foreground/70 flex-1">
+                      {formatCurrency(Number(tl.price))} INR • {tl.title} {Math.round(tl.rate * 100)}%
+                    </span>
+                    <span className="text-sm text-muted-foreground italic shrink-0">Included</span>
                   </div>
-                ))}
-              </div>
+                ))
+              ) : (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Tax</span>
+                    <span>{formatCurrency(order.taxTotal)}</span>
+                  </div>
+                  {order.shopifyTaxLines && order.shopifyTaxLines.length > 0 && (
+                    <div className="space-y-1 pl-3 border-l-2 border-muted">
+                      {order.shopifyTaxLines.map((tl, i) => (
+                        <div key={i} className="flex justify-between text-xs text-muted-foreground">
+                          <span>{tl.title} {Math.round(tl.rate * 100)}%</span>
+                          <span>{formatCurrency(Number(tl.price))}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )
             )}
             {order.deliveryMethod && (
               <div className="flex justify-between text-sm">
@@ -1016,26 +1034,36 @@ export default function SalesOrderDetail() {
             <Separator />
             <div className="flex justify-between font-bold text-lg">
               <span>Total</span>
-              <span>{formatCurrency(order.total)}</span>
+              <span>
+                {formatCurrency(order.taxesIncluded ? order.subtotal : order.total)}
+              </span>
             </div>
             <Separator />
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Amount paid</span>
-              <span data-testid="text-amount-paid">
-                {formatCurrency(order.amountPaid)}
-              </span>
-            </div>
-            <div className="flex justify-between text-sm font-medium">
-              <span>Balance due</span>
-              <span
-                className={
-                  Number(order.balanceDue) > 0 ? "text-orange-600" : ""
-                }
-                data-testid="text-balance-due"
-              >
-                {formatCurrency(order.balanceDue)}
-              </span>
-            </div>
+            {(order.paymentStatus === "paid" || Number(order.amountPaid) > 0) && (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Paid</span>
+                <span data-testid="text-amount-paid">
+                  {formatCurrency(
+                    Number(order.amountPaid) > 0
+                      ? order.amountPaid
+                      : order.taxesIncluded
+                        ? order.subtotal
+                        : order.total
+                  )}
+                </span>
+              </div>
+            )}
+            {Number(order.amountPaid) > 0 && Number(order.balanceDue) === 0 ? null : (
+              <div className="flex justify-between text-sm font-medium">
+                <span>Balance due</span>
+                <span
+                  className={Number(order.balanceDue) > 0 ? "text-orange-600" : ""}
+                  data-testid="text-balance-due"
+                >
+                  {formatCurrency(order.balanceDue)}
+                </span>
+              </div>
+            )}
             {order.paymentStatus && (
               <>
                 <Separator />

@@ -365,6 +365,7 @@ export async function importShopifyOrder(
         paymentStatus: mapShopifyPaymentStatus(o.financial_status),
         shopifyFulfillmentStatus: mapShopifyFulfillmentStatus(o.fulfillment_status),
         shopifyTaxLines: o.tax_lines && o.tax_lines.length > 0 ? o.tax_lines : null,
+        taxesIncluded: o.taxes_included === true,
         deliveryMethod: o.shipping_lines?.[0]?.title ?? null,
       })
       .onConflictDoNothing({

@@ -65,6 +65,8 @@ export interface SalesOrder {
   shopifyFulfillmentStatus: string | null;
   /** Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines. */
   shopifyTaxLines: SalesOrderShopifyTaxLines;
+  /** True when Shopify reports taxes_included=true — unit prices already contain the tax component, so taxTotal is informational and must not be added to subtotal to derive the total. */
+  taxesIncluded: boolean;
   /**
      * Free-text payment terms (e.g. 'Net 30', 'Cash on Delivery', 'Advance'). Null when not set.
      * @nullable

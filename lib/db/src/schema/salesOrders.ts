@@ -7,6 +7,7 @@ import {
   timestamp,
   date,
   jsonb,
+  boolean,
   uniqueIndex,
   index,
 } from "drizzle-orm/pg-core";
@@ -130,6 +131,12 @@ export const salesOrdersTable = pgTable(
      * Null for non-Shopify orders or orders with no tax lines.
      */
     shopifyTaxLines: jsonb("shopify_tax_lines"),
+    /**
+     * True when Shopify reports taxes_included=true — the unit prices already
+     * contain the tax component, so taxTotal must NOT be added to subtotal to
+     * get the customer-facing total.  Null / false for non-Shopify orders.
+     */
+    taxesIncluded: boolean("taxes_included").default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()

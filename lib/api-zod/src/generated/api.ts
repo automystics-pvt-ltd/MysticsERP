@@ -1227,6 +1227,7 @@ export const ListSalesOrdersResponseItem = zod.object({
   "price": zod.string(),
   "channel_liable": zod.boolean().optional()
 })),zod.null()]).describe('Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines.'),
+  "taxesIncluded": zod.boolean().describe('True when Shopify reports taxes_included=true — unit prices already contain the tax component, so taxTotal is informational and must not be added to subtotal to derive the total.'),
   "paymentTerms": zod.string().nullish().describe('Free-text payment terms (e.g. \'Net 30\', \'Cash on Delivery\', \'Advance\'). Null when not set.'),
   "paymentMethod": zod.string().nullish().describe('Payment method used by the customer (e.g. \'Cash\', \'Bank Transfer\', \'UPI\', \'Cheque\'). Null when not set.'),
   "paymentReference": zod.string().nullish().describe('Payment reference or transaction ID (e.g. UTR number, cheque number, UPI reference). Null when not set.'),
@@ -1333,6 +1334,7 @@ export const GetSalesOrderResponse = zod.object({
   "price": zod.string(),
   "channel_liable": zod.boolean().optional()
 })),zod.null()]).describe('Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines.'),
+  "taxesIncluded": zod.boolean().describe('True when Shopify reports taxes_included=true — unit prices already contain the tax component, so taxTotal is informational and must not be added to subtotal to derive the total.'),
   "paymentTerms": zod.string().nullish().describe('Free-text payment terms (e.g. \'Net 30\', \'Cash on Delivery\', \'Advance\'). Null when not set.'),
   "paymentMethod": zod.string().nullish().describe('Payment method used by the customer (e.g. \'Cash\', \'Bank Transfer\', \'UPI\', \'Cheque\'). Null when not set.'),
   "paymentReference": zod.string().nullish().describe('Payment reference or transaction ID (e.g. UTR number, cheque number, UPI reference). Null when not set.'),
@@ -1492,6 +1494,7 @@ export const UpdateSalesOrderResponse = zod.object({
   "price": zod.string(),
   "channel_liable": zod.boolean().optional()
 })),zod.null()]).describe('Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines.'),
+  "taxesIncluded": zod.boolean().describe('True when Shopify reports taxes_included=true — unit prices already contain the tax component, so taxTotal is informational and must not be added to subtotal to derive the total.'),
   "paymentTerms": zod.string().nullish().describe('Free-text payment terms (e.g. \'Net 30\', \'Cash on Delivery\', \'Advance\'). Null when not set.'),
   "paymentMethod": zod.string().nullish().describe('Payment method used by the customer (e.g. \'Cash\', \'Bank Transfer\', \'UPI\', \'Cheque\'). Null when not set.'),
   "paymentReference": zod.string().nullish().describe('Payment reference or transaction ID (e.g. UTR number, cheque number, UPI reference). Null when not set.'),
@@ -1639,6 +1642,7 @@ export const UpdateSalesOrderPaymentMetaResponse = zod.object({
   "price": zod.string(),
   "channel_liable": zod.boolean().optional()
 })),zod.null()]).describe('Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines.'),
+  "taxesIncluded": zod.boolean().describe('True when Shopify reports taxes_included=true — unit prices already contain the tax component, so taxTotal is informational and must not be added to subtotal to derive the total.'),
   "paymentTerms": zod.string().nullish().describe('Free-text payment terms (e.g. \'Net 30\', \'Cash on Delivery\', \'Advance\'). Null when not set.'),
   "paymentMethod": zod.string().nullish().describe('Payment method used by the customer (e.g. \'Cash\', \'Bank Transfer\', \'UPI\', \'Cheque\'). Null when not set.'),
   "paymentReference": zod.string().nullish().describe('Payment reference or transaction ID (e.g. UTR number, cheque number, UPI reference). Null when not set.'),
@@ -1776,6 +1780,7 @@ export const UpdateSalesOrderStatusResponse = zod.object({
   "price": zod.string(),
   "channel_liable": zod.boolean().optional()
 })),zod.null()]).describe('Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines.'),
+  "taxesIncluded": zod.boolean().describe('True when Shopify reports taxes_included=true — unit prices already contain the tax component, so taxTotal is informational and must not be added to subtotal to derive the total.'),
   "paymentTerms": zod.string().nullish().describe('Free-text payment terms (e.g. \'Net 30\', \'Cash on Delivery\', \'Advance\'). Null when not set.'),
   "paymentMethod": zod.string().nullish().describe('Payment method used by the customer (e.g. \'Cash\', \'Bank Transfer\', \'UPI\', \'Cheque\'). Null when not set.'),
   "paymentReference": zod.string().nullish().describe('Payment reference or transaction ID (e.g. UTR number, cheque number, UPI reference). Null when not set.'),
@@ -1913,6 +1918,7 @@ export const ReturnSalesOrderResponse = zod.object({
   "price": zod.string(),
   "channel_liable": zod.boolean().optional()
 })),zod.null()]).describe('Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines.'),
+  "taxesIncluded": zod.boolean().describe('True when Shopify reports taxes_included=true — unit prices already contain the tax component, so taxTotal is informational and must not be added to subtotal to derive the total.'),
   "paymentTerms": zod.string().nullish().describe('Free-text payment terms (e.g. \'Net 30\', \'Cash on Delivery\', \'Advance\'). Null when not set.'),
   "paymentMethod": zod.string().nullish().describe('Payment method used by the customer (e.g. \'Cash\', \'Bank Transfer\', \'UPI\', \'Cheque\'). Null when not set.'),
   "paymentReference": zod.string().nullish().describe('Payment reference or transaction ID (e.g. UTR number, cheque number, UPI reference). Null when not set.'),

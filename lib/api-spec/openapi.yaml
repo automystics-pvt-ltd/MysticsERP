@@ -4143,6 +4143,9 @@ components:
                   channel_liable: { type: boolean }
                 required: [title, rate, price]
             - { type: "null" }
+        taxesIncluded:
+          type: boolean
+          description: "True when Shopify reports taxes_included=true — unit prices already contain the tax component, so taxTotal is informational and must not be added to subtotal to derive the total."
         paymentTerms:
           type: ["string", "null"]
           description: "Free-text payment terms (e.g. 'Net 30', 'Cash on Delivery', 'Advance'). Null when not set."
@@ -4171,7 +4174,7 @@ components:
           type: string
           nullable: true
           description: "Tracking status (or raw status if no tracking) of the most recent non-cancelled shipment, or null if no shipment exists."
-      required: [id, orderNumber, customerId, customerName, walkinName, customerGstNumber, warehouseId, warehouseName, status, orderDate, expectedShipDate, subtotal, taxTotal, total, discountTotal, orderDiscountAmount, amountPaid, balanceDue, cashPaid, upiPaid, cardPaid, notes, orderType, saleChannel, paymentStatus, shopifyOrderId, shopifyFulfillmentStatus, shopifyTaxLines, deliveryMethod, ewb, einvoice, createdAt]
+      required: [id, orderNumber, customerId, customerName, walkinName, customerGstNumber, warehouseId, warehouseName, status, orderDate, expectedShipDate, subtotal, taxTotal, total, discountTotal, orderDiscountAmount, amountPaid, balanceDue, cashPaid, upiPaid, cardPaid, notes, orderType, saleChannel, paymentStatus, shopifyOrderId, shopifyFulfillmentStatus, shopifyTaxLines, taxesIncluded, deliveryMethod, ewb, einvoice, createdAt]
 
     SalesOrderDetail:
       type: object
