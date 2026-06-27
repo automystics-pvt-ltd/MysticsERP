@@ -548,35 +548,49 @@ export default function SalesOrders() {
                       </TableCell>
                     )}
                     <TableCell>
-                      {order.paymentStatus ? (
-                        <Badge
-                          variant="outline"
-                          className={
-                            order.paymentStatus === "paid"
-                              ? "text-[11px] font-medium bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40"
-                              : order.paymentStatus === "partially_paid"
-                                ? "text-[11px] font-medium bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40"
-                                : order.paymentStatus === "refunded"
-                                  ? "text-[11px] font-medium bg-red-50 text-red-700 border-red-300 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800/40"
-                                  : order.paymentStatus === "void"
-                                    ? "text-[11px] font-medium bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700"
-                                    : "text-[11px] font-medium bg-yellow-50 text-yellow-700 border-yellow-300 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800/40"
-                          }
-                          data-testid={`badge-so-payment-${order.id}`}
-                        >
-                          {order.paymentStatus === "paid"
-                            ? "Paid"
-                            : order.paymentStatus === "partially_paid"
-                              ? "Partially Paid"
-                              : order.paymentStatus === "refunded"
-                                ? "Refunded"
-                                : order.paymentStatus === "void"
-                                  ? "Void"
-                                  : "Pending"}
-                        </Badge>
-                      ) : (
-                        <span className="text-muted-foreground text-xs">—</span>
-                      )}
+                      {(() => {
+                        // Derive payment status from financials when the DB column is null.
+                        // paymentStatus is only explicitly set for Shopify orders or via
+                        // payment-meta; for all other orders we derive from amountPaid/balanceDue.
+                        const stored = order.paymentStatus;
+                        const amtPaid = Number(order.amountPaid ?? 0);
+                        const balDue = Number(order.balanceDue ?? 0);
+                        const ps = stored
+                          ? stored
+                          : amtPaid > 0 && balDue <= 0
+                            ? "paid"
+                            : amtPaid > 0
+                              ? "partially_paid"
+                              : ["cancelled", "draft"].includes(order.status)
+                                ? null
+                                : "unpaid";
+                        if (!ps) return <span className="text-muted-foreground text-xs">—</span>;
+                        const cls =
+                          ps === "paid"
+                            ? "text-[11px] font-medium bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40"
+                            : ps === "partially_paid"
+                              ? "text-[11px] font-medium bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40"
+                              : ps === "refunded"
+                                ? "text-[11px] font-medium bg-red-50 text-red-700 border-red-300 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800/40"
+                                : ps === "void"
+                                  ? "text-[11px] font-medium bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700"
+                                  : "text-[11px] font-medium bg-red-50 text-red-700 border-red-300 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800/40";
+                        const label =
+                          ps === "paid" ? "Paid"
+                          : ps === "partially_paid" ? "Partially Paid"
+                          : ps === "refunded" ? "Refunded"
+                          : ps === "void" ? "Void"
+                          : "Unpaid";
+                        return (
+                          <Badge
+                            variant="outline"
+                            className={cls}
+                            data-testid={`badge-so-payment-${order.id}`}
+                          >
+                            {label}
+                          </Badge>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell>
                       {(() => {
