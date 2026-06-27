@@ -15,6 +15,7 @@ import {
   fulfillmentScansTable,
   warehousesTable,
   customersTable,
+  emailLogTable,
 } from "@workspace/db";
 import { tenantMiddleware } from "../lib/tenant";
 import { nextOrderNumber } from "../lib/orderHelpers";
@@ -1115,16 +1116,34 @@ router.post("/fulfillments/:id/dispatch", async (req, res, next) => {
           quantity: toNum(l.quantityPicked),
         }));
 
-        await sendShippingConfirmationEmail({
-          to: row.customerEmail,
-          customerName: row.customerName,
-          orderNumber: row.orderNumber,
-          courierName,
-          awbNumber,
-          trackingUrl,
-          items,
+        const subject = `Your order ${row.orderNumber} has been dispatched`;
+        let emailStatus = "sent";
+        let emailError: string | undefined;
+        try {
+          await sendShippingConfirmationEmail({
+            to: row.customerEmail,
+            customerName: row.customerName,
+            orderNumber: row.orderNumber,
+            courierName,
+            awbNumber,
+            trackingUrl,
+            items,
+          });
+          logger.info({ fulfillmentId, orderNumber: row.orderNumber }, "dispatch: shipping confirmation email sent");
+        } catch (sendErr) {
+          emailStatus = "failed";
+          emailError = sendErr instanceof Error ? sendErr.message : String(sendErr);
+          logger.warn({ err: sendErr, fulfillmentId }, "dispatch: shipping confirmation email failed");
+        }
+        await db.insert(emailLogTable).values({
+          organizationId: t.organizationId,
+          salesOrderId: result.salesOrderId,
+          kind: "shipping_confirmation",
+          recipient: row.customerEmail,
+          subject,
+          status: emailStatus,
+          errorMessage: emailError ?? null,
         });
-        logger.info({ fulfillmentId, orderNumber: row.orderNumber }, "dispatch: shipping confirmation email sent");
       } catch (err) {
         logger.warn({ err, fulfillmentId }, "dispatch: could not send shipping confirmation email");
       }

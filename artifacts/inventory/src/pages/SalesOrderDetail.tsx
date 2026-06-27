@@ -827,87 +827,165 @@ export default function SalesOrderDetail() {
         </Card>
       </div>
 
-      {orderDetail.paymentBreakdown.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
+      {(() => {
+        const MANUAL_MODES = new Set(["cash", "upi", "bank"]);
+
+        type PaymentEntry = {
+          kind: "payment";
+          date: string;
+          paymentId: number;
+          mode: string;
+          referenceNumber: string | null;
+          amount: number;
+        };
+        type ReversalEntry = {
+          kind: "reversal";
+          date: string;
+          shipmentNumber: string;
+          warehouseName: string;
+          items: Array<{ itemName: string; sku: string; quantity: number }>;
+        };
+        type TimelineEntry = PaymentEntry | ReversalEntry;
+
+        const paymentEntries: PaymentEntry[] = orderDetail.paymentBreakdown.map((p) => ({
+          kind: "payment" as const,
+          date: p.paymentDate ?? p.paymentDate ?? "",
+          paymentId: p.paymentId,
+          mode: p.mode,
+          referenceNumber: p.referenceNumber,
+          amount: p.amount,
+        }));
+
+        const reversalEntries: ReversalEntry[] = shipments
+          .filter((s) => s.status === "cancelled" && s.cancelledAt)
+          .map((s) => ({
+            kind: "reversal" as const,
+            date: s.cancelledAt!,
+            shipmentNumber: s.shipmentNumber,
+            warehouseName: order.warehouseName,
+            items: s.lines.map((l) => ({
+              itemName: l.itemName,
+              sku: l.sku,
+              quantity: l.quantity,
+            })),
+          }));
+
+        const timelineEntries: TimelineEntry[] = [...paymentEntries, ...reversalEntries].sort(
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+        );
+
+        if (timelineEntries.length === 0) return null;
+
+        return (
+          <Card>
+            <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-2">
-                <CreditCard className="h-4 w-4" /> Payment History
+                <CreditCard className="h-4 w-4" /> Payment & Fulfilment History
               </CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="relative">
-              <div className="absolute left-[11px] top-0 bottom-0 w-px bg-border" />
-              <div className="space-y-4">
-                {orderDetail.paymentBreakdown.map((p) => {
-                  const modeLabel =
-                    p.mode === "upi" ? "UPI" :
-                    p.mode === "cash" ? "Cash" :
-                    p.mode === "card" ? "Card" :
-                    p.mode === "bank" ? "Bank Transfer" :
-                    p.mode === "razorpay" ? "Razorpay" :
-                    (p.mode ?? "").charAt(0).toUpperCase() + (p.mode ?? "").slice(1);
-                  return (
-                    <div key={p.paymentId} className="relative flex items-start gap-3 pl-7">
-                      <div className="absolute left-0 top-1 h-[22px] w-[22px] rounded-full bg-primary/10 border-2 border-background ring-1 ring-primary/30 flex items-center justify-center">
-                        <IndianRupee className="h-2.5 w-2.5 text-primary" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-sm">{modeLabel}</span>
-                            {p.referenceNumber && (
-                              <span className="text-xs text-muted-foreground">#{p.referenceNumber}</span>
+            </CardHeader>
+            <CardContent>
+              <div className="relative">
+                <div className="absolute left-[11px] top-0 bottom-0 w-px bg-border" />
+                <div className="space-y-4">
+                  {timelineEntries.map((entry, idx) => {
+                    if (entry.kind === "payment") {
+                      const modeLabel =
+                        entry.mode === "upi" ? "UPI" :
+                        entry.mode === "cash" ? "Cash" :
+                        entry.mode === "card" ? "Card" :
+                        entry.mode === "bank" ? "Bank Transfer" :
+                        entry.mode === "razorpay" ? "Razorpay" :
+                        (entry.mode ?? "").charAt(0).toUpperCase() + (entry.mode ?? "").slice(1);
+                      const isManual = MANUAL_MODES.has(entry.mode ?? "");
+                      return (
+                        <div key={`payment-${entry.paymentId}`} className="relative flex items-start gap-3 pl-7">
+                          <div className="absolute left-0 top-1 h-[22px] w-[22px] rounded-full bg-primary/10 border-2 border-background ring-1 ring-primary/30 flex items-center justify-center">
+                            <IndianRupee className="h-2.5 w-2.5 text-primary" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-medium text-sm">{modeLabel}</span>
+                                {entry.referenceNumber && (
+                                  <span className="text-xs text-muted-foreground">#{entry.referenceNumber}</span>
+                                )}
+                              </div>
+                              <span className="font-semibold text-sm tabular-nums">{formatCurrency(entry.amount)}</span>
+                            </div>
+                            {entry.date && (
+                              <p className="text-xs text-muted-foreground mt-0.5">{formatDate(entry.date)}</p>
                             )}
                           </div>
-                          <span className="font-semibold text-sm tabular-nums">{formatCurrency(p.amount)}</span>
+                          {isManual && (
+                            <Can module="payments" action="delete">
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-6 w-6 text-muted-foreground hover:text-destructive shrink-0"
+                                    data-testid={`btn-delete-payment-${entry.paymentId}`}
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Delete this payment?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      This will permanently remove the {modeLabel} payment of {formatCurrency(entry.amount)}. Stock and order status will not be affected.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                      onClick={() => deletePaymentMutation.mutate({ id: entry.paymentId })}
+                                      disabled={deletePaymentMutation.isPending}
+                                      data-testid={`btn-confirm-delete-payment-${entry.paymentId}`}
+                                    >
+                                      Delete payment
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </Can>
+                          )}
                         </div>
-                        {p.paymentDate && (
-                          <p className="text-xs text-muted-foreground mt-0.5">{formatDate(p.paymentDate)}</p>
-                        )}
-                      </div>
-                      <Can module="payments" action="delete">
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-6 w-6 text-muted-foreground hover:text-destructive shrink-0"
-                              data-testid={`btn-delete-payment-${p.paymentId}`}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Delete this payment?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                This will permanently remove the {modeLabel} payment of {formatCurrency(p.amount)}. Stock and order status will not be affected.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction
-                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                onClick={() => deletePaymentMutation.mutate({ id: p.paymentId })}
-                                disabled={deletePaymentMutation.isPending}
-                                data-testid={`btn-confirm-delete-payment-${p.paymentId}`}
-                              >
-                                Delete payment
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </Can>
-                    </div>
-                  );
-                })}
+                      );
+                    } else {
+                      return (
+                        <div key={`reversal-${idx}`} className="relative flex items-start gap-3 pl-7">
+                          <div className="absolute left-0 top-1 h-[22px] w-[22px] rounded-full bg-orange-100 dark:bg-orange-900/20 border-2 border-background ring-1 ring-orange-300 dark:ring-orange-800/40 flex items-center justify-center">
+                            <Undo2 className="h-2.5 w-2.5 text-orange-600 dark:text-orange-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-medium text-sm text-orange-700 dark:text-orange-400">
+                                Stock returned · {entry.shipmentNumber}
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {formatDate(entry.date)} · Back to {entry.warehouseName}
+                            </p>
+                            <div className="mt-1.5 space-y-0.5">
+                              {entry.items.map((item, i) => (
+                                <p key={i} className="text-xs text-muted-foreground">
+                                  {item.itemName} <span className="font-mono">({item.sku})</span> ×{item.quantity}
+                                </p>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                  })}
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       <PaymentLinkCard
         salesOrderId={order.id}
@@ -1081,7 +1159,7 @@ export default function SalesOrderDetail() {
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="font-semibold text-sm">{s.shipmentNumber}</span>
-                            {s.status === "cancelled" && <StatusBadge status={s.status} />}
+                            <StatusBadge status={s.status} />
                             {s.trackingStatus && (
                               <Badge variant="outline" className="text-[10px]" data-testid={`shipment-tracking-status-${s.id}`}>
                                 {s.trackingStatus.replace(/_/g, " ")}

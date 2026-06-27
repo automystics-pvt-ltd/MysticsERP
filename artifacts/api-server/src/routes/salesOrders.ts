@@ -347,7 +347,7 @@ async function loadDetail(orgId: number, orderId: number) {
       customerPaymentsTable.referenceNumber,
       customerPaymentsTable.paymentDate,
     )
-    .orderBy(asc(customerPaymentsTable.paymentDate), asc(customerPaymentsTable.id)); // org-scope-allow: salesOrderId orderId is already validated against orgId above; organizationId also explicit in WHERE
+    .orderBy(desc(customerPaymentsTable.paymentDate), desc(customerPaymentsTable.id)); // org-scope-allow: salesOrderId orderId is already validated against orgId above; organizationId also explicit in WHERE
   const discountTotal = lineRows.reduce(
     (sum, r) => sum + toNum(r.line.discountAmount ?? "0"),
     0,
