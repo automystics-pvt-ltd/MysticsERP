@@ -629,7 +629,7 @@ export default function SalesOrderDetail() {
         breadcrumbs={[{ label: "Orders", href: "/sales-orders" }, { label: order.orderNumber }]}
         badge={
           <div className="flex items-center gap-1.5">
-            <StatusBadge status={order.status} />
+            <StatusBadge status={order.status === "paid" ? "confirmed" : order.status} />
             {order.paymentStatus ? (
               <Badge
                 variant="outline"
