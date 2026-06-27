@@ -4064,6 +4064,10 @@ components:
         itemCount:
           type: integer
           description: "Number of distinct line items in this order."
+        latestShipmentStatus:
+          type: string
+          nullable: true
+          description: "Tracking status (or raw status if no tracking) of the most recent non-cancelled shipment, or null if no shipment exists."
       required: [id, orderNumber, customerId, customerName, walkinName, customerGstNumber, warehouseId, warehouseName, status, orderDate, expectedShipDate, subtotal, taxTotal, total, discountTotal, orderDiscountAmount, amountPaid, balanceDue, cashPaid, upiPaid, cardPaid, notes, orderType, saleChannel, paymentStatus, shopifyOrderId, shopifyFulfillmentStatus, shopifyTaxLines, deliveryMethod, ewb, einvoice, createdAt]
 
     SalesOrderDetail:

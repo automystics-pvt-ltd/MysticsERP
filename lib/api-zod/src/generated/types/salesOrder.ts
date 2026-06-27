@@ -75,4 +75,6 @@ export interface SalesOrder {
   createdAt: string;
   /** Number of distinct line items in this order. */
   itemCount?: number;
+  /** Tracking status (or raw status if no tracking) of the most recent non-cancelled shipment, or null if no shipment exists. */
+  latestShipmentStatus?: string | null;
 }

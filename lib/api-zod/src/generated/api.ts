@@ -1253,7 +1253,8 @@ export const ListSalesOrdersResponseItem = zod.object({
   "cancellable": zod.boolean()
 }),zod.null()]),
   "createdAt": zod.string(),
-  "itemCount": zod.number().optional().describe('Number of distinct line items in this order.')
+  "itemCount": zod.number().optional().describe('Number of distinct line items in this order.'),
+  "latestShipmentStatus": zod.string().nullish().describe('Tracking status (or raw status if no tracking) of the most recent non-cancelled shipment, or null if no shipment exists.')
 })
 export const ListSalesOrdersResponse = zod.array(ListSalesOrdersResponseItem)
 
@@ -1355,7 +1356,8 @@ export const GetSalesOrderResponse = zod.object({
   "cancellable": zod.boolean()
 }),zod.null()]),
   "createdAt": zod.string(),
-  "itemCount": zod.number().optional().describe('Number of distinct line items in this order.')
+  "itemCount": zod.number().optional().describe('Number of distinct line items in this order.'),
+  "latestShipmentStatus": zod.string().nullish().describe('Tracking status (or raw status if no tracking) of the most recent non-cancelled shipment, or null if no shipment exists.')
 }),
   "lines": zod.array(zod.object({
   "id": zod.number(),
@@ -1509,7 +1511,8 @@ export const UpdateSalesOrderResponse = zod.object({
   "cancellable": zod.boolean()
 }),zod.null()]),
   "createdAt": zod.string(),
-  "itemCount": zod.number().optional().describe('Number of distinct line items in this order.')
+  "itemCount": zod.number().optional().describe('Number of distinct line items in this order.'),
+  "latestShipmentStatus": zod.string().nullish().describe('Tracking status (or raw status if no tracking) of the most recent non-cancelled shipment, or null if no shipment exists.')
 }),
   "lines": zod.array(zod.object({
   "id": zod.number(),
@@ -1649,7 +1652,8 @@ export const UpdateSalesOrderStatusResponse = zod.object({
   "cancellable": zod.boolean()
 }),zod.null()]),
   "createdAt": zod.string(),
-  "itemCount": zod.number().optional().describe('Number of distinct line items in this order.')
+  "itemCount": zod.number().optional().describe('Number of distinct line items in this order.'),
+  "latestShipmentStatus": zod.string().nullish().describe('Tracking status (or raw status if no tracking) of the most recent non-cancelled shipment, or null if no shipment exists.')
 }),
   "lines": zod.array(zod.object({
   "id": zod.number(),
@@ -1782,7 +1786,8 @@ export const ReturnSalesOrderResponse = zod.object({
   "cancellable": zod.boolean()
 }),zod.null()]),
   "createdAt": zod.string(),
-  "itemCount": zod.number().optional().describe('Number of distinct line items in this order.')
+  "itemCount": zod.number().optional().describe('Number of distinct line items in this order.'),
+  "latestShipmentStatus": zod.string().nullish().describe('Tracking status (or raw status if no tracking) of the most recent non-cancelled shipment, or null if no shipment exists.')
 }),
   "lines": zod.array(zod.object({
   "id": zod.number(),

@@ -136,7 +136,7 @@ router.get("/sales-orders", async (req, res, next) => {
 
     // Sort — sortBy: "date" (default) | "created" | "total"; sortDir: "desc" (default) | "asc"
     const sortDirParam = req.query.sortDir === "asc" ? "asc" : "desc";
-    const sortByParam = String(req.query.sortBy ?? "date");
+    const sortByParam = String(req.query.sortBy ?? "created");
     const sortCol =
       sortByParam === "total"
         ? salesOrdersTable.total
@@ -187,6 +187,15 @@ router.get("/sales-orders", async (req, res, next) => {
         FROM sales_order_lines sol
         WHERE sol.sales_order_id = ${salesOrdersTable.id}
       )`,
+      latestShipmentStatus: sql<string | null>`(
+        SELECT COALESCE(sh.tracking_status, sh.status)
+        FROM shipments sh
+        WHERE sh.sales_order_id = ${salesOrdersTable.id}
+          AND sh.organization_id = ${salesOrdersTable.organizationId}
+          AND sh.status != 'cancelled'
+        ORDER BY sh.created_at DESC
+        LIMIT 1
+      )`,
     };
 
     const serializeRow = (r: {
@@ -199,6 +208,7 @@ router.get("/sales-orders", async (req, res, next) => {
       upiPaid: string;
       cardPaid: string;
       itemCount: number;
+      latestShipmentStatus: string | null;
     }) => ({
       ...serializeSalesOrder(
         r.order,
@@ -211,6 +221,7 @@ router.get("/sales-orders", async (req, res, next) => {
       upiPaid: Number(r.upiPaid),
       cardPaid: Number(r.cardPaid),
       itemCount: Number(r.itemCount),
+      latestShipmentStatus: r.latestShipmentStatus ?? null,
     });
 
     if (rawPage !== null && !Number.isNaN(rawPage)) {

@@ -28,6 +28,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { AlertCircle, AlertTriangle, IndianRupee, Plus, Receipt, X, Package } from "lucide-react";
+import { StatusBadge } from "@/components/StatusBadge";
 import { TablePagination } from "@/components/TablePagination";
 import { getEinvoiceFixSummary } from "@/lib/einvoiceFixes";
 import {
@@ -575,7 +576,7 @@ export default function SalesOrders() {
                                     : "Unfulfilled"}
                         </Badge>
                       ) : (
-                        <span className="text-muted-foreground text-xs">—</span>
+                        <StatusBadge status={order.status} />
                       )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
@@ -589,13 +590,13 @@ export default function SalesOrders() {
                       )}
                     </TableCell>
                     <TableCell>
-                      {(() => {
-                        const s = order.status;
-                        if (s === "shipped") return <Badge variant="outline" className="text-[11px] font-medium bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/40">Shipped</Badge>;
-                        if (s === "partially_shipped") return <Badge variant="outline" className="text-[11px] font-medium bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40">Partial</Badge>;
-                        if (s === "delivered") return <Badge variant="outline" className="text-[11px] font-medium bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40">Delivered</Badge>;
-                        return <span className="text-muted-foreground text-xs">—</span>;
-                      })()}
+                      {order.latestShipmentStatus ? (
+                        <span className="text-sm text-muted-foreground capitalize">
+                          {order.latestShipmentStatus.replace(/_/g, " ")}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       {order.deliveryMethod ? (
