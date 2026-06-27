@@ -1937,7 +1937,7 @@ export default function SalesOrderDetail() {
       </Card>
 
       {/* ── Refunds ─────────────────────────────────────────────────────── */}
-      {(["confirmed","partially_shipped","shipped","delivered","invoiced","paid","returned"] as string[]).includes(order.status) && (
+      {(["confirmed","partially_shipped","shipped","delivered","invoiced","paid","returned"] as string[]).includes(order.status) && Number(order.amountPaid) > 0 && (
         <Card data-testid="card-refunds">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
             <CardTitle>Refunds</CardTitle>
@@ -1959,7 +1959,7 @@ export default function SalesOrderDetail() {
                     }));
                   setRefundForm({
                     refundDate: new Date().toISOString().slice(0, 10),
-                    refundAmount: String(Number(order.total)),
+                    refundAmount: String(Math.max(0, Number(order.amountPaid))),
                     reason: "",
                     notes: "",
                     restockItems: false,

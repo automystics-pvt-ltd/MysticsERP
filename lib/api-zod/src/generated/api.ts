@@ -2052,6 +2052,7 @@ export const ListSalesOrderRefundsResponseItem = zod.object({
   "salesOrderId": zod.number(),
   "refundNumber": zod.string(),
   "refundDate": zod.string(),
+  "refundType": zod.enum(['full', 'partial', 'item_wise']).describe('full — entire paid amount; partial — money-only partial; item_wise — per-line breakdown.'),
   "refundAmount": zod.number(),
   "restockItems": zod.boolean(),
   "warehouseId": zod.number().nullable(),

@@ -6,12 +6,15 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { RefundLine } from './refundLine';
+import type { RefundRefundType } from './refundRefundType';
 
 export interface Refund {
   id: number;
   salesOrderId: number;
   refundNumber: string;
   refundDate: string;
+  /** full — entire paid amount; partial — money-only partial; item_wise — per-line breakdown. */
+  refundType: RefundRefundType;
   refundAmount: number;
   restockItems: boolean;
   /** @nullable */

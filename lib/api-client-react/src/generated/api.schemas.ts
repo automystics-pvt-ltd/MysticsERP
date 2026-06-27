@@ -1239,11 +1239,25 @@ export interface RefundLine {
   refundAmount: number;
 }
 
+/**
+ * full — entire paid amount; partial — money-only partial; item_wise — per-line breakdown.
+ */
+export type RefundRefundType = typeof RefundRefundType[keyof typeof RefundRefundType];
+
+
+export const RefundRefundType = {
+  full: 'full',
+  partial: 'partial',
+  item_wise: 'item_wise',
+} as const;
+
 export interface Refund {
   id: number;
   salesOrderId: number;
   refundNumber: string;
   refundDate: string;
+  /** full — entire paid amount; partial — money-only partial; item_wise — per-line breakdown. */
+  refundType: RefundRefundType;
   refundAmount: number;
   restockItems: boolean;
   /** @nullable */

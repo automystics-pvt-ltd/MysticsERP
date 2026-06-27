@@ -28,6 +28,13 @@ export const refundsTable = pgTable(
     refundNumber: text("refund_number").notNull(),
     refundDate: date("refund_date").notNull(),
     /**
+     * Refund type:
+     *   full       — entire order amount refunded
+     *   partial    — a partial money amount (no per-line breakdown)
+     *   item_wise  — per-line item breakdown provided
+     */
+    refundType: text("refund_type").notNull().default("partial"),
+    /**
      * Total money amount being refunded to the customer.
      */
     refundAmount: numeric("refund_amount", { precision: 14, scale: 2 })

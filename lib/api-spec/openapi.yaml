@@ -4281,6 +4281,10 @@ components:
         salesOrderId: { type: integer }
         refundNumber: { type: string }
         refundDate: { type: string }
+        refundType:
+          type: string
+          enum: [full, partial, item_wise]
+          description: "full — entire paid amount; partial — money-only partial; item_wise — per-line breakdown."
         refundAmount: { type: number }
         restockItems: { type: boolean }
         warehouseId: { type: ["integer", "null"] }
@@ -4295,6 +4299,7 @@ components:
         - salesOrderId
         - refundNumber
         - refundDate
+        - refundType
         - refundAmount
         - restockItems
         - warehouseId

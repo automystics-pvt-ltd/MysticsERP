@@ -234,6 +234,7 @@ export * from './receiveJobWorkOutputPayload';
 export * from './reconcileShopifyOrdersParams';
 export * from './refund';
 export * from './refundLine';
+export * from './refundRefundType';
 export * from './returnOrderPayload';
 export * from './returnsReasonBreakdown';
 export * from './returnsReport';

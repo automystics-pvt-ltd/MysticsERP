@@ -1811,6 +1811,7 @@ function serializeRefund(
     salesOrderId: r.salesOrderId,
     refundNumber: r.refundNumber,
     refundDate: r.refundDate,
+    refundType: (r.refundType ?? "partial") as "full" | "partial" | "item_wise",
     refundAmount: toNum(r.refundAmount),
     restockItems: r.restockItems,
     warehouseId: r.warehouseId ?? null,
@@ -1913,8 +1914,8 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
 
     const b = req.body ?? {};
     const refundAmount = Number(b.refundAmount);
-    if (!Number.isFinite(refundAmount) || refundAmount < 0) {
-      res.status(400).json({ error: "refundAmount must be a non-negative number" });
+    if (!Number.isFinite(refundAmount) || refundAmount <= 0) {
+      res.status(400).json({ error: "refundAmount must be a positive number" });
       return;
     }
     if (!b.refundDate || typeof b.refundDate !== "string") {
@@ -1926,37 +1927,6 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
     if (restockItems && !warehouseId) {
       res.status(400).json({ error: "warehouseId is required when restockItems is true" });
       return;
-    }
-
-    const orderRows = await db
-      .select({
-        id: salesOrdersTable.id,
-        status: salesOrdersTable.status,
-        orderNumber: salesOrdersTable.orderNumber,
-        warehouseId: salesOrdersTable.warehouseId,
-        amountPaid: salesOrdersTable.amountPaid,
-      })
-      .from(salesOrdersTable)
-      .where(and(eq(salesOrdersTable.id, id), eq(salesOrdersTable.organizationId, t.organizationId)))
-      .limit(1);
-    const order = orderRows[0];
-    if (!order) {
-      res.status(404).json({ error: "Not found" });
-      return;
-    }
-    if (!(REFUNDABLE_ORDER_STATUSES as readonly string[]).includes(order.status)) {
-      res.status(400).json({
-        error: `Refunds can only be issued for orders with status: ${REFUNDABLE_ORDER_STATUSES.join(", ")}`,
-      });
-      return;
-    }
-
-    if (restockItems && warehouseId) {
-      const own = await assertOwnership({ organizationId: t.organizationId, warehouseIds: [warehouseId] });
-      if (!own.ok) {
-        res.status(400).json({ error: "Invalid warehouseId" });
-        return;
-      }
     }
 
     const rawLines: Array<{ salesOrderLineId: number; quantity: number; refundAmount?: number }> =
@@ -1979,6 +1949,7 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
         .select({
           id: salesOrderLinesTable.id,
           itemId: salesOrderLinesTable.itemId,
+          quantity: salesOrderLinesTable.quantity,
           quantityShipped: salesOrderLinesTable.quantityShipped,
           salesOrderId: salesOrderLinesTable.salesOrderId,
         })
@@ -2001,6 +1972,13 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
           return;
         }
         const sol = solMap.get(Number(raw.salesOrderLineId))!;
+        const maxShipped = toNum(sol.quantityShipped ?? "0");
+        if (qty > maxShipped) {
+          res.status(400).json({
+            error: `Refund quantity (${qty}) exceeds shipped quantity (${maxShipped}) for line ${sol.id}`,
+          });
+          return;
+        }
         resolvedLines.push({
           salesOrderLineId: sol.id,
           itemId: sol.itemId,
@@ -2010,9 +1988,68 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
       }
     }
 
+    if (restockItems && warehouseId) {
+      const own = await assertOwnership({ organizationId: t.organizationId, warehouseIds: [warehouseId] });
+      if (!own.ok) {
+        res.status(400).json({ error: "Invalid warehouseId" });
+        return;
+      }
+    }
+
+    // Auto-derive refundType from the payload
+    const refundType =
+      resolvedLines.length > 0 ? "item_wise" : "partial";
+
     const refundedItemIds: number[] = [];
 
     const newRefund = await db.transaction(async (tx) => {
+      // Lock the order row to read authoritative financial state and
+      // prevent concurrent refunds from over-refunding.
+      const orderRows = await tx
+        .select({
+          id: salesOrdersTable.id,
+          status: salesOrdersTable.status,
+          orderNumber: salesOrdersTable.orderNumber,
+          total: salesOrdersTable.total,
+          amountPaid: salesOrdersTable.amountPaid,
+          balanceDue: salesOrdersTable.balanceDue,
+          paymentStatus: salesOrdersTable.paymentStatus,
+        })
+        .from(salesOrdersTable)
+        .where(and(eq(salesOrdersTable.id, id), eq(salesOrdersTable.organizationId, t.organizationId)))
+        .for("update")
+        .limit(1);
+      const order = orderRows[0];
+      if (!order) throw new Error("NOT_FOUND");
+
+      if (!(REFUNDABLE_ORDER_STATUSES as readonly string[]).includes(order.status)) {
+        throw new Error(
+          `INVALID_STATUS:Refunds can only be issued for orders with status: ${REFUNDABLE_ORDER_STATUSES.join(", ")}`,
+        );
+      }
+
+      // Cap: cumulative refunds (existing + this one) cannot exceed amountPaid
+      const existingRefundRows = await tx
+        .select({ refundAmount: refundsTable.refundAmount })
+        .from(refundsTable)
+        .where(
+          and(
+            eq(refundsTable.organizationId, t.organizationId),
+            eq(refundsTable.salesOrderId, id),
+          ),
+        );
+      const alreadyRefunded = existingRefundRows.reduce(
+        (sum, r) => sum + toNum(r.refundAmount),
+        0,
+      );
+      const amountPaid = toNum(order.amountPaid ?? "0");
+      const availableToRefund = Math.max(0, amountPaid - alreadyRefunded);
+      if (refundAmount > availableToRefund + 0.001) {
+        throw new Error(
+          `OVER_REFUND:Refund amount (${refundAmount.toFixed(2)}) exceeds the amount available to refund (${availableToRefund.toFixed(2)}). Amount paid: ${amountPaid.toFixed(2)}, already refunded: ${alreadyRefunded.toFixed(2)}`,
+        );
+      }
+
       const [inserted] = await tx
         .insert(refundsTable)
         .values({
@@ -2020,6 +2057,7 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
           salesOrderId: id,
           refundNumber: nextOrderNumber("RFD"),
           refundDate: b.refundDate,
+          refundType,
           refundAmount: toStr(refundAmount),
           restockItems,
           warehouseId: warehouseId ?? null,
@@ -2040,6 +2078,41 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
           })),
         );
       }
+
+      // Update order financial state: decrement amountPaid and re-derive balanceDue/paymentStatus
+      const newAmountPaid = Math.max(0, amountPaid - refundAmount);
+      const orderTotal = toNum(order.total ?? "0");
+      const newBalanceDue = Math.max(0, orderTotal - newAmountPaid);
+      let newPaymentStatus: string | null = order.paymentStatus ?? null;
+      // Keep paymentStatus in sync using the same logic as the PATCH handler
+      const curStatus = order.paymentStatus;
+      if (curStatus === "paid" || curStatus === "partially_paid" || curStatus === null) {
+        if (newAmountPaid <= 0) {
+          newPaymentStatus = null;
+        } else if (newBalanceDue <= 0.001) {
+          newPaymentStatus = "paid";
+        } else {
+          newPaymentStatus = "partially_paid";
+        }
+      }
+      // If the order was fully paid and the full amount was refunded, mark as refunded
+      if (newAmountPaid <= 0 && alreadyRefunded + refundAmount >= amountPaid - 0.001 && amountPaid > 0) {
+        newPaymentStatus = "refunded";
+      }
+
+      await tx
+        .update(salesOrdersTable)
+        .set({
+          amountPaid: toStr(newAmountPaid),
+          balanceDue: toStr(newBalanceDue),
+          paymentStatus: newPaymentStatus,
+        })
+        .where(
+          and(
+            eq(salesOrdersTable.id, id),
+            eq(salesOrdersTable.organizationId, t.organizationId),
+          ),
+        );
 
       if (restockItems && warehouseId && resolvedLines.length > 0) {
         for (const l of resolvedLines) {
@@ -2099,6 +2172,20 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
     const created = refunds.find((r) => r.id === newRefund.id);
     res.status(201).json(created);
   } catch (err) {
+    if (err instanceof Error) {
+      if (err.message === "NOT_FOUND") {
+        res.status(404).json({ error: "Not found" });
+        return;
+      }
+      if (err.message.startsWith("INVALID_STATUS:")) {
+        res.status(400).json({ error: err.message.slice("INVALID_STATUS:".length) });
+        return;
+      }
+      if (err.message.startsWith("OVER_REFUND:")) {
+        res.status(400).json({ error: err.message.slice("OVER_REFUND:".length) });
+        return;
+      }
+    }
     next(err);
   }
 });
