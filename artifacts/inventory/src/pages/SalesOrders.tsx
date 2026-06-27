@@ -29,7 +29,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { AlertCircle, AlertTriangle, IndianRupee, Plus, Receipt, X, Package } from "lucide-react";
 import { TablePagination } from "@/components/TablePagination";
-import { StatusBadge } from "@/components/StatusBadge";
 import { getEinvoiceFixSummary } from "@/lib/einvoiceFixes";
 import {
   Select,
@@ -98,7 +97,7 @@ export default function SalesOrders() {
     customer: "all",
     from: "",
     to: "",
-    sort: "date",
+    sort: "created",
     sortDir: "desc",
   });
   const search = values.search;
@@ -144,7 +143,7 @@ export default function SalesOrders() {
     customerId: customerFilter !== "all" ? Number(customerFilter) : undefined,
     from: fromDate || undefined,
     to: toDate || undefined,
-    sortBy: sortBy !== "date" ? sortBy : undefined,
+    sortBy: sortBy !== "created" ? sortBy : undefined,
     sortDir: sortDir !== "desc" ? sortDir : undefined,
   };
 
@@ -337,11 +336,13 @@ export default function SalesOrders() {
               <TableHead>Order #</TableHead>
               <TableHead>Date</TableHead>
               <TableHead>Customer</TableHead>
-              <TableHead>Status</TableHead>
-              {overdueFilter && <TableHead className="text-right">Days Overdue</TableHead>}
-              <TableHead className="text-right">Items</TableHead>
-              <TableHead>Delivery</TableHead>
               <TableHead className="text-right">Total</TableHead>
+              {overdueFilter && <TableHead className="text-right">Days Overdue</TableHead>}
+              <TableHead>Payment</TableHead>
+              <TableHead>Fulfillment</TableHead>
+              <TableHead className="text-right">Items</TableHead>
+              <TableHead>Delivery Status</TableHead>
+              <TableHead>Delivery Method</TableHead>
               <TableHead className="w-[140px]"></TableHead>
             </TableRow>
           </TableHeader>
@@ -353,18 +354,20 @@ export default function SalesOrders() {
                   <TableCell><Skeleton className="h-4 w-28" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-20" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-32" /></TableCell>
-                  <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
-                  {overdueFilter && <TableCell><Skeleton className="h-5 w-14 rounded-full ml-auto" /></TableCell>}
-                  <TableCell><Skeleton className="h-4 w-8 ml-auto" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-20 ml-auto" /></TableCell>
+                  {overdueFilter && <TableCell><Skeleton className="h-5 w-14 rounded-full ml-auto" /></TableCell>}
+                  <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-8 ml-auto" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                   <TableCell />
                 </TableRow>
               ))
             ) : orders.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={(showSelection ? 8 : 7) + (overdueFilter ? 1 : 0)}
+                  colSpan={10 + (showSelection ? 1 : 0) + (overdueFilter ? 1 : 0)}
                   className="h-24 text-center text-muted-foreground"
                 >
                   {overdueFilter
@@ -393,31 +396,53 @@ export default function SalesOrders() {
                       </TableCell>
                     )}
                     <TableCell className="font-mono">
-                      <div className="flex items-center gap-2">
-                        <Link
-                          href={`/sales-orders/${order.id}`}
-                          className="font-medium text-primary hover:underline"
-                        >
-                          {order.orderNumber}
-                        </Link>
-                        {order.orderType === "pos" && (
-                          <Badge
-                            variant="secondary"
-                            className="font-sans text-[10px] uppercase tracking-wide"
-                            data-testid={`badge-so-pos-${order.id}`}
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                          <Link
+                            href={`/sales-orders/${order.id}`}
+                            className="font-medium text-primary hover:underline"
                           >
-                            POS
-                          </Badge>
-                        )}
-                        {order.shopifyOrderId && (
-                          <Badge
-                            variant="outline"
-                            className="font-sans text-[10px] uppercase tracking-wide border-green-600 text-green-700 dark:border-green-500 dark:text-green-400"
-                            data-testid={`badge-so-shopify-${order.id}`}
-                          >
-                            Shopify
-                          </Badge>
-                        )}
+                            {order.orderNumber}
+                          </Link>
+                          {order.orderType === "pos" && (
+                            <Badge
+                              variant="secondary"
+                              className="font-sans text-[10px] uppercase tracking-wide"
+                              data-testid={`badge-so-pos-${order.id}`}
+                            >
+                              POS
+                            </Badge>
+                          )}
+                          {order.shopifyOrderId && (
+                            <Badge
+                              variant="outline"
+                              className="font-sans text-[10px] uppercase tracking-wide border-green-600 text-green-700 dark:border-green-500 dark:text-green-400"
+                              data-testid={`badge-so-shopify-${order.id}`}
+                            >
+                              Shopify
+                            </Badge>
+                          )}
+                        </div>
+                        {order.einvoice?.status === "failed" &&
+                          (() => {
+                            const fix = getEinvoiceFixSummary(
+                              order.einvoice,
+                              { customerId: order.customerId, customerName: order.customerName },
+                            );
+                            const summary = fix?.title ?? order.einvoice?.error;
+                            if (!summary) return null;
+                            return (
+                              <Link
+                                href={fix?.href ?? `/sales-orders/${order.id}`}
+                                className="inline-flex max-w-[200px] items-start gap-1 text-xs text-destructive hover:underline"
+                                title={summary}
+                                data-testid={`einvoice-fix-summary-${order.id}`}
+                              >
+                                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                                <span className="truncate">e-Invoice: {summary}</span>
+                              </Link>
+                            );
+                          })()}
                       </div>
                     </TableCell>
                     <TableCell>{formatDate(order.orderDate)}</TableCell>
@@ -458,95 +483,8 @@ export default function SalesOrders() {
                         );
                       })()}
                     </TableCell>
-                    <TableCell>
-                      <div className="flex flex-col gap-1">
-                        <StatusBadge status={order.status} />
-                        {order.shopifyFulfillmentStatus && (
-                          <Badge
-                            variant="outline"
-                            className={
-                              order.shopifyFulfillmentStatus === "fulfilled"
-                                ? "text-[11px] font-medium bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40"
-                                : order.shopifyFulfillmentStatus === "partial"
-                                  ? "text-[11px] font-medium bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40"
-                                  : order.shopifyFulfillmentStatus === "in_progress"
-                                    ? "text-[11px] font-medium bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/40"
-                                    : order.shopifyFulfillmentStatus === "on_hold"
-                                      ? "text-[11px] font-medium bg-yellow-50 text-yellow-700 border-yellow-300 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800/40"
-                                      : order.shopifyFulfillmentStatus === "scheduled"
-                                        ? "text-[11px] font-medium bg-purple-50 text-purple-700 border-purple-300 dark:bg-purple-900/20 dark:text-purple-400 dark:border-purple-800/40"
-                                        : "text-[11px] font-medium bg-gray-100 text-gray-600 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700"
-                            }
-                            data-testid={`badge-so-fulfillment-status-${order.id}`}
-                          >
-                            {order.shopifyFulfillmentStatus === "fulfilled"
-                              ? "Fulfilled"
-                              : order.shopifyFulfillmentStatus === "partial"
-                                ? "Partially Fulfilled"
-                                : order.shopifyFulfillmentStatus === "in_progress"
-                                  ? "In Progress"
-                                  : order.shopifyFulfillmentStatus === "on_hold"
-                                    ? "On Hold"
-                                    : order.shopifyFulfillmentStatus === "scheduled"
-                                      ? "Scheduled"
-                                      : "Unfulfilled"}
-                          </Badge>
-                        )}
-                        {order.paymentStatus && (
-                          <Badge
-                            variant="outline"
-                            className={
-                              order.paymentStatus === "paid"
-                                ? "text-[11px] font-medium bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40"
-                                : order.paymentStatus === "partially_paid"
-                                  ? "text-[11px] font-medium bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40"
-                                  : order.paymentStatus === "refunded"
-                                    ? "text-[11px] font-medium bg-red-50 text-red-700 border-red-300 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800/40"
-                                    : order.paymentStatus === "void"
-                                      ? "text-[11px] font-medium bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700"
-                                      : "text-[11px] font-medium bg-yellow-50 text-yellow-700 border-yellow-300 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800/40"
-                            }
-                            data-testid={`badge-so-payment-${order.id}`}
-                          >
-                            {order.paymentStatus === "paid"
-                              ? "Paid"
-                              : order.paymentStatus === "partially_paid"
-                                ? "Partially Paid"
-                                : order.paymentStatus === "refunded"
-                                  ? "Refunded"
-                                  : order.paymentStatus === "void"
-                                    ? "Void"
-                                    : "Payment Pending"}
-                          </Badge>
-                        )}
-                        {order.einvoice?.status === "failed" &&
-                          (() => {
-                            const fix = getEinvoiceFixSummary(
-                              order.einvoice,
-                              {
-                                customerId: order.customerId,
-                                customerName: order.customerName,
-                              },
-                            );
-                            const summary = fix?.title ?? order.einvoice?.error;
-                            if (!summary) return null;
-                            return (
-                              <Link
-                                href={
-                                  fix?.href ?? `/sales-orders/${order.id}`
-                                }
-                                className="inline-flex max-w-[260px] items-start gap-1 text-xs text-destructive hover:underline"
-                                title={summary}
-                                data-testid={`einvoice-fix-summary-${order.id}`}
-                              >
-                                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-                                <span className="truncate">
-                                  e-Invoice: {summary}
-                                </span>
-                              </Link>
-                            );
-                          })()}
-                      </div>
+                    <TableCell className="text-right font-medium tabular-nums">
+                      {formatCurrency(order.total)}
                     </TableCell>
                     {overdueFilter && (
                       <TableCell className="text-right">
@@ -574,6 +512,72 @@ export default function SalesOrders() {
                         })()}
                       </TableCell>
                     )}
+                    <TableCell>
+                      {order.paymentStatus ? (
+                        <Badge
+                          variant="outline"
+                          className={
+                            order.paymentStatus === "paid"
+                              ? "text-[11px] font-medium bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40"
+                              : order.paymentStatus === "partially_paid"
+                                ? "text-[11px] font-medium bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40"
+                                : order.paymentStatus === "refunded"
+                                  ? "text-[11px] font-medium bg-red-50 text-red-700 border-red-300 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800/40"
+                                  : order.paymentStatus === "void"
+                                    ? "text-[11px] font-medium bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700"
+                                    : "text-[11px] font-medium bg-yellow-50 text-yellow-700 border-yellow-300 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800/40"
+                          }
+                          data-testid={`badge-so-payment-${order.id}`}
+                        >
+                          {order.paymentStatus === "paid"
+                            ? "Paid"
+                            : order.paymentStatus === "partially_paid"
+                              ? "Partially Paid"
+                              : order.paymentStatus === "refunded"
+                                ? "Refunded"
+                                : order.paymentStatus === "void"
+                                  ? "Void"
+                                  : "Pending"}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {order.shopifyFulfillmentStatus ? (
+                        <Badge
+                          variant="outline"
+                          className={
+                            order.shopifyFulfillmentStatus === "fulfilled"
+                              ? "text-[11px] font-medium bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40"
+                              : order.shopifyFulfillmentStatus === "partial"
+                                ? "text-[11px] font-medium bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40"
+                                : order.shopifyFulfillmentStatus === "in_progress"
+                                  ? "text-[11px] font-medium bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/40"
+                                  : order.shopifyFulfillmentStatus === "on_hold"
+                                    ? "text-[11px] font-medium bg-yellow-50 text-yellow-700 border-yellow-300 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800/40"
+                                    : order.shopifyFulfillmentStatus === "scheduled"
+                                      ? "text-[11px] font-medium bg-purple-50 text-purple-700 border-purple-300 dark:bg-purple-900/20 dark:text-purple-400 dark:border-purple-800/40"
+                                      : "text-[11px] font-medium bg-gray-100 text-gray-600 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700"
+                          }
+                          data-testid={`badge-so-fulfillment-status-${order.id}`}
+                        >
+                          {order.shopifyFulfillmentStatus === "fulfilled"
+                            ? "Fulfilled"
+                            : order.shopifyFulfillmentStatus === "partial"
+                              ? "Partial"
+                              : order.shopifyFulfillmentStatus === "in_progress"
+                                ? "In Progress"
+                                : order.shopifyFulfillmentStatus === "on_hold"
+                                  ? "On Hold"
+                                  : order.shopifyFulfillmentStatus === "scheduled"
+                                    ? "Scheduled"
+                                    : "Unfulfilled"}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {(order.itemCount ?? 0) > 0 ? (
                         <span className="flex items-center justify-end gap-1 text-sm">
@@ -585,14 +589,20 @@ export default function SalesOrders() {
                       )}
                     </TableCell>
                     <TableCell>
+                      {(() => {
+                        const s = order.status;
+                        if (s === "shipped") return <Badge variant="outline" className="text-[11px] font-medium bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/40">Shipped</Badge>;
+                        if (s === "partially_shipped") return <Badge variant="outline" className="text-[11px] font-medium bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40">Partial</Badge>;
+                        if (s === "delivered") return <Badge variant="outline" className="text-[11px] font-medium bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40">Delivered</Badge>;
+                        return <span className="text-muted-foreground text-xs">—</span>;
+                      })()}
+                    </TableCell>
+                    <TableCell>
                       {order.deliveryMethod ? (
                         <span className="text-sm text-muted-foreground">{order.deliveryMethod}</span>
                       ) : (
-                        <span className="text-muted-foreground">—</span>
+                        <span className="text-muted-foreground text-xs">—</span>
                       )}
-                    </TableCell>
-                    <TableCell className="text-right font-medium">
-                      {formatCurrency(order.total)}
                     </TableCell>
                     <TableCell className="text-right">
                       {canPay && (
@@ -618,14 +628,15 @@ export default function SalesOrders() {
               })}
               {(() => {
                 const totalAmt = orders.reduce((s, o) => s + Number(o.total ?? 0), 0);
-                const colsBefore = (showSelection ? 6 : 5) + (overdueFilter ? 1 : 0);
+                const colsBefore = (showSelection ? 1 : 0) + 3;
+                const colsAfter = (overdueFilter ? 1 : 0) + 6;
                 return (
                   <TableRow className="border-t-2 font-semibold bg-muted/30">
                     <TableCell colSpan={colsBefore} className="text-muted-foreground text-sm">
                       Page Total ({orders.length} order{orders.length !== 1 ? "s" : ""})
                     </TableCell>
                     <TableCell className="text-right">{formatCurrency(totalAmt)}</TableCell>
-                    <TableCell />
+                    <TableCell colSpan={colsAfter} />
                   </TableRow>
                 );
               })()}

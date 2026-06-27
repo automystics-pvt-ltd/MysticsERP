@@ -842,18 +842,20 @@ export default function SalesOrderDetail() {
           <CardContent className="space-y-4">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Subtotal</span>
-              <span>{formatCurrency(Number(order.subtotal) + Number(order.discountTotal ?? 0))}</span>
+              <span>{formatCurrency(order.subtotal)}</span>
             </div>
             {Number(order.discountTotal ?? 0) > 0 && (
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Discount</span>
-                <span className="text-green-600 dark:text-green-400">
-                  -{formatCurrency(order.discountTotal)}
-                </span>
+                <span className="text-muted-foreground pl-3 italic">Includes {formatCurrency(order.discountTotal)} discount</span>
               </div>
             )}
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Tax</span>
+              <span className="text-muted-foreground flex items-center gap-1">
+                Tax
+                {order.shopifyTaxLines && order.shopifyTaxLines.length > 0 && order.shopifyTaxLines.every(tl => tl.channel_liable === false) && (
+                  <span className="text-xs font-normal">(tax included)</span>
+                )}
+              </span>
               <span>{formatCurrency(order.taxTotal)}</span>
             </div>
             {order.shopifyTaxLines && order.shopifyTaxLines.length > 0 && (

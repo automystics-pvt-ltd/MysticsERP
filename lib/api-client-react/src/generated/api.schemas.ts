@@ -1141,7 +1141,7 @@ export interface SalesOrder {
   einvoice: EinvoiceDetails | null;
   createdAt: string;
   /** Number of distinct line items in this order. */
-  itemCount: number;
+  itemCount?: number;
 }
 
 export interface ShipmentLine {
