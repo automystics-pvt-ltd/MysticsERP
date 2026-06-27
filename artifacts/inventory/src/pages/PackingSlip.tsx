@@ -1,5 +1,6 @@
 import { useParams } from "wouter";
 import { useGetSalesOrder, getGetSalesOrderQueryKey } from "@/lib/queryKeys";
+import { useGetCustomer, getGetCustomerQueryKey } from "@/lib/queryKeys";
 import { formatDate } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useEffect } from "react";
@@ -12,13 +13,23 @@ export default function PackingSlip() {
     query: { enabled: !!orderId, queryKey: getGetSalesOrderQueryKey(orderId) },
   });
 
+  const customerId = orderDetail?.order.customerId;
+  const { data: customer } = useGetCustomer(customerId ?? 0, {
+    query: {
+      enabled: !!customerId,
+      queryKey: getGetCustomerQueryKey(customerId ?? 0),
+    },
+  });
+
+  const ready = !isLoading && !!orderDetail;
+
   useEffect(() => {
-    if (!orderDetail) return;
+    if (!ready) return;
     const timer = setTimeout(() => window.print(), 300);
     return () => clearTimeout(timer);
-  }, [orderDetail]);
+  }, [ready]);
 
-  if (isLoading || !orderDetail) {
+  if (!ready) {
     return (
       <div className="p-8 space-y-4">
         <Skeleton className="h-8 w-48" />
@@ -29,6 +40,9 @@ export default function PackingSlip() {
   }
 
   const { order, lines } = orderDetail;
+  const shipTo = order.walkinName || order.customerName;
+  const shippingAddr = customer?.shippingAddress || customer?.billingAddress;
+  const billingAddr = customer?.billingAddress;
 
   return (
     <>
@@ -62,14 +76,53 @@ export default function PackingSlip() {
           <div className="grid grid-cols-2 gap-8 mb-8">
             <div>
               <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Ship To</h2>
-              <p className="font-semibold">{order.walkinName || order.customerName}</p>
-              {order.notes && (
-                <p className="text-gray-600 whitespace-pre-line text-sm mt-1">{order.notes}</p>
+              <p className="font-semibold">{shipTo}</p>
+              {shippingAddr && (
+                <p className="text-gray-600 whitespace-pre-line text-sm mt-1">{shippingAddr}</p>
+              )}
+              {customer?.phone && (
+                <p className="text-gray-500 text-sm mt-1">{customer.phone}</p>
+              )}
+              {order.customerGstNumber && (
+                <p className="text-gray-400 text-xs mt-1">GST: {order.customerGstNumber}</p>
               )}
             </div>
             <div>
+              {billingAddr && billingAddr !== shippingAddr && (
+                <>
+                  <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Bill To</h2>
+                  <p className="font-semibold">{order.customerName}</p>
+                  <p className="text-gray-600 whitespace-pre-line text-sm mt-1">{billingAddr}</p>
+                </>
+              )}
+              {(!billingAddr || billingAddr === shippingAddr) && (
+                <>
+                  <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Order Info</h2>
+                  <table className="text-sm w-full">
+                    <tbody>
+                      <tr>
+                        <td className="text-gray-500 pr-4 py-0.5">Order #</td>
+                        <td className="font-medium">{order.orderNumber}</td>
+                      </tr>
+                      <tr>
+                        <td className="text-gray-500 pr-4 py-0.5">Order Date</td>
+                        <td>{formatDate(order.orderDate)}</td>
+                      </tr>
+                      <tr>
+                        <td className="text-gray-500 pr-4 py-0.5">Warehouse</td>
+                        <td>{order.warehouseName}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </>
+              )}
+            </div>
+          </div>
+
+          {billingAddr && billingAddr !== shippingAddr && (
+            <div className="mb-8">
               <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Order Info</h2>
-              <table className="text-sm w-full">
+              <table className="text-sm">
                 <tbody>
                   <tr>
                     <td className="text-gray-500 pr-4 py-0.5">Order #</td>
@@ -86,7 +139,7 @@ export default function PackingSlip() {
                 </tbody>
               </table>
             </div>
-          </div>
+          )}
 
           <table className="w-full border-collapse mb-8" style={{ borderTop: "2px solid #e5e7eb" }}>
             <thead>

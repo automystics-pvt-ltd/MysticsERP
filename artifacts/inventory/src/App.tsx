@@ -201,9 +201,11 @@ function ProtectedRoutes() {
     <UnauthenticatedNavigator />
     <Switch>
       <Route path="/sales-orders/:id/packing-slip">
-        <Suspense fallback={<RouteFallback />}>
-          <PackingSlip />
-        </Suspense>
+        <RoleGate>
+          <Suspense fallback={<RouteFallback />}>
+            <PackingSlip />
+          </Suspense>
+        </RoleGate>
       </Route>
       <Route path="/*?">
     <AppShell>
