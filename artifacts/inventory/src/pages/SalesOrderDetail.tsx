@@ -734,7 +734,7 @@ export default function SalesOrderDetail() {
               </>
             )}
           </Can>
-          {INVOICEABLE_STATUSES.has(order.status) && order.status !== "returned" && (
+          {shipments.some((s) => s.status !== "cancelled") && order.status !== "returned" && (
             <Button
               size="sm"
               variant="outline"
