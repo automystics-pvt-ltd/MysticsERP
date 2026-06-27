@@ -13,6 +13,7 @@ import {
   serializeCustomerPaymentAllocation,
 } from "../lib/serializers";
 import { toNum, toStr } from "../lib/numeric";
+import { syncPaymentStatusToShopify } from "../lib/shopifyOutbound";
 
 const router: IRouter = Router();
 router.use(tenantMiddleware);
@@ -387,6 +388,11 @@ router.post("/customer-payments", async (req, res, next) => {
 
       const detail = await loadPaymentDetail(orgId, insertedId);
       res.status(201).json(detail);
+
+      // Fire-and-forget: sync payment status to Shopify for each allocated order
+      for (const a of allocationsInput) {
+        syncPaymentStatusToShopify(orgId, a.salesOrderId);
+      }
     } catch (err) {
       if (err instanceof PaymentValidationError) {
         res.status(400).json({ error: err.httpMessage });
@@ -477,7 +483,7 @@ router.delete("/customer-payments/:id", async (req, res, next) => {
           ),
         );
 
-      return { ok: true as const };
+      return { ok: true as const, allocatedOrderIds: allocs.map((a) => a.salesOrderId) };
     });
 
     if (!result.ok) {
@@ -485,6 +491,11 @@ router.delete("/customer-payments/:id", async (req, res, next) => {
       return;
     }
     res.status(204).send();
+
+    // Fire-and-forget: re-sync payment status for all previously-allocated orders
+    for (const soId of result.allocatedOrderIds) {
+      syncPaymentStatusToShopify(orgId, soId);
+    }
   } catch (err) {
     next(err);
   }

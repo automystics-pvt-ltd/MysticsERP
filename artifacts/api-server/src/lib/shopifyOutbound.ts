@@ -21,6 +21,8 @@ import {
   createShopifyProductWithVariants,
   setInventoryLevel,
   updateShopifyCustomer,
+  updateShopifyFulfillmentTracking,
+  updateShopifyOrderPaymentStatus,
   updateShopifyProduct,
 } from "./shopify";
 import { computeBundleStockByWarehouse } from "./bundles";
@@ -646,7 +648,7 @@ async function pushFulfillmentToShopifyAsync(
   const org = await fetchOrgCreds(orgId);
   if (!org) return;
 
-  // Idempotency: skip if this shipment was already pushed to Shopify.
+  // Fetch shipment (need shopifyFulfillmentId for idempotency check)
   const [shipmentRow] = await db
     .select({ shopifyFulfillmentId: shipmentsTable.shopifyFulfillmentId })
     .from(shipmentsTable)
@@ -657,10 +659,6 @@ async function pushFulfillmentToShopifyAsync(
       ),
     )
     .limit(1);
-  if (shipmentRow?.shopifyFulfillmentId) {
-    logger.info({ orgId, shipmentId }, "Shopify fulfillment push skipped — already pushed");
-    return;
-  }
 
   const orderRows = await db
     .select({
@@ -700,6 +698,59 @@ async function pushFulfillmentToShopifyAsync(
     )
     .orderBy(desc(fulfillmentsTable.dispatchedAt))
     .limit(1);
+
+  // Idempotency: if this shipment was already linked to a Shopify fulfillment
+  // (either pushed by us previously or stamped by an inbound webhook), update
+  // tracking info rather than creating a duplicate fulfillment.
+  if (shipmentRow?.shopifyFulfillmentId) {
+    const hasTracking = trackingRow && (
+      trackingRow.awbNumber || trackingRow.courierName || trackingRow.trackingUrl
+    );
+    if (hasTracking) {
+      try {
+        await updateShopifyFulfillmentTracking(
+          org.shopDomain,
+          org.accessToken,
+          order.shopifyOrderId,
+          shipmentRow.shopifyFulfillmentId,
+          {
+            number: trackingRow!.awbNumber,
+            company: trackingRow!.courierName,
+            url: trackingRow!.trackingUrl,
+          },
+        );
+        await db.insert(shopifySyncLogsTable).values({
+          organizationId: orgId,
+          direction: "outbound",
+          entity: "fulfillment",
+          action: "update",
+          status: "success",
+          shopifyId: shipmentRow.shopifyFulfillmentId,
+          erpId: String(shipmentId),
+        });
+        logger.info(
+          { orgId, shipmentId, shopifyFulfillmentId: shipmentRow.shopifyFulfillmentId },
+          "Shopify fulfillment tracking updated",
+        );
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        await db.insert(shopifySyncLogsTable).values({
+          organizationId: orgId,
+          direction: "outbound",
+          entity: "fulfillment",
+          action: "update",
+          status: "error",
+          shopifyId: shipmentRow.shopifyFulfillmentId,
+          erpId: String(shipmentId),
+          errorMessage,
+          failureReason: classifyError(errorMessage),
+        });
+      }
+    } else {
+      logger.info({ orgId, shipmentId }, "Shopify fulfillment push skipped — already pushed, no tracking to update");
+    }
+    return;
+  }
 
   const whRows = await db
     .select({ shopifyLocationId: warehousesTable.shopifyLocationId })
@@ -1150,6 +1201,83 @@ async function pushCustomerToShopifyAsync(orgId: number, customerId: number): Pr
     erpId: String(customerId),
     errorMessage: errorMessage ?? null,
   });
+}
+
+// ─── Payment status sync (ERP → Shopify) ─────────────────────────────────────
+
+/**
+ * Fire-and-forget: push the ERP payment status for a sales order to Shopify
+ * via order note_attributes (erp_payment_status + erp_synced_at). No-op when
+ * the org isn't connected to Shopify or the order has no shopifyOrderId.
+ */
+export function syncPaymentStatusToShopify(orgId: number, salesOrderId: number): void {
+  syncPaymentStatusToShopifyAsync(orgId, salesOrderId).catch((err) => {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err), orgId, salesOrderId },
+      "Shopify outbound payment status sync failed",
+    );
+  });
+}
+
+async function syncPaymentStatusToShopifyAsync(orgId: number, salesOrderId: number): Promise<void> {
+  const org = await fetchOrgCreds(orgId);
+  if (!org) return;
+
+  const [order] = await db
+    .select({
+      shopifyOrderId: salesOrdersTable.shopifyOrderId,
+      paymentStatus: salesOrdersTable.paymentStatus,
+    })
+    .from(salesOrdersTable)
+    .where(
+      and(
+        eq(salesOrdersTable.id, salesOrderId),
+        eq(salesOrdersTable.organizationId, orgId),
+      ),
+    )
+    .limit(1);
+
+  if (!order?.shopifyOrderId || !order.paymentStatus) return;
+
+  try {
+    await updateShopifyOrderPaymentStatus(
+      org.shopDomain,
+      org.accessToken,
+      order.shopifyOrderId,
+      order.paymentStatus,
+    );
+
+    await db.insert(shopifySyncLogsTable).values({
+      organizationId: orgId,
+      direction: "outbound",
+      entity: "order",
+      action: "update",
+      status: "success",
+      shopifyId: order.shopifyOrderId,
+      erpId: String(salesOrderId),
+      name: "payment_status",
+    });
+
+    logger.info(
+      { orgId, salesOrderId, paymentStatus: order.paymentStatus },
+      "Shopify order payment status synced",
+    );
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    await db.insert(shopifySyncLogsTable).values({
+      organizationId: orgId,
+      direction: "outbound",
+      entity: "order",
+      action: "update",
+      status: "error",
+      shopifyId: order.shopifyOrderId,
+      erpId: String(salesOrderId),
+      name: "payment_status",
+      errorMessage,
+      failureReason: classifyError(errorMessage),
+    });
+    throw err;
+  }
 }
 
 // ─── Bulk retry ───────────────────────────────────────────────────────────────

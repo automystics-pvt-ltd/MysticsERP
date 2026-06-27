@@ -21,6 +21,7 @@ import {
   CheckCircle2, Circle, Scan, Package, Truck,
   ExternalLink, AlertCircle, Check, Camera,
   Printer, History, AlertTriangle, Warehouse,
+  CreditCard, RefreshCw, MapPin, Link2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
@@ -46,6 +47,7 @@ interface Fulfillment {
   salesOrderId: number;
   orderNumber: string;
   shopifyOrderId: string | null;
+  shopifyFulfillmentId: string | null;
   shipmentId: number | null;
   status: string;
   warehouseId: number;
@@ -58,6 +60,7 @@ interface Fulfillment {
   packedAt: string | null;
   dispatchedAt: string | null;
   createdAt: string;
+  updatedAt: string;
   lines: FulfillmentLine[];
 }
 
@@ -77,23 +80,36 @@ interface ScanRecord {
 
 const STEP_ORDER = ["picking", "picked", "packed", "dispatched"];
 
-function StepIndicator({ status }: { status: string }) {
+const STEP_LABELS: Record<string, string> = {
+  picking: "Pick",
+  picked: "Pack & Label",
+  packed: "Dispatch",
+  dispatched: "Done",
+};
+
+function StepIndicator({
+  status,
+  fulfillment,
+}: {
+  status: string;
+  fulfillment: Fulfillment;
+}) {
   const current = STEP_ORDER.indexOf(status);
   const displaySteps = [
-    { label: "Pick", index: 0 },
-    { label: "Pack & Label", index: 2 },
-    { label: "Dispatch", index: 3 },
+    { label: "Pick", index: 0, ts: fulfillment.pickedAt },
+    { label: "Pack & Label", index: 2, ts: fulfillment.packedAt },
+    { label: "Dispatch", index: 3, ts: fulfillment.dispatchedAt },
   ];
 
   return (
-    <div className="flex items-center gap-0 mb-6">
+    <div className="flex items-center gap-0 mb-5">
       {displaySteps.map((step, i) => {
-        const done = current > step.index;
-        const active = current === step.index || (step.index === 0 && current === 1);
+        const done = current > step.index || (step.index === 0 && current >= 1);
+        const active = !done && (current === step.index || (step.index === 0 && current === 1));
         return (
           <div key={step.label} className="flex items-center">
             {i > 0 && (
-              <div className={cn("h-0.5 w-16 mx-1 transition-colors", done ? "bg-green-500" : "bg-muted")} />
+              <div className={cn("h-0.5 w-14 mx-1 transition-colors", done ? "bg-green-500" : "bg-muted")} />
             )}
             <div className="flex flex-col items-center gap-1">
               <div
@@ -108,9 +124,14 @@ function StepIndicator({ status }: { status: string }) {
               >
                 {done ? <Check className="h-5 w-5" /> : <span className="text-sm font-semibold">{i + 1}</span>}
               </div>
-              <span className={cn("text-xs font-medium whitespace-nowrap", active ? "text-primary" : done ? "text-green-600" : "text-muted-foreground")}>
+              <span className={cn("text-xs font-medium whitespace-nowrap", active ? "text-primary" : done ? "text-green-600 dark:text-green-400" : "text-muted-foreground")}>
                 {step.label}
               </span>
+              {done && step.ts && (
+                <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                  {formatDistanceToNow(new Date(step.ts), { addSuffix: true })}
+                </span>
+              )}
             </div>
           </div>
         );
@@ -514,7 +535,15 @@ function PickStep({
       {/* Lines */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Items to Pick</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">Items to Pick</CardTitle>
+            {fulfillment.shopifyOrderId && (
+              <Badge variant="outline" className="text-xs gap-1 text-[#5C6BC0]">
+                <Link2 className="h-3 w-3" />
+                Qty from Shopify order
+              </Badge>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <div className="divide-y">
@@ -782,58 +811,137 @@ function DispatchStep({ fulfillment, onDone }: { fulfillment: Fulfillment; onDon
 // ─── Dispatched View ──────────────────────────────────────────────────────────
 
 function DispatchedView({ fulfillment }: { fulfillment: Fulfillment }) {
+  const shopifyConnected = !!fulfillment.shopifyOrderId;
+
   return (
-    <div className="space-y-5">
-      <div className="flex items-center gap-3 p-5 bg-green-50 dark:bg-green-950/20 rounded-lg">
-        <CheckCircle2 className="h-8 w-8 text-green-500 shrink-0" />
+    <div className="space-y-4">
+      {/* Success banner */}
+      <div className="flex items-center gap-3 p-4 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-900">
+        <CheckCircle2 className="h-7 w-7 text-green-500 shrink-0" />
         <div>
-          <p className="font-semibold text-green-700 dark:text-green-400 text-base">
-            Dispatched successfully
-          </p>
+          <p className="font-semibold text-green-700 dark:text-green-400">Dispatched successfully</p>
           <p className="text-green-600/80 dark:text-green-400/80 text-sm">
-            Stock has been deducted and the Shopify order has been marked fulfilled.
+            {fulfillment.dispatchedAt
+              ? `${formatDistanceToNow(new Date(fulfillment.dispatchedAt), { addSuffix: true })}`
+              : "Stock deducted and order fulfilled."}
           </p>
         </div>
       </div>
 
-      <Card>
-        <CardContent className="pt-4 space-y-3">
-          {fulfillment.courierName && (
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Courier</span>
-              <span className="font-medium">{fulfillment.courierName}</span>
+      {/* Shopify sync status */}
+      {shopifyConnected && (
+        <Card className="border-[#5C6BC0]/30 bg-[#5C6BC0]/5 dark:bg-[#5C6BC0]/10">
+          <CardContent className="pt-4 pb-3 space-y-2.5">
+            <p className="text-xs font-semibold text-[#5C6BC0] uppercase tracking-wide flex items-center gap-1.5">
+              <RefreshCw className="h-3 w-3" /> Shopify Sync Status
+            </p>
+            {/* Fulfillment sync */}
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground flex items-center gap-1.5">
+                <Package className="h-3.5 w-3.5" /> Fulfillment
+              </span>
+              {fulfillment.shopifyFulfillmentId ? (
+                <span className="flex items-center gap-1 text-green-600 dark:text-green-400 font-medium text-xs">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Synced
+                  <span className="text-muted-foreground font-mono ml-1">#{fulfillment.shopifyFulfillmentId.slice(-6)}</span>
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-amber-600 text-xs">
+                  <AlertTriangle className="h-3.5 w-3.5" /> Pending
+                </span>
+              )}
             </div>
-          )}
-          {fulfillment.awbNumber && (
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">AWB Number</span>
-              <span className="font-mono font-medium">{fulfillment.awbNumber}</span>
+            {/* Delivery / tracking sync */}
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground flex items-center gap-1.5">
+                <Truck className="h-3.5 w-3.5" /> Tracking
+              </span>
+              {fulfillment.awbNumber || fulfillment.courierName ? (
+                <span className="flex items-center gap-1 text-green-600 dark:text-green-400 font-medium text-xs">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> Pushed to Shopify
+                </span>
+              ) : (
+                <span className="text-muted-foreground text-xs">No tracking added</span>
+              )}
             </div>
-          )}
-          {fulfillment.trackingUrl && (
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Tracking</span>
-              <a
-                href={fulfillment.trackingUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary hover:underline flex items-center gap-1"
-              >
-                Track shipment <ExternalLink className="h-3 w-3" />
-              </a>
+            {/* Payment status note */}
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground flex items-center gap-1.5">
+                <CreditCard className="h-3.5 w-3.5" /> Payment status
+              </span>
+              <span className="flex items-center gap-1 text-green-600 dark:text-green-400 font-medium text-xs">
+                <CheckCircle2 className="h-3.5 w-3.5" /> Auto-synced
+              </span>
             </div>
-          )}
-          {fulfillment.dispatchedAt && (
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Dispatched at</span>
-              <span>{new Date(fulfillment.dispatchedAt).toLocaleString()}</span>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            {/* View on Shopify */}
+            {fulfillment.shopifyOrderId && (
+              <div className="pt-1 border-t border-[#5C6BC0]/20">
+                <a
+                  href={`https://admin.shopify.com/orders/${fulfillment.shopifyOrderId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-[#5C6BC0] hover:underline flex items-center gap-1"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  View order in Shopify Admin
+                </a>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
+      {/* Tracking details */}
+      {(fulfillment.courierName || fulfillment.awbNumber || fulfillment.trackingUrl) && (
+        <Card>
+          <CardHeader className="pb-2 pt-4">
+            <CardTitle className="text-sm flex items-center gap-1.5">
+              <MapPin className="h-4 w-4 text-muted-foreground" />
+              Shipment Tracking
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pb-4 space-y-2.5">
+            {fulfillment.courierName && (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Courier</span>
+                <span className="font-medium">{fulfillment.courierName}</span>
+              </div>
+            )}
+            {fulfillment.awbNumber && (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">AWB / Tracking No.</span>
+                <span className="font-mono font-medium bg-muted px-2 py-0.5 rounded text-xs">
+                  {fulfillment.awbNumber}
+                </span>
+              </div>
+            )}
+            {fulfillment.trackingUrl && (
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-muted-foreground">Track shipment</span>
+                <a
+                  href={fulfillment.trackingUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline flex items-center gap-1 text-xs"
+                >
+                  Open tracking link <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            )}
+            {fulfillment.dispatchedAt && (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Dispatched at</span>
+                <span className="text-xs">{new Date(fulfillment.dispatchedAt).toLocaleString()}</span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Items shipped */}
       <Card>
-        <CardHeader className="pb-2">
+        <CardHeader className="pb-2 pt-4">
           <CardTitle className="text-sm text-muted-foreground">Items Shipped</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
@@ -918,19 +1026,31 @@ export default function FulfillmentDetail() {
 
       <div className="max-w-2xl">
         {/* Step indicator */}
-        <StepIndicator status={status} />
+        <StepIndicator status={status} fulfillment={fulfillment} />
 
         {/* Meta strip */}
-        <div className="flex flex-wrap gap-x-6 gap-y-1 mb-5 text-sm text-muted-foreground">
-          <span>Warehouse: <span className="text-foreground font-medium">{fulfillment.warehouseName}</span></span>
-          {fulfillment.pickedAt && (
-            <span>Picked: <span className="text-foreground">{new Date(fulfillment.pickedAt).toLocaleString()}</span></span>
+        <div className="flex flex-wrap items-center gap-2 mb-5">
+          <Badge variant="outline" className="text-xs gap-1.5">
+            <Warehouse className="h-3 w-3" />
+            {fulfillment.warehouseName}
+          </Badge>
+          {fulfillment.shopifyOrderId && (
+            <Badge variant="outline" className="text-xs gap-1.5 text-[#5C6BC0]">
+              <Link2 className="h-3 w-3" />
+              Shopify order linked
+            </Badge>
           )}
-          {fulfillment.packedAt && (
-            <span>Packed: <span className="text-foreground">{new Date(fulfillment.packedAt).toLocaleString()}</span></span>
+          {fulfillment.shopifyFulfillmentId && (
+            <Badge className="text-xs gap-1.5 bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800">
+              <CheckCircle2 className="h-3 w-3" />
+              Synced to Shopify
+            </Badge>
           )}
-          {fulfillment.dispatchedAt && (
-            <span>Dispatched: <span className="text-foreground">{new Date(fulfillment.dispatchedAt).toLocaleString()}</span></span>
+          {fulfillment.shopifyOrderId && !fulfillment.shopifyFulfillmentId && status !== "dispatched" && (
+            <Badge variant="outline" className="text-xs gap-1.5 text-amber-600 border-amber-300">
+              <RefreshCw className="h-3 w-3" />
+              Shopify sync pending
+            </Badge>
           )}
         </div>
 

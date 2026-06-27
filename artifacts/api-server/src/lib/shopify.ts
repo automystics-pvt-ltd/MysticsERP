@@ -1096,4 +1096,41 @@ export async function updateShopifyCustomer(
   );
 }
 
+/**
+ * Push ERP payment status to a Shopify order using note_attributes.
+ * GETs the current attributes first so merchant-set attributes aren't lost.
+ * erp_* attributes are owned by ERP and will be replaced; all others kept.
+ */
+export async function updateShopifyOrderPaymentStatus(
+  shopDomain: string,
+  accessToken: string,
+  shopifyOrderId: string,
+  erpPaymentStatus: string,
+): Promise<void> {
+  // GET existing note_attributes to avoid clobbering merchant-set ones
+  let existingAttrs: Array<{ name: string; value: string }> = [];
+  try {
+    const data = await shopifyGet<{
+      order?: { note_attributes?: Array<{ name: string; value: string }> };
+    }>(shopDomain, accessToken, `/orders/${shopifyOrderId}.json`, {
+      fields: "id,note_attributes",
+    });
+    existingAttrs = (data.order?.note_attributes ?? []).filter(
+      (a) => !a.name.startsWith("erp_"),
+    );
+  } catch {
+    // If GET fails just proceed with empty — don't let it block the update
+  }
+
+  const mergedAttrs = [
+    ...existingAttrs,
+    { name: "erp_payment_status", value: erpPaymentStatus },
+    { name: "erp_synced_at", value: new Date().toISOString() },
+  ];
+
+  await shopifyPut(shopDomain, accessToken, `/orders/${shopifyOrderId}.json`, {
+    order: { id: Number(shopifyOrderId), note_attributes: mergedAttrs },
+  });
+}
+
 export { REQUIRED_SCOPES, WEBHOOK_TOPICS };

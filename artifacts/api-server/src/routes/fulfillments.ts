@@ -76,6 +76,7 @@ function serializeFulfillment(
     awbNumber: f.awbNumber,
     trackingUrl: f.trackingUrl,
     notes: f.notes,
+    shopifyFulfillmentId: f.shopifyFulfillmentId,
     pickedAt: f.pickedAt ? f.pickedAt.toISOString() : null,
     packedAt: f.packedAt ? f.packedAt.toISOString() : null,
     dispatchedAt: f.dispatchedAt ? f.dispatchedAt.toISOString() : null,
