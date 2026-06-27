@@ -42,6 +42,10 @@ export const shipmentsTable = pgTable(
     cancelReasonCode: text("cancel_reason_code"),
     cancelReasonNotes: text("cancel_reason_notes"),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    /** Shopify fulfillment ID returned when we push this shipment to Shopify.
+     *  Set on first successful outbound push; used to cancel/update on Shopify
+     *  and to match inbound fulfillments/cancel webhooks back to this row. */
+    shopifyFulfillmentId: text("shopify_fulfillment_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

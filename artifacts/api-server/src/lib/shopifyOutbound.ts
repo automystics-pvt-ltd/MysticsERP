@@ -7,12 +7,14 @@ import {
   itemWarehouseStockTable,
   organizationsTable,
   salesOrdersTable,
+  shipmentsTable,
   shopifySyncLogsTable,
   warehousesTable,
 } from "@workspace/db";
 import { logger } from "./logger";
 import {
   addVariantToShopifyProduct,
+  cancelShopifyFulfillment,
   createShopifyCustomer,
   createShopifyFulfillment,
   createShopifyProduct,
@@ -619,21 +621,46 @@ async function syncVariantParentToShopify(
 /**
  * Fire-and-forget: create a Shopify fulfillment for the linked order when a
  * shipment is recorded in inventory. No-op if the order has no shopifyOrderId
- * or the org isn't connected to Shopify. Errors are logged + swallowed so they
+ * or the org isn't connected to Shopify. Idempotent — skips if the shipment
+ * already has a shopifyFulfillmentId. Errors are logged + swallowed so they
  * never block the inventory operation.
  */
-export function pushFulfillmentToShopify(orgId: number, salesOrderId: number): void {
-  pushFulfillmentToShopifyAsync(orgId, salesOrderId).catch((err) => {
+export function pushFulfillmentToShopify(
+  orgId: number,
+  salesOrderId: number,
+  shipmentId: number,
+): void {
+  pushFulfillmentToShopifyAsync(orgId, salesOrderId, shipmentId).catch((err) => {
     logger.warn(
-      { err: err instanceof Error ? err.message : String(err), orgId, salesOrderId },
+      { err: err instanceof Error ? err.message : String(err), orgId, salesOrderId, shipmentId },
       "Shopify outbound fulfillment push failed",
     );
   });
 }
 
-async function pushFulfillmentToShopifyAsync(orgId: number, salesOrderId: number): Promise<void> {
+async function pushFulfillmentToShopifyAsync(
+  orgId: number,
+  salesOrderId: number,
+  shipmentId: number,
+): Promise<void> {
   const org = await fetchOrgCreds(orgId);
   if (!org) return;
+
+  // Idempotency: skip if this shipment was already pushed to Shopify.
+  const [shipmentRow] = await db
+    .select({ shopifyFulfillmentId: shipmentsTable.shopifyFulfillmentId })
+    .from(shipmentsTable)
+    .where(
+      and(
+        eq(shipmentsTable.id, shipmentId),
+        eq(shipmentsTable.organizationId, orgId),
+      ),
+    )
+    .limit(1);
+  if (shipmentRow?.shopifyFulfillmentId) {
+    logger.info({ orgId, shipmentId }, "Shopify fulfillment push skipped — already pushed");
+    return;
+  }
 
   const orderRows = await db
     .select({
@@ -658,6 +685,7 @@ async function pushFulfillmentToShopifyAsync(orgId: number, salesOrderId: number
   // so Shopify always receives the AWB/carrier the warehouse staff entered.
   const [trackingRow] = await db
     .select({
+      id: fulfillmentsTable.id,
       awbNumber: fulfillmentsTable.awbNumber,
       courierName: fulfillmentsTable.courierName,
       trackingUrl: fulfillmentsTable.trackingUrl,
@@ -685,7 +713,7 @@ async function pushFulfillmentToShopifyAsync(orgId: number, salesOrderId: number
     .limit(1);
   const locationId = whRows[0]?.shopifyLocationId ?? org.orgLocationId;
 
-  await createShopifyFulfillment(
+  const result = await createShopifyFulfillment(
     org.shopDomain,
     org.accessToken,
     order.shopifyOrderId,
@@ -697,6 +725,140 @@ async function pushFulfillmentToShopifyAsync(orgId: number, salesOrderId: number
           url: trackingRow.trackingUrl,
         }
       : undefined,
+  );
+
+  const logBase = {
+    organizationId: orgId,
+    direction: "outbound" as const,
+    entity: "fulfillment",
+    shopifyId: order.shopifyOrderId,
+    erpId: String(shipmentId),
+  };
+
+  if (!result.ok) {
+    const isSkip = result.reason === "already_fulfilled";
+    logger.info(
+      { orgId, shipmentId, reason: result.reason, message: result.message },
+      isSkip
+        ? "Shopify fulfillment push skipped — order already fulfilled on Shopify"
+        : "Shopify fulfillment push API error",
+    );
+    await db.insert(shopifySyncLogsTable).values({
+      ...logBase,
+      action: "create",
+      status: isSkip ? "skipped" : "error",
+      failureReason: isSkip ? "skipped_mapped" : "api_error",
+      errorMessage: result.message ?? result.reason,
+    });
+    return;
+  }
+
+  const { shopifyFulfillmentId } = result;
+
+  // Store the Shopify fulfillment ID on the shipment (for idempotency + cancel).
+  await db
+    .update(shipmentsTable)
+    .set({ shopifyFulfillmentId })
+    .where(
+      and(
+        eq(shipmentsTable.id, shipmentId),
+        eq(shipmentsTable.organizationId, orgId),
+      ),
+    );
+
+  // Also stamp the most recently dispatched ERP fulfillment record.
+  if (trackingRow) {
+    await db
+      .update(fulfillmentsTable)
+      .set({ shopifyFulfillmentId })
+      .where(
+        and(
+          eq(fulfillmentsTable.id, trackingRow.id),
+          eq(fulfillmentsTable.organizationId, orgId),
+        ),
+      );
+  }
+
+  await db.insert(shopifySyncLogsTable).values({
+    ...logBase,
+    action: "create",
+    status: "success",
+    shopifyId: shopifyFulfillmentId,
+  });
+
+  logger.info(
+    { orgId, shipmentId, shopifyFulfillmentId },
+    "Shopify fulfillment created and ID stored",
+  );
+}
+
+/**
+ * Fire-and-forget: cancel the Shopify fulfillment linked to an ERP shipment.
+ * No-op if the shipment has no shopifyFulfillmentId or the org isn't connected.
+ * Called when an ERP shipment is cancelled to keep Shopify in sync.
+ */
+export function cancelFulfillmentOnShopify(orgId: number, shipmentId: number): void {
+  cancelFulfillmentOnShopifyAsync(orgId, shipmentId).catch((err) => {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err), orgId, shipmentId },
+      "Shopify outbound fulfillment cancel failed",
+    );
+  });
+}
+
+async function cancelFulfillmentOnShopifyAsync(orgId: number, shipmentId: number): Promise<void> {
+  const org = await fetchOrgCreds(orgId);
+  if (!org) return;
+
+  const [shipmentRow] = await db
+    .select({
+      shopifyFulfillmentId: shipmentsTable.shopifyFulfillmentId,
+      salesOrderId: shipmentsTable.salesOrderId,
+    })
+    .from(shipmentsTable)
+    .where(
+      and(
+        eq(shipmentsTable.id, shipmentId),
+        eq(shipmentsTable.organizationId, orgId),
+      ),
+    )
+    .limit(1);
+
+  if (!shipmentRow?.shopifyFulfillmentId) return;
+
+  const [orderRow] = await db
+    .select({ shopifyOrderId: salesOrdersTable.shopifyOrderId })
+    .from(salesOrdersTable)
+    .where(
+      and(
+        eq(salesOrdersTable.id, shipmentRow.salesOrderId),
+        eq(salesOrdersTable.organizationId, orgId),
+      ),
+    )
+    .limit(1);
+
+  if (!orderRow?.shopifyOrderId) return;
+
+  await cancelShopifyFulfillment(
+    org.shopDomain,
+    org.accessToken,
+    orderRow.shopifyOrderId,
+    shipmentRow.shopifyFulfillmentId,
+  );
+
+  await db.insert(shopifySyncLogsTable).values({
+    organizationId: orgId,
+    direction: "outbound",
+    entity: "fulfillment",
+    action: "delete",
+    status: "success",
+    shopifyId: shipmentRow.shopifyFulfillmentId,
+    erpId: String(shipmentId),
+  });
+
+  logger.info(
+    { orgId, shipmentId, shopifyFulfillmentId: shipmentRow.shopifyFulfillmentId },
+    "Shopify fulfillment cancelled",
   );
 }
 

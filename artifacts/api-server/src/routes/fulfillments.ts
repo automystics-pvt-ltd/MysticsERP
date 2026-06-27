@@ -1064,7 +1064,7 @@ router.post("/fulfillments/:id/dispatch", async (req, res, next) => {
           ),
         );
 
-      return { kind: "ok" as const, salesOrderId: f.salesOrderId };
+      return { kind: "ok" as const, salesOrderId: f.salesOrderId, shipmentId: f.shipmentId };
     });
 
     if (result.kind === "notfound") {
@@ -1077,7 +1077,9 @@ router.post("/fulfillments/:id/dispatch", async (req, res, next) => {
     }
 
     // Push fulfillment status to Shopify (marks order as fulfilled)
-    pushFulfillmentToShopify(t.organizationId, result.salesOrderId);
+    if (result.shipmentId != null) {
+      pushFulfillmentToShopify(t.organizationId, result.salesOrderId, result.shipmentId);
+    }
 
     const data = await loadFulfillmentWithLines(t.organizationId, fulfillmentId);
     res.json(data);

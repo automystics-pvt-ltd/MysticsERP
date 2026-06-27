@@ -26,8 +26,9 @@ import {
 } from "../lib/shopify";
 import { generateUniqueBarcode } from "../lib/barcodeGen";
 import { importShopifyOrder } from "../lib/shopifyOrderImport";
-import { cancelOrderShipments } from "../lib/cancelShipment";
+import { cancelOrderShipments, cancelShipmentCore } from "../lib/cancelShipment";
 import { pushStockToShopify } from "../lib/shopifyOutbound";
+import { deriveAndUpdateOrderStatus } from "./shipments";
 import { toNum, toStr } from "../lib/numeric";
 
 const router: IRouter = Router();
@@ -1071,7 +1072,8 @@ router.post("/webhooks/shopify", async (req, res, next) => {
       case "fulfillments/update": {
         // Shopify sends the fulfillment object with order_id + tracking.
         // Full sync: advance ERP fulfillment + order status, propagate
-        // delivery status, and sync carrier/AWB tracking in both directions.
+        // delivery status, sync carrier/AWB tracking, and store the
+        // Shopify fulfillment ID on the matching ERP shipment.
         const f = body as {
           id?: number;
           order_id?: number;
@@ -1086,6 +1088,7 @@ router.post("/webhooks/shopify", async (req, res, next) => {
         };
         if (!f.order_id) break;
         const shopifyFulfillmentOrderId = String(f.order_id);
+        const inboundFulfillmentId = f.id != null ? String(f.id) : null;
 
         const orderRows2 = await db
           .select({ id: salesOrdersTable.id, status: salesOrdersTable.status })
@@ -1099,6 +1102,50 @@ router.post("/webhooks/shopify", async (req, res, next) => {
           .limit(1);
         const erpOrder = orderRows2[0];
         if (!erpOrder) break;
+
+        // ── Store shopifyFulfillmentId on matching ERP shipment ───────────
+        // Link the Shopify fulfillment ID to an ERP shipment so cancel /
+        // tracking-update webhooks can find the right row. We look for the
+        // most recent active shipment for this order that isn't already
+        // linked to a different Shopify fulfillment — if outbound push ran
+        // first it will already be stamped and we update in place.
+        if (inboundFulfillmentId) {
+          const [existingShipment] = await db
+            .select({ id: shipmentsTable.id, shopifyFulfillmentId: shipmentsTable.shopifyFulfillmentId })
+            .from(shipmentsTable)
+            .where(
+              and(
+                eq(shipmentsTable.organizationId, org.id),
+                eq(shipmentsTable.salesOrderId, erpOrder.id),
+                eq(shipmentsTable.status, "shipped"),
+              ),
+            )
+            .orderBy(shipmentsTable.id)
+            .limit(1);
+
+          if (existingShipment && !existingShipment.shopifyFulfillmentId) {
+            await db
+              .update(shipmentsTable)
+              .set({ shopifyFulfillmentId: inboundFulfillmentId })
+              .where(
+                and(
+                  eq(shipmentsTable.organizationId, org.id),
+                  eq(shipmentsTable.id, existingShipment.id),
+                ),
+              );
+            // Stamp the matching ERP fulfillment record too.
+            await db
+              .update(fulfillmentsTable)
+              .set({ shopifyFulfillmentId: inboundFulfillmentId })
+              .where(
+                and(
+                  eq(fulfillmentsTable.organizationId, org.id),
+                  eq(fulfillmentsTable.salesOrderId, erpOrder.id),
+                  eq(fulfillmentsTable.status, "dispatched"),
+                ),
+              );
+          }
+        }
 
         // ── ERP fulfillment status ────────────────────────────────────────
         // Advance the auto-created ERP fulfillment to "dispatched" when
@@ -1201,6 +1248,113 @@ router.post("/webhooks/shopify", async (req, res, next) => {
                 ),
               );
           }
+        }
+
+        // ── Sync log ──────────────────────────────────────────────────────
+        if (inboundFulfillmentId) {
+          await db.insert(shopifySyncLogsTable).values({
+            organizationId: org.id,
+            direction: "inbound",
+            entity: "fulfillment",
+            action: topic === "fulfillments/create" ? "create" : "update",
+            status: "success",
+            shopifyId: inboundFulfillmentId,
+            erpId: String(erpOrder.id),
+          });
+        }
+
+        await db
+          .update(organizationsTable)
+          .set({ shopifyLastWebhookAt: new Date() })
+          .where(eq(organizationsTable.id, org.id));
+        break;
+      }
+
+      case "fulfillments/cancel": {
+        // Shopify cancelled a fulfillment — cancel the matching ERP shipment,
+        // reverse its stock movements, and re-derive the order status.
+        const fc = body as { id?: number; order_id?: number };
+        if (!fc.id || !fc.order_id) break;
+        const cancelledShopifyId = String(fc.id);
+        const cancelledOrderShopifyId = String(fc.order_id);
+
+        // Find ERP order by Shopify order ID.
+        const [fcOrder] = await db
+          .select({ id: salesOrdersTable.id })
+          .from(salesOrdersTable)
+          .where(
+            and(
+              eq(salesOrdersTable.organizationId, org.id),
+              eq(salesOrdersTable.shopifyOrderId, cancelledOrderShopifyId),
+            ),
+          )
+          .limit(1);
+        if (!fcOrder) break;
+
+        // Find the ERP shipment linked to this Shopify fulfillment.
+        const [fcShipment] = await db
+          .select({ id: shipmentsTable.id })
+          .from(shipmentsTable)
+          .where(
+            and(
+              eq(shipmentsTable.organizationId, org.id),
+              eq(shipmentsTable.salesOrderId, fcOrder.id),
+              eq(shipmentsTable.shopifyFulfillmentId, cancelledShopifyId),
+            ),
+          )
+          .limit(1);
+
+        if (!fcShipment) {
+          // No linked ERP shipment (may have been cancelled already or never linked).
+          await db.insert(shopifySyncLogsTable).values({
+            organizationId: org.id,
+            direction: "inbound",
+            entity: "fulfillment",
+            action: "delete",
+            status: "skipped",
+            shopifyId: cancelledShopifyId,
+            erpId: String(fcOrder.id),
+            failureReason: "skipped_mapped",
+            errorMessage: "No active ERP shipment linked to this Shopify fulfillment ID",
+          });
+          break;
+        }
+
+        // Cancel the ERP shipment and reverse stock movements.
+        const cancelResult = await db.transaction(async (tx) => {
+          const r = await cancelShipmentCore(tx, org.id, fcShipment.id);
+          if (r.kind === "ok") {
+            await deriveAndUpdateOrderStatus(tx, org.id, r.salesOrderId);
+          }
+          return r;
+        });
+
+        if (cancelResult.kind === "ok") {
+          for (const itemId of cancelResult.touchedItems) {
+            pushStockToShopify(org.id, itemId);
+          }
+          await db.insert(shopifySyncLogsTable).values({
+            organizationId: org.id,
+            direction: "inbound",
+            entity: "fulfillment",
+            action: "delete",
+            status: "success",
+            shopifyId: cancelledShopifyId,
+            erpId: String(fcShipment.id),
+          });
+        } else {
+          // already_cancelled — idempotent, treat as success
+          await db.insert(shopifySyncLogsTable).values({
+            organizationId: org.id,
+            direction: "inbound",
+            entity: "fulfillment",
+            action: "delete",
+            status: "skipped",
+            shopifyId: cancelledShopifyId,
+            erpId: String(fcShipment.id),
+            failureReason: "skipped_mapped",
+            errorMessage: "ERP shipment was already cancelled",
+          });
         }
 
         await db

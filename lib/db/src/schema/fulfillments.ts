@@ -50,6 +50,10 @@ export const fulfillmentsTable = pgTable(
     /** Airway bill / tracking number entered at dispatch. */
     awbNumber: text("awb_number"),
     trackingUrl: text("tracking_url"),
+    /** Shopify fulfillment ID linked to this ERP fulfillment. Set when the
+     *  outbound push succeeds or when inbound fulfillments/create webhook
+     *  arrives. Used for idempotency checks and cancel sync. */
+    shopifyFulfillmentId: text("shopify_fulfillment_id"),
     notes: text("notes"),
     pickedAt: timestamp("picked_at", { withTimezone: true }),
     packedAt: timestamp("packed_at", { withTimezone: true }),

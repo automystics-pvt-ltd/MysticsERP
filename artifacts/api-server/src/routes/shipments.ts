@@ -20,7 +20,7 @@ import {
 } from "../lib/serializers";
 import { nextOrderNumber } from "../lib/orderHelpers";
 import { toNum, toStr } from "../lib/numeric";
-import { pushFulfillmentToShopify, pushStockToShopify } from "../lib/shopifyOutbound";
+import { cancelFulfillmentOnShopify, pushFulfillmentToShopify, pushStockToShopify } from "../lib/shopifyOutbound";
 import {
   applyBatchStockChange,
   insertBatchMovement,
@@ -621,7 +621,7 @@ router.post("/sales-orders/:id/shipments", async (req, res, next) => {
     for (const itemId of result.itemIds) {
       pushStockToShopify(t.organizationId, itemId);
     }
-    pushFulfillmentToShopify(t.organizationId, orderId);
+    pushFulfillmentToShopify(t.organizationId, orderId, result.shipmentId);
     const shipments = await loadShipmentsForOrder(t.organizationId, orderId);
     const created = shipments.find((s) => s.id === result.shipmentId);
     res.status(201).json(created ?? null);
@@ -915,6 +915,9 @@ router.post("/shipments/:shipmentId/cancel", async (req, res, next) => {
     for (const itemId of result.itemIds) {
       pushStockToShopify(t.organizationId, itemId);
     }
+    // Cancel the linked Shopify fulfillment (fire-and-forget; no-op when
+    // shipment was never pushed to Shopify or org is not connected).
+    cancelFulfillmentOnShopify(t.organizationId, shipmentId);
     const shipments = await loadShipmentsForOrder(
       t.organizationId,
       result.salesOrderId,
