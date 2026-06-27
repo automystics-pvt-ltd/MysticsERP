@@ -42,6 +42,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   ArrowLeft,
   CheckCircle2,
+  ChevronDown,
   Truck,
   Package,
   XCircle,
@@ -55,7 +56,6 @@ import {
   Trash2,
   ExternalLink,
   CreditCard,
-  MoreHorizontal,
   ClipboardList,
   RotateCcw,
 } from "lucide-react";
@@ -693,49 +693,45 @@ export default function SalesOrderDetail() {
             )}
           </div>
         }
-      />
-
-      <div className="space-y-2">
-        {/* Primary order actions */}
-        <div className="flex flex-wrap gap-2">
-          <Can module="sales_orders" action="approve">
-            {order.status === "draft" && (
-              <Button 
-                size="sm"
-                onClick={() => handleUpdateStatus("confirmed")} 
-                disabled={updateStatusMutation.isPending}
-                data-testid="btn-status-confirm"
-              >
-                <CheckCircle2 className="mr-1.5 h-4 w-4" /> Confirm Order
-              </Button>
-            )}
-          </Can>
-          <Can module="sales_orders" action="approve">
-            {canShip && !allFullyShipped && (
-              <Button
-                size="sm"
-                onClick={() => setShipmentOpen(true)}
-                data-testid="btn-new-shipment"
-              >
-                <Truck className="mr-1.5 h-4 w-4" /> New Shipment
-              </Button>
-            )}
-          </Can>
-          <Can module="sales_orders" action="approve">
-            {order.status === "shipped" && (
-              <Button 
-                size="sm"
-                onClick={() => handleUpdateStatus("delivered")} 
-                disabled={updateStatusMutation.isPending}
-                data-testid="btn-status-deliver"
-              >
-                <Package className="mr-1.5 h-4 w-4" /> Mark Delivered
-              </Button>
-            )}
-          </Can>
-          <Can module="payments" action="create">
-            {Number(order.balanceDue) > 0 &&
-              PAYABLE_SALES_STATUSES.includes(order.status) && (
+        actions={
+          <div className="flex items-center gap-2">
+            <Can module="sales_orders" action="approve">
+              {order.status === "draft" && (
+                <Button
+                  size="sm"
+                  onClick={() => handleUpdateStatus("confirmed")}
+                  disabled={updateStatusMutation.isPending}
+                  data-testid="btn-status-confirm"
+                >
+                  <CheckCircle2 className="mr-1.5 h-4 w-4" /> Confirm Order
+                </Button>
+              )}
+            </Can>
+            <Can module="sales_orders" action="approve">
+              {canShip && !allFullyShipped && (
+                <Button
+                  size="sm"
+                  onClick={() => setShipmentOpen(true)}
+                  data-testid="btn-new-shipment"
+                >
+                  <Truck className="mr-1.5 h-4 w-4" /> New Shipment
+                </Button>
+              )}
+            </Can>
+            <Can module="sales_orders" action="approve">
+              {order.status === "shipped" && (
+                <Button
+                  size="sm"
+                  onClick={() => handleUpdateStatus("delivered")}
+                  disabled={updateStatusMutation.isPending}
+                  data-testid="btn-status-deliver"
+                >
+                  <Package className="mr-1.5 h-4 w-4" /> Mark Delivered
+                </Button>
+              )}
+            </Can>
+            <Can module="payments" action="create">
+              {Number(order.balanceDue) > 0 && PAYABLE_SALES_STATUSES.includes(order.status) && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -745,30 +741,18 @@ export default function SalesOrderDetail() {
                   <IndianRupee className="mr-1.5 h-4 w-4" /> Record Payment
                 </Button>
               )}
-          </Can>
-          {["draft", "confirmed"].includes(order.status) && canEditBillsForUser && (
-            <Button 
-              size="sm"
-              variant="destructive"
-              onClick={() => handleUpdateStatus("cancelled")} 
-              disabled={updateStatusMutation.isPending}
-              data-testid="btn-status-cancel"
-            >
-              <XCircle className="mr-1.5 h-4 w-4" /> Cancel Order
-            </Button>
-          )}
-          {(canEditBillsForUser || ["confirmed", "partially_shipped", "shipped", "delivered"].includes(order.status)) && (
+            </Can>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button size="sm" variant="outline" data-testid="btn-more-actions">
-                  <MoreHorizontal className="h-4 w-4" />
+                  More Actions <ChevronDown className="ml-1.5 h-3.5 w-3.5 opacity-70" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" className="w-56">
                 {["draft", "confirmed", "invoiced", "paid"].includes(order.status) && canEditBillsForUser && (
                   <DropdownMenuItem asChild data-testid="btn-edit-order">
                     <Link href={`/sales-orders/${order.id}/edit`}>
-                      <Pencil className="mr-2 h-4 w-4" /> Edit Bill
+                      <Pencil className="mr-2 h-4 w-4" /> Edit Order
                     </Link>
                   </DropdownMenuItem>
                 )}
@@ -780,114 +764,91 @@ export default function SalesOrderDetail() {
                     <ClipboardList className="mr-2 h-4 w-4" /> Print Packing Slip
                   </DropdownMenuItem>
                 )}
+                <DropdownMenuSeparator />
+                <Can module="sales_orders" action="print">
+                  <DropdownMenuItem onClick={handlePrintOrder} disabled={printing} data-testid="btn-print-order">
+                    <Printer className="mr-2 h-4 w-4" /> {printing ? "Opening…" : "Print"}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleThermalPrint} disabled={thermalPrinting} data-testid="btn-thermal-print">
+                    <Receipt className="mr-2 h-4 w-4" /> {thermalPrinting ? "Printing…" : "Thermal Receipt"}
+                  </DropdownMenuItem>
+                  {canInvoice && (
+                    <>
+                      <DropdownMenuItem onClick={handleDownloadInvoice} disabled={downloading} data-testid="btn-download-invoice">
+                        <FileDown className="mr-2 h-4 w-4" /> {downloading ? "Preparing…" : "Download Invoice"}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setSendInvoiceOpen(true)} data-testid="btn-send-invoice">
+                        <Mail className="mr-2 h-4 w-4" /> Send to Customer
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  {shipments.some((s) => s.status !== "cancelled") && order.status !== "returned" && (
+                    <DropdownMenuItem
+                      onClick={() => resendShippingMutation.mutate({ id: orderId })}
+                      disabled={resendShippingMutation.isPending}
+                      data-testid="btn-resend-shipping-confirmation"
+                    >
+                      <Truck className="mr-2 h-4 w-4" /> {resendShippingMutation.isPending ? "Sending…" : "Resend Shipping Confirmation"}
+                    </DropdownMenuItem>
+                  )}
+                </Can>
+                {(RETURNABLE_SALES_STATUSES.includes(order.status) ||
+                  (["draft", "confirmed"].includes(order.status) && canEditBillsForUser)) && (
+                  <DropdownMenuSeparator />
+                )}
+                {RETURNABLE_SALES_STATUSES.includes(order.status) && (
+                  <DropdownMenuItem onClick={() => setReturnDialogOpen(true)} data-testid="btn-status-return">
+                    <Undo2 className="mr-2 h-4 w-4" /> Return / Reverse
+                  </DropdownMenuItem>
+                )}
+                {["draft", "confirmed"].includes(order.status) && canEditBillsForUser && (
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => handleUpdateStatus("cancelled")}
+                    disabled={updateStatusMutation.isPending}
+                    data-testid="btn-status-cancel"
+                  >
+                    <XCircle className="mr-2 h-4 w-4" /> Cancel Order
+                  </DropdownMenuItem>
+                )}
                 {canEditBillsForUser && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       className="text-destructive focus:text-destructive"
-                      data-testid="btn-delete-order"
                       onClick={() => setDeleteDialogOpen(true)}
+                      data-testid="btn-delete-order"
                     >
-                      <Trash2 className="mr-2 h-4 w-4" /> Delete Bill
+                      <Trash2 className="mr-2 h-4 w-4" /> Delete Order
                     </DropdownMenuItem>
                   </>
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-          )}
-        </div>
+          </div>
+        }
+      />
 
-        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Delete this bill?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This will permanently delete <strong>{order.orderNumber}</strong>. This action cannot be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                onClick={() => deleteMutation.mutate({ id: order.id })}
-                disabled={deleteMutation.isPending}
-              >
-                Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-        {/* Document & utility actions */}
-        <div className="flex flex-wrap gap-2">
-          <Can module="sales_orders" action="print">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handlePrintOrder}
-              disabled={printing}
-              data-testid="btn-print-order"
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this order?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete <strong>{order.orderNumber}</strong>. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteMutation.mutate({ id: order.id })}
+              disabled={deleteMutation.isPending}
             >
-              <Printer className="mr-1.5 h-4 w-4" />
-              {printing ? "Opening..." : "Print"}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleThermalPrint}
-              disabled={thermalPrinting}
-              data-testid="btn-thermal-print"
-            >
-              <Receipt className="mr-1.5 h-4 w-4" />
-              {thermalPrinting ? "Printing..." : "Thermal Receipt"}
-            </Button>
-            {canInvoice && (
-              <>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleDownloadInvoice}
-                  disabled={downloading}
-                  data-testid="btn-download-invoice"
-                >
-                  <FileDown className="mr-1.5 h-4 w-4" />
-                  {downloading ? "Preparing..." : "Download Invoice"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setSendInvoiceOpen(true)}
-                  data-testid="btn-send-invoice"
-                >
-                  <Mail className="mr-1.5 h-4 w-4" /> Send to Customer
-                </Button>
-              </>
-            )}
-          </Can>
-          {shipments.some((s) => s.status !== "cancelled") && order.status !== "returned" && (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={resendShippingMutation.isPending}
-              data-testid="btn-resend-shipping-confirmation"
-              onClick={() => resendShippingMutation.mutate({ id: orderId })}
-            >
-              <Truck className="mr-1.5 h-4 w-4" />
-              {resendShippingMutation.isPending ? "Sending..." : "Resend Shipping Confirmation"}
-            </Button>
-          )}
-          {RETURNABLE_SALES_STATUSES.includes(order.status) && (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={returnMutation.isPending}
-              data-testid="btn-status-return"
-              onClick={() => setReturnDialogOpen(true)}
-            >
-              <Undo2 className="mr-1.5 h-4 w-4" /> Return / Reverse
-            </Button>
-          )}
-        </div>
-      </div>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {RETURNABLE_SALES_STATUSES.includes(order.status) && (
         <AlertDialog
