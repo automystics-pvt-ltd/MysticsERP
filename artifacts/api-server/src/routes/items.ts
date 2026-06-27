@@ -2963,6 +2963,24 @@ router.post("/items/:id/variants", async (req, res, next) => {
       return created;
     });
 
+    // Fire-and-forget Shopify sync for the newly created variants.
+    //
+    // Two cases:
+    //   (a) Parent not yet on Shopify → call createProductInShopify on the
+    //       parent; syncVariantParentToShopify fetches ALL current children
+    //       and creates the full multi-variant product in one shot.
+    //   (b) Parent already on Shopify → each new child must be added
+    //       individually via addVariantToShopifyProduct.
+    if (insertedItems.length > 0) {
+      if (!parent.shopifyProductId) {
+        createProductInShopify(t.organizationId, parent.id);
+      } else {
+        for (const child of insertedItems) {
+          createProductInShopify(t.organizationId, child.id);
+        }
+      }
+    }
+
     const stockMap = await totalStockFor(
       t.organizationId,
       insertedItems.map((c) => c.id),
