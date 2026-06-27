@@ -969,6 +969,91 @@ router.delete("/sales-orders/:id", async (req, res, next) => {
   }
 });
 
+const ALLOWED_PAYMENT_STATUSES = ["paid", "partially_paid", "unpaid"] as const;
+
+router.patch("/sales-orders/:id/payment-meta", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const id = Number(req.params.id);
+
+    const orderRows = await db
+      .select()
+      .from(salesOrdersTable)
+      .where(
+        and(
+          eq(salesOrdersTable.id, id),
+          eq(salesOrdersTable.organizationId, t.organizationId),
+        ),
+      )
+      .limit(1);
+    const existing = orderRows[0];
+    if (!existing) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const b = req.body ?? {};
+
+    // Validate paymentStatus if supplied
+    if (b.paymentStatus !== undefined && b.paymentStatus !== null) {
+      if (!ALLOWED_PAYMENT_STATUSES.includes(b.paymentStatus)) {
+        res.status(400).json({
+          error: `Invalid paymentStatus. Allowed: ${ALLOWED_PAYMENT_STATUSES.join(", ")}`,
+        });
+        return;
+      }
+    }
+
+    const trimOrNull = (v: unknown): string | null => {
+      if (v === undefined) return undefined as unknown as null; // sentinel: field not supplied
+      if (v === null || String(v).trim() === "") return null;
+      return String(v).trim();
+    };
+
+    const update: Partial<typeof salesOrdersTable.$inferInsert> = {};
+
+    if (b.paymentStatus !== undefined) {
+      // "unpaid" is a UI value that maps to null in the DB
+      update.paymentStatus = b.paymentStatus === "unpaid" ? null : (b.paymentStatus as string | null);
+    }
+    if (b.paymentMethod !== undefined) {
+      update.paymentMethod = trimOrNull(b.paymentMethod);
+    }
+    if (b.paymentReference !== undefined) {
+      update.paymentReference = trimOrNull(b.paymentReference);
+    }
+    if (b.paymentTerms !== undefined) {
+      update.paymentTerms = trimOrNull(b.paymentTerms);
+    }
+
+    if (Object.keys(update).length === 0) {
+      res.status(400).json({ error: "No fields to update" });
+      return;
+    }
+
+    const [updated] = await db
+      .update(salesOrdersTable)
+      .set(update)
+      .where(
+        and(
+          eq(salesOrdersTable.id, id),
+          eq(salesOrdersTable.organizationId, t.organizationId),
+        ),
+      )
+      .returning();
+
+    if (!updated) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const detail = await loadDetail(t.organizationId, updated.id);
+    res.json(detail);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.patch("/sales-orders/:id/status", async (req, res, next) => {
   try {
     const t = req.tenant!;

@@ -1224,6 +1224,8 @@ export const ListSalesOrdersResponseItem = zod.object({
   "channel_liable": zod.boolean().optional()
 })),zod.null()]).describe('Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines.'),
   "paymentTerms": zod.string().nullish().describe('Free-text payment terms (e.g. \'Net 30\', \'Cash on Delivery\', \'Advance\'). Null when not set.'),
+  "paymentMethod": zod.string().nullish().describe('Payment method used by the customer (e.g. \'Cash\', \'Bank Transfer\', \'UPI\', \'Cheque\'). Null when not set.'),
+  "paymentReference": zod.string().nullish().describe('Payment reference or transaction ID (e.g. UTR number, cheque number, UPI reference). Null when not set.'),
   "deliveryMethod": zod.string().nullable().describe('Shopify shipping line title (e.g. \'Standard Shipping\'). Null for non-Shopify orders.'),
   "ewb": zod.union([zod.object({
   "number": zod.string(),
@@ -1328,6 +1330,8 @@ export const GetSalesOrderResponse = zod.object({
   "channel_liable": zod.boolean().optional()
 })),zod.null()]).describe('Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines.'),
   "paymentTerms": zod.string().nullish().describe('Free-text payment terms (e.g. \'Net 30\', \'Cash on Delivery\', \'Advance\'). Null when not set.'),
+  "paymentMethod": zod.string().nullish().describe('Payment method used by the customer (e.g. \'Cash\', \'Bank Transfer\', \'UPI\', \'Cheque\'). Null when not set.'),
+  "paymentReference": zod.string().nullish().describe('Payment reference or transaction ID (e.g. UTR number, cheque number, UPI reference). Null when not set.'),
   "deliveryMethod": zod.string().nullable().describe('Shopify shipping line title (e.g. \'Standard Shipping\'). Null for non-Shopify orders.'),
   "ewb": zod.union([zod.object({
   "number": zod.string(),
@@ -1485,6 +1489,8 @@ export const UpdateSalesOrderResponse = zod.object({
   "channel_liable": zod.boolean().optional()
 })),zod.null()]).describe('Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines.'),
   "paymentTerms": zod.string().nullish().describe('Free-text payment terms (e.g. \'Net 30\', \'Cash on Delivery\', \'Advance\'). Null when not set.'),
+  "paymentMethod": zod.string().nullish().describe('Payment method used by the customer (e.g. \'Cash\', \'Bank Transfer\', \'UPI\', \'Cheque\'). Null when not set.'),
+  "paymentReference": zod.string().nullish().describe('Payment reference or transaction ID (e.g. UTR number, cheque number, UPI reference). Null when not set.'),
   "deliveryMethod": zod.string().nullable().describe('Shopify shipping line title (e.g. \'Standard Shipping\'). Null for non-Shopify orders.'),
   "ewb": zod.union([zod.object({
   "number": zod.string(),
@@ -1583,6 +1589,146 @@ export const DeleteSalesOrderParams = zod.object({
 export const DeleteSalesOrderResponse = zod.void()
 
 
+export const UpdateSalesOrderPaymentMetaParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateSalesOrderPaymentMetaBody = zod.object({
+  "paymentStatus": zod.string().nullish().describe('Payment status override. Allowed values: paid, partially_paid, unpaid (null). Null clears the stored value.'),
+  "paymentMethod": zod.string().nullish().describe('Payment method used by the customer (e.g. \'Cash\', \'Bank Transfer\', \'UPI\', \'Cheque\').'),
+  "paymentReference": zod.string().nullish().describe('Payment reference or transaction ID (e.g. UTR number, cheque number, UPI reference).'),
+  "paymentTerms": zod.string().nullish().describe('Free-text payment terms (e.g. \'Net 30\', \'Cash on Delivery\', \'Advance\').')
+})
+
+export const UpdateSalesOrderPaymentMetaResponse = zod.object({
+  "order": zod.object({
+  "id": zod.number(),
+  "orderNumber": zod.string(),
+  "customerId": zod.number(),
+  "customerName": zod.string(),
+  "customerGstNumber": zod.string().nullable(),
+  "warehouseId": zod.number(),
+  "warehouseName": zod.string(),
+  "status": zod.string(),
+  "orderDate": zod.string(),
+  "expectedShipDate": zod.string().nullable(),
+  "subtotal": zod.number(),
+  "taxTotal": zod.number(),
+  "total": zod.number(),
+  "discountTotal": zod.number(),
+  "orderDiscountAmount": zod.number().describe('Order-level discount applied on top of line discounts (e.g. from POS checkout). Computed as max(0, subtotal + taxTotal - total). Zero for regular orders.'),
+  "amountPaid": zod.number(),
+  "balanceDue": zod.number(),
+  "cashPaid": zod.number(),
+  "upiPaid": zod.number(),
+  "cardPaid": zod.number(),
+  "notes": zod.string().nullable(),
+  "orderType": zod.enum(['pos', 'sales_order']).describe('Derived from the order number prefix — POS counter sales vs regular sales orders.'),
+  "walkinName": zod.string().nullable().describe('Walk-in customer name extracted from the POS order notes. Null for regular customers or if no name was captured.'),
+  "saleChannel": zod.string().nullable().describe('Mode of Sale captured at POS checkout (walkin \/ website \/ store \/ whatsapp \/ phone \/ instagram \/ other). Null for regular sales orders.'),
+  "paymentStatus": zod.string().nullable().describe('Shopify payment status: pending, paid, partially_paid, refunded, or void. Null for orders not linked to Shopify.'),
+  "shopifyOrderId": zod.string().nullable().describe('Shopify order ID if this order originated in or is linked to Shopify.'),
+  "shopifyFulfillmentStatus": zod.string().nullable().describe('Raw Shopify fulfillment_status value (unfulfilled, partial, fulfilled, in_progress, on_hold, scheduled). Null for non-Shopify orders.'),
+  "shopifyTaxLines": zod.union([zod.array(zod.object({
+  "title": zod.string(),
+  "rate": zod.number(),
+  "price": zod.string(),
+  "channel_liable": zod.boolean().optional()
+})),zod.null()]).describe('Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines.'),
+  "paymentTerms": zod.string().nullish().describe('Free-text payment terms (e.g. \'Net 30\', \'Cash on Delivery\', \'Advance\'). Null when not set.'),
+  "paymentMethod": zod.string().nullish().describe('Payment method used by the customer (e.g. \'Cash\', \'Bank Transfer\', \'UPI\', \'Cheque\'). Null when not set.'),
+  "paymentReference": zod.string().nullish().describe('Payment reference or transaction ID (e.g. UTR number, cheque number, UPI reference). Null when not set.'),
+  "deliveryMethod": zod.string().nullable().describe('Shopify shipping line title (e.g. \'Standard Shipping\'). Null for non-Shopify orders.'),
+  "ewb": zod.union([zod.object({
+  "number": zod.string(),
+  "status": zod.string().nullable(),
+  "date": zod.string().nullable(),
+  "validUntil": zod.string().nullable(),
+  "isExpired": zod.boolean(),
+  "qrPayload": zod.string().nullable(),
+  "vehicleNumber": zod.string().nullable(),
+  "transportMode": zod.string().nullable(),
+  "transporterName": zod.string().nullable(),
+  "transporterId": zod.string().nullable(),
+  "distanceKm": zod.number().nullable(),
+  "cancelledAt": zod.string().nullable(),
+  "cancelReason": zod.string().nullable()
+}),zod.null()]),
+  "einvoice": zod.union([zod.object({
+  "irn": zod.string().nullable(),
+  "status": zod.string().nullable(),
+  "ackNumber": zod.string().nullable(),
+  "ackDate": zod.string().nullable(),
+  "qrPayload": zod.string().nullable(),
+  "error": zod.string().nullable(),
+  "errorCode": zod.string().nullable().describe('Machine-readable identifier for the most recent IRP failure\n(e.g. `missing_buyer_gstin`, `invalid_hsn`,\n`missing_seller_pincode`). The UI uses this to render a\nstructured \"What to fix\" panel that deep-links to the\ncustomer\/item\/organization edit screen, instead of forcing\nthe operator to parse the free-text `error` message.\n'),
+  "errorContext": zod.record(zod.string(), zod.unknown()).nullable().describe('Optional structured context for the most recent failure.\nFor `invalid_hsn` this carries `{ \"itemId\": <number> }`\nso the UI can deep-link to the item that needs fixing.\n'),
+  "cancelledAt": zod.string().nullable(),
+  "cancelReason": zod.string().nullable(),
+  "cancellable": zod.boolean()
+}),zod.null()]),
+  "createdAt": zod.string(),
+  "itemCount": zod.number().optional().describe('Number of distinct line items in this order.'),
+  "latestShipmentStatus": zod.string().nullish().describe('Tracking status (or raw status if no tracking) of the most recent non-cancelled shipment, or null if no shipment exists.')
+}),
+  "lines": zod.array(zod.object({
+  "id": zod.number(),
+  "itemId": zod.number(),
+  "itemName": zod.string(),
+  "sku": zod.string(),
+  "variantOptions": zod.record(zod.string(), zod.string()).nullable(),
+  "quantity": zod.number(),
+  "quantityShipped": zod.number(),
+  "quantityReceived": zod.number(),
+  "unitPrice": zod.number(),
+  "taxRate": zod.number(),
+  "discountPercent": zod.number(),
+  "discountAmount": zod.number(),
+  "lineSubtotal": zod.number(),
+  "lineTax": zod.number(),
+  "lineTotal": zod.number(),
+  "description": zod.string().nullable(),
+  "trackBatches": zod.boolean().describe('True when the line item has batch tracking enabled. Receipts on tracked lines must capture batches; shipments on tracked lines must pick from existing batches.')
+})),
+  "shipments": zod.array(zod.object({
+  "id": zod.number(),
+  "salesOrderId": zod.number(),
+  "fulfillmentId": zod.number().nullish(),
+  "shipmentNumber": zod.string(),
+  "shipDate": zod.string(),
+  "status": zod.string(),
+  "notes": zod.string().nullable(),
+  "shiprocketOrderId": zod.string().nullable(),
+  "shiprocketShipmentId": zod.string().nullable(),
+  "awb": zod.string().nullable(),
+  "courierName": zod.string().nullable(),
+  "labelUrl": zod.string().nullable(),
+  "trackingUrl": zod.string().nullable(),
+  "trackingStatus": zod.string().nullable(),
+  "lastTrackedAt": zod.string().nullable(),
+  "cancelReasonCode": zod.string().nullable().describe('When `status=\"cancelled\"`, the reason code captured at cancel time (e.g. `customer_changed_mind`, `damaged`, `wrong_item`, `defective`, `pricing_error`, `duplicate`, `other`). NULL on active shipments.'),
+  "cancelReasonNotes": zod.string().nullable().describe('Optional free-text notes captured alongside the cancel reason. NULL on active shipments.'),
+  "cancelledAt": zod.string().nullable(),
+  "createdAt": zod.string(),
+  "lines": zod.array(zod.object({
+  "id": zod.number(),
+  "shipmentId": zod.number(),
+  "salesOrderLineId": zod.number(),
+  "itemName": zod.string(),
+  "sku": zod.string(),
+  "quantity": zod.number()
+}))
+})),
+  "paymentBreakdown": zod.array(zod.object({
+  "paymentId": zod.number(),
+  "mode": zod.string(),
+  "referenceNumber": zod.string().nullable(),
+  "paymentDate": zod.string().nullable(),
+  "amount": zod.number()
+}))
+})
+
+
 export const UpdateSalesOrderStatusParams = zod.object({
   "id": zod.coerce.number()
 })
@@ -1627,6 +1773,8 @@ export const UpdateSalesOrderStatusResponse = zod.object({
   "channel_liable": zod.boolean().optional()
 })),zod.null()]).describe('Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines.'),
   "paymentTerms": zod.string().nullish().describe('Free-text payment terms (e.g. \'Net 30\', \'Cash on Delivery\', \'Advance\'). Null when not set.'),
+  "paymentMethod": zod.string().nullish().describe('Payment method used by the customer (e.g. \'Cash\', \'Bank Transfer\', \'UPI\', \'Cheque\'). Null when not set.'),
+  "paymentReference": zod.string().nullish().describe('Payment reference or transaction ID (e.g. UTR number, cheque number, UPI reference). Null when not set.'),
   "deliveryMethod": zod.string().nullable().describe('Shopify shipping line title (e.g. \'Standard Shipping\'). Null for non-Shopify orders.'),
   "ewb": zod.union([zod.object({
   "number": zod.string(),
@@ -1762,6 +1910,8 @@ export const ReturnSalesOrderResponse = zod.object({
   "channel_liable": zod.boolean().optional()
 })),zod.null()]).describe('Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines.'),
   "paymentTerms": zod.string().nullish().describe('Free-text payment terms (e.g. \'Net 30\', \'Cash on Delivery\', \'Advance\'). Null when not set.'),
+  "paymentMethod": zod.string().nullish().describe('Payment method used by the customer (e.g. \'Cash\', \'Bank Transfer\', \'UPI\', \'Cheque\'). Null when not set.'),
+  "paymentReference": zod.string().nullish().describe('Payment reference or transaction ID (e.g. UTR number, cheque number, UPI reference). Null when not set.'),
   "deliveryMethod": zod.string().nullable().describe('Shopify shipping line title (e.g. \'Standard Shipping\'). Null for non-Shopify orders.'),
   "ewb": zod.union([zod.object({
   "number": zod.string(),

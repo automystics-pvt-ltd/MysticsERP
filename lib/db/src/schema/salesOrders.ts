@@ -103,6 +103,16 @@ export const salesOrdersTable = pgTable(
      * "Advance", "Due on receipt"). Informational only — does not affect payment tracking.
      */
     paymentTerms: text("payment_terms"),
+    /**
+     * Payment method used by the customer (e.g. "Cash", "Bank Transfer", "UPI", "Cheque").
+     * Informational — does not affect accounting; edited via PATCH /sales-orders/:id/payment-meta.
+     */
+    paymentMethod: text("payment_method"),
+    /**
+     * Payment reference / transaction ID (e.g. UTR, cheque number, UPI reference).
+     * Informational — edited via PATCH /sales-orders/:id/payment-meta.
+     */
+    paymentReference: text("payment_reference"),
     /** Shipping method name synced from Shopify (e.g. "Standard Shipping"). */
     deliveryMethod: text("delivery_method"),
     /**

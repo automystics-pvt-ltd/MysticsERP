@@ -928,6 +928,24 @@ paths:
       responses:
         "204": { description: No Content }
 
+  /sales-orders/{id}/payment-meta:
+    patch:
+      operationId: updateSalesOrderPaymentMeta
+      tags: [sales-orders]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateSalesOrderPaymentMetaPayload" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SalesOrderDetail" }
+
   /sales-orders/{id}/status:
     patch:
       operationId: updateSalesOrderStatus
@@ -4081,6 +4099,12 @@ components:
         paymentTerms:
           type: ["string", "null"]
           description: "Free-text payment terms (e.g. 'Net 30', 'Cash on Delivery', 'Advance'). Null when not set."
+        paymentMethod:
+          type: ["string", "null"]
+          description: "Payment method used by the customer (e.g. 'Cash', 'Bank Transfer', 'UPI', 'Cheque'). Null when not set."
+        paymentReference:
+          type: ["string", "null"]
+          description: "Payment reference or transaction ID (e.g. UTR number, cheque number, UPI reference). Null when not set."
         deliveryMethod:
           type: ["string", "null"]
           description: "Shopify shipping line title (e.g. 'Standard Shipping'). Null for non-Shopify orders."
@@ -5341,6 +5365,22 @@ components:
         postalCode: { type: ["string", "null"] }
         plan: { type: string }
       required: [organizationName, plan]
+
+    UpdateSalesOrderPaymentMetaPayload:
+      type: object
+      properties:
+        paymentStatus:
+          type: ["string", "null"]
+          description: "Payment status override. Allowed values: paid, partially_paid, unpaid (null). Null clears the stored value."
+        paymentMethod:
+          type: ["string", "null"]
+          description: "Payment method used by the customer (e.g. 'Cash', 'Bank Transfer', 'UPI', 'Cheque')."
+        paymentReference:
+          type: ["string", "null"]
+          description: "Payment reference or transaction ID (e.g. UTR number, cheque number, UPI reference)."
+        paymentTerms:
+          type: ["string", "null"]
+          description: "Free-text payment terms (e.g. 'Net 30', 'Cash on Delivery', 'Advance')."
 
     UpdateSalesOrderPayload:
       type: object

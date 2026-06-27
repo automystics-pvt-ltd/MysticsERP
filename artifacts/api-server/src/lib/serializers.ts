@@ -344,6 +344,8 @@ export function serializeSalesOrder(
     shopifyFulfillmentStatus: o.shopifyFulfillmentStatus ?? null,
     shopifyTaxLines: (o.shopifyTaxLines as Array<{ title: string; rate: number; price: string; channel_liable?: boolean }> | null) ?? null,
     paymentTerms: o.paymentTerms ?? null,
+    paymentMethod: o.paymentMethod ?? null,
+    paymentReference: o.paymentReference ?? null,
     deliveryMethod: o.deliveryMethod ?? null,
     ewb: serializeSalesOrderEwb(o),
     einvoice: serializeSalesOrderEinvoice(o),

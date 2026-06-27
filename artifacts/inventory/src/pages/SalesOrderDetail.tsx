@@ -27,7 +27,7 @@ import {
   useDeleteCustomerPayment,
   useResendShippingConfirmation,
   useUpdateShipment,
-  useUpdateSalesOrder,
+  useUpdateSalesOrderPaymentMeta,
 } from "@workspace/api-client-react";
 import { normalizeRole } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
@@ -295,8 +295,13 @@ export default function SalesOrderDetail() {
   const [trackingForm, setTrackingForm] = useState({ awb: "", courierName: "", trackingUrl: "" });
 
   // Edit payment terms dialog state
-  const [editPaymentTermsOpen, setEditPaymentTermsOpen] = useState(false);
-  const [paymentTermsForm, setPaymentTermsForm] = useState("");
+  const [editPaymentDetailsOpen, setEditPaymentDetailsOpen] = useState(false);
+  const [paymentDetailsForm, setPaymentDetailsForm] = useState({
+    paymentStatus: "" as string,
+    paymentMethod: "",
+    paymentReference: "",
+    paymentTerms: "",
+  });
 
   const updateShipmentMutation = useUpdateShipment({
     mutation: {
@@ -317,18 +322,18 @@ export default function SalesOrderDetail() {
     },
   });
 
-  const updateSalesOrderMutation = useUpdateSalesOrder({
+  const updatePaymentMetaMutation = useUpdateSalesOrderPaymentMeta({
     mutation: {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getGetSalesOrderQueryKey(orderId) });
         queryClient.invalidateQueries({ queryKey: getListSalesOrdersQueryKey() });
-        setEditPaymentTermsOpen(false);
-        toast({ title: "Payment terms updated" });
+        setEditPaymentDetailsOpen(false);
+        toast({ title: "Payment details updated" });
       },
       onError: (err: unknown) => {
         const e = err as { response?: { data?: { error?: string } } };
         toast({
-          title: "Could not update payment terms",
+          title: "Could not update payment details",
           description: e.response?.data?.error ?? "Please try again.",
           variant: "destructive",
         });
@@ -883,27 +888,52 @@ export default function SalesOrderDetail() {
                 <Link href="/customers" className="text-primary hover:underline">{order.walkinName || order.customerName}</Link>
               </div>
             </div>
-            <div className="pt-4 border-t flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-muted-foreground mb-1">Payment Terms</p>
-                <p className="text-sm" data-testid="text-payment-terms">
-                  {(order as typeof order & { paymentTerms?: string | null }).paymentTerms || <span className="text-muted-foreground italic">Not set</span>}
-                </p>
+            <div className="pt-4 border-t">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-muted-foreground">Payment Details</p>
+                <Can module="sales_orders" action="approve">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-muted-foreground"
+                    data-testid="btn-edit-payment-details"
+                    onClick={() => {
+                      const o = order as typeof order & { paymentMethod?: string | null; paymentReference?: string | null; paymentTerms?: string | null; paymentStatus?: string | null };
+                      const stored = o.paymentStatus;
+                      const uiStatus = stored === "paid" ? "paid" : stored === "partially_paid" ? "partially_paid" : stored ? stored : "unpaid";
+                      setPaymentDetailsForm({
+                        paymentStatus: uiStatus,
+                        paymentMethod: o.paymentMethod ?? "",
+                        paymentReference: o.paymentReference ?? "",
+                        paymentTerms: o.paymentTerms ?? "",
+                      });
+                      setEditPaymentDetailsOpen(true);
+                    }}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                </Can>
               </div>
-              <Can module="sales_orders" action="approve">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="shrink-0 h-7 px-2 text-muted-foreground"
-                  data-testid="btn-edit-payment-terms"
-                  onClick={() => {
-                    setPaymentTermsForm((order as typeof order & { paymentTerms?: string | null }).paymentTerms ?? "");
-                    setEditPaymentTermsOpen(true);
-                  }}
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
-              </Can>
+              <div className="grid grid-cols-2 gap-y-2 gap-x-8">
+                <div>
+                  <p className="text-xs text-muted-foreground">Method</p>
+                  <p className="text-sm" data-testid="text-payment-method">
+                    {(order as typeof order & { paymentMethod?: string | null }).paymentMethod || <span className="italic text-muted-foreground">—</span>}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Reference</p>
+                  <p className="text-sm" data-testid="text-payment-reference">
+                    {(order as typeof order & { paymentReference?: string | null }).paymentReference || <span className="italic text-muted-foreground">—</span>}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Terms</p>
+                  <p className="text-sm" data-testid="text-payment-terms">
+                    {(order as typeof order & { paymentTerms?: string | null }).paymentTerms || <span className="italic text-muted-foreground">—</span>}
+                  </p>
+                </div>
+              </div>
             </div>
             {order.notes && (
               <div className="pt-4 border-t">
@@ -1294,38 +1324,77 @@ export default function SalesOrderDetail() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Payment Terms Dialog */}
-      <Dialog open={editPaymentTermsOpen} onOpenChange={setEditPaymentTermsOpen}>
+      {/* Edit Payment Details Dialog */}
+      <Dialog open={editPaymentDetailsOpen} onOpenChange={setEditPaymentDetailsOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Payment Terms</DialogTitle>
+            <DialogTitle>Edit Payment Details</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-payment-status">Payment Status</Label>
+              <select
+                id="edit-payment-status"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={paymentDetailsForm.paymentStatus}
+                onChange={(e) => setPaymentDetailsForm((f) => ({ ...f, paymentStatus: e.target.value }))}
+                data-testid="select-payment-status"
+              >
+                <option value="unpaid">Unpaid</option>
+                <option value="partially_paid">Partially Paid</option>
+                <option value="paid">Paid</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-payment-method">Payment Method</Label>
+              <Input
+                id="edit-payment-method"
+                value={paymentDetailsForm.paymentMethod}
+                onChange={(e) => setPaymentDetailsForm((f) => ({ ...f, paymentMethod: e.target.value }))}
+                placeholder="e.g. Cash, Bank Transfer, UPI, Cheque"
+                data-testid="input-payment-method"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-payment-reference">Reference / Transaction ID</Label>
+              <Input
+                id="edit-payment-reference"
+                value={paymentDetailsForm.paymentReference}
+                onChange={(e) => setPaymentDetailsForm((f) => ({ ...f, paymentReference: e.target.value }))}
+                placeholder="e.g. UTR number, cheque number, UPI ref"
+                data-testid="input-payment-reference"
+              />
+            </div>
             <div className="space-y-1.5">
               <Label htmlFor="edit-payment-terms">Payment Terms</Label>
               <Input
                 id="edit-payment-terms"
-                value={paymentTermsForm}
-                onChange={(e) => setPaymentTermsForm(e.target.value)}
+                value={paymentDetailsForm.paymentTerms}
+                onChange={(e) => setPaymentDetailsForm((f) => ({ ...f, paymentTerms: e.target.value }))}
                 placeholder="e.g. Net 30, Cash on Delivery, Advance"
                 data-testid="input-payment-terms"
               />
-              <p className="text-xs text-muted-foreground">Informational only — does not affect payment tracking.</p>
             </div>
+            <p className="text-xs text-muted-foreground">These fields are informational and do not affect automated payment tracking.</p>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditPaymentTermsOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setEditPaymentDetailsOpen(false)}>Cancel</Button>
             <Button
-              disabled={updateSalesOrderMutation.isPending}
-              data-testid="btn-save-payment-terms"
+              disabled={updatePaymentMetaMutation.isPending}
+              data-testid="btn-save-payment-details"
               onClick={() => {
-                updateSalesOrderMutation.mutate({
+                updatePaymentMetaMutation.mutate({
                   id: orderId,
-                  data: { paymentTerms: paymentTermsForm.trim() || null },
+                  data: {
+                    paymentStatus: paymentDetailsForm.paymentStatus || null,
+                    paymentMethod: paymentDetailsForm.paymentMethod.trim() || null,
+                    paymentReference: paymentDetailsForm.paymentReference.trim() || null,
+                    paymentTerms: paymentDetailsForm.paymentTerms.trim() || null,
+                  },
                 });
               }}
             >
-              {updateSalesOrderMutation.isPending ? "Saving..." : "Save"}
+              {updatePaymentMetaMutation.isPending ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -204,6 +204,7 @@ import type {
   UpdateOrganizationBody,
   UpdatePurchaseOrderPayload,
   UpdateSalesOrderPayload,
+  UpdateSalesOrderPaymentMetaPayload,
   UpdateShipmentPayload,
   UpdateStockTransferPayload,
   UpdateSupplierPayload,
@@ -3904,6 +3905,71 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getDeleteSalesOrderMutationOptions(options));
+    }
+
+export const getUpdateSalesOrderPaymentMetaUrl = (id: number,) => {
+
+
+
+
+  return `/api/sales-orders/${id}/payment-meta`
+}
+
+export const updateSalesOrderPaymentMeta = async (id: number,
+    updateSalesOrderPaymentMetaPayload: UpdateSalesOrderPaymentMetaPayload, options?: RequestInit): Promise<SalesOrderDetail> => {
+
+  return customFetch<SalesOrderDetail>(getUpdateSalesOrderPaymentMetaUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateSalesOrderPaymentMetaPayload)
+  }
+);}
+
+
+
+
+export const getUpdateSalesOrderPaymentMetaMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSalesOrderPaymentMeta>>, TError,{id: number;data: BodyType<UpdateSalesOrderPaymentMetaPayload>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateSalesOrderPaymentMeta>>, TError,{id: number;data: BodyType<UpdateSalesOrderPaymentMetaPayload>}, TContext> => {
+
+const mutationKey = ['updateSalesOrderPaymentMeta'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateSalesOrderPaymentMeta>>, {id: number;data: BodyType<UpdateSalesOrderPaymentMetaPayload>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateSalesOrderPaymentMeta(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateSalesOrderPaymentMetaMutationResult = NonNullable<Awaited<ReturnType<typeof updateSalesOrderPaymentMeta>>>
+    export type UpdateSalesOrderPaymentMetaMutationBody = BodyType<UpdateSalesOrderPaymentMetaPayload>
+    export type UpdateSalesOrderPaymentMetaMutationError = ErrorType<unknown>
+
+    export const useUpdateSalesOrderPaymentMeta = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSalesOrderPaymentMeta>>, TError,{id: number;data: BodyType<UpdateSalesOrderPaymentMetaPayload>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateSalesOrderPaymentMeta>>,
+        TError,
+        {id: number;data: BodyType<UpdateSalesOrderPaymentMetaPayload>},
+        TContext
+      > => {
+      return useMutation(getUpdateSalesOrderPaymentMetaMutationOptions(options));
     }
 
 export const getUpdateSalesOrderStatusUrl = (id: number,) => {

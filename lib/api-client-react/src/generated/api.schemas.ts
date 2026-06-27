@@ -1138,6 +1138,16 @@ export interface SalesOrder {
      */
   paymentTerms?: string | null;
   /**
+     * Payment method used by the customer (e.g. 'Cash', 'Bank Transfer', 'UPI', 'Cheque'). Null when not set.
+     * @nullable
+     */
+  paymentMethod?: string | null;
+  /**
+     * Payment reference or transaction ID (e.g. UTR number, cheque number, UPI reference). Null when not set.
+     * @nullable
+     */
+  paymentReference?: string | null;
+  /**
      * Shopify shipping line title (e.g. 'Standard Shipping'). Null for non-Shopify orders.
      * @nullable
      */
@@ -2194,6 +2204,29 @@ export interface OnboardingPayload {
   /** @nullable */
   postalCode?: string | null;
   plan: string;
+}
+
+export interface UpdateSalesOrderPaymentMetaPayload {
+  /**
+     * Payment status override. Allowed values: paid, partially_paid, unpaid (null). Null clears the stored value.
+     * @nullable
+     */
+  paymentStatus?: string | null;
+  /**
+     * Payment method used by the customer (e.g. 'Cash', 'Bank Transfer', 'UPI', 'Cheque').
+     * @nullable
+     */
+  paymentMethod?: string | null;
+  /**
+     * Payment reference or transaction ID (e.g. UTR number, cheque number, UPI reference).
+     * @nullable
+     */
+  paymentReference?: string | null;
+  /**
+     * Free-text payment terms (e.g. 'Net 30', 'Cash on Delivery', 'Advance').
+     * @nullable
+     */
+  paymentTerms?: string | null;
 }
 
 export interface UpdateSalesOrderPayload {
