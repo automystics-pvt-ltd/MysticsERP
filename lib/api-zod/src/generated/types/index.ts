@@ -304,6 +304,8 @@ export * from './updateOrganizationBodyTaxMode';
 export * from './updatePurchaseOrderPayload';
 export * from './updateSalesOrderPayload';
 export * from './updateSalesOrderPaymentMetaPayload';
+export * from './updateSalesOrderPaymentMetaPayloadPaymentMethod';
+export * from './updateSalesOrderPaymentMetaPayloadPaymentStatus';
 export * from './updateShipmentPayload';
 export * from './updateStockTransferPayload';
 export * from './updateSupplierPayload';

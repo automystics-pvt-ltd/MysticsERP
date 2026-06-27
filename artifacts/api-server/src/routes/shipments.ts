@@ -12,6 +12,7 @@ import {
   itemBundleComponentsTable,
   itemWarehouseStockTable,
   stockMovementsTable,
+  fulfillmentsTable,
 } from "@workspace/db";
 import { tenantMiddleware } from "../lib/tenant";
 import {
@@ -708,8 +709,60 @@ router.patch("/shipments/:id", async (req, res, next) => {
     const updated = { ...shipment, ...patch };
     const salesOrderId = updated.salesOrderId;
 
-    // Push updated tracking to Shopify (fire-and-forget)
-    if (updated.shopifyFulfillmentId) {
+    // If the shipment has tracking data, also sync it to any dispatched
+    // fulfillment row so pushFulfillmentToShopify picks up the latest values.
+    if (Object.keys(patch).length > 0) {
+      const fulfillmentPatch: Record<string, string | null> = {};
+      if (awb !== undefined) fulfillmentPatch.awb_number = awb;
+      if (courierName !== undefined) fulfillmentPatch.courier_name = courierName;
+      if (trackingUrl !== undefined) fulfillmentPatch.tracking_url = trackingUrl;
+      if (Object.keys(fulfillmentPatch).length > 0) {
+        // Update the most recently dispatched ERP fulfillment row, if any.
+        const [latestFulfillment] = await db
+          .select({ id: fulfillmentsTable.id })
+          .from(fulfillmentsTable)
+          .where(
+            and(
+              eq(fulfillmentsTable.organizationId, t.organizationId),
+              eq(fulfillmentsTable.salesOrderId, salesOrderId),
+              eq(fulfillmentsTable.status, "dispatched"),
+            ),
+          )
+          .orderBy(desc(fulfillmentsTable.dispatchedAt))
+          .limit(1);
+        if (latestFulfillment) {
+          await db
+            .update(fulfillmentsTable)
+            .set({
+              ...(awb !== undefined ? { awbNumber: awb } : {}),
+              ...(courierName !== undefined ? { courierName } : {}),
+              ...(trackingUrl !== undefined ? { trackingUrl } : {}),
+            })
+            .where(
+              and(
+                eq(fulfillmentsTable.id, latestFulfillment.id),
+                eq(fulfillmentsTable.organizationId, t.organizationId),
+              ),
+            );
+        }
+      }
+    }
+
+    // Push updated tracking to Shopify when the order is Shopify-linked
+    // (fire-and-forget). Trigger on salesOrder.shopifyOrderId rather than
+    // shipment.shopifyFulfillmentId so a manual tracking entry also creates
+    // the Shopify fulfillment when none exists yet.
+    const [orderRow] = await db
+      .select({ shopifyOrderId: salesOrdersTable.shopifyOrderId })
+      .from(salesOrdersTable)
+      .where(
+        and(
+          eq(salesOrdersTable.id, salesOrderId),
+          eq(salesOrdersTable.organizationId, t.organizationId),
+        ),
+      )
+      .limit(1); // org-scope-allow: already scoped by eq(salesOrdersTable.organizationId)
+    if (orderRow?.shopifyOrderId) {
       pushFulfillmentToShopify(t.organizationId, salesOrderId, shipmentId);
     }
 

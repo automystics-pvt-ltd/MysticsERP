@@ -1594,8 +1594,8 @@ export const UpdateSalesOrderPaymentMetaParams = zod.object({
 })
 
 export const UpdateSalesOrderPaymentMetaBody = zod.object({
-  "paymentStatus": zod.string().nullish().describe('Payment status override. Allowed values: paid, partially_paid, unpaid (null). Null clears the stored value.'),
-  "paymentMethod": zod.string().nullish().describe('Payment method used by the customer (e.g. \'Cash\', \'Bank Transfer\', \'UPI\', \'Cheque\').'),
+  "paymentStatus": zod.union([zod.literal('paid'),zod.literal('partially_paid'),zod.literal('pending'),zod.literal('unpaid'),zod.literal('refunded'),zod.literal('void'),zod.literal(null)]).nullish().describe('Payment status override. \'unpaid\' stores null in the DB (clears the value). Other values are stored as-is.'),
+  "paymentMethod": zod.union([zod.literal('cash'),zod.literal('upi'),zod.literal('bank_transfer'),zod.literal('razorpay'),zod.literal('other'),zod.literal(null)]).nullish().describe('Payment method used by the customer.'),
   "paymentReference": zod.string().nullish().describe('Payment reference or transaction ID (e.g. UTR number, cheque number, UPI reference).'),
   "paymentTerms": zod.string().nullish().describe('Free-text payment terms (e.g. \'Net 30\', \'Cash on Delivery\', \'Advance\').')
 })

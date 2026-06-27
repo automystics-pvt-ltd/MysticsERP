@@ -2206,17 +2206,48 @@ export interface OnboardingPayload {
   plan: string;
 }
 
+/**
+ * Payment status override. 'unpaid' stores null in the DB (clears the value). Other values are stored as-is.
+ * @nullable
+ */
+export type UpdateSalesOrderPaymentMetaPayloadPaymentStatus = typeof UpdateSalesOrderPaymentMetaPayloadPaymentStatus[keyof typeof UpdateSalesOrderPaymentMetaPayloadPaymentStatus] | null;
+
+
+export const UpdateSalesOrderPaymentMetaPayloadPaymentStatus = {
+  paid: 'paid',
+  partially_paid: 'partially_paid',
+  pending: 'pending',
+  unpaid: 'unpaid',
+  refunded: 'refunded',
+  void: 'void',
+} as const;
+
+/**
+ * Payment method used by the customer.
+ * @nullable
+ */
+export type UpdateSalesOrderPaymentMetaPayloadPaymentMethod = typeof UpdateSalesOrderPaymentMetaPayloadPaymentMethod[keyof typeof UpdateSalesOrderPaymentMetaPayloadPaymentMethod] | null;
+
+
+export const UpdateSalesOrderPaymentMetaPayloadPaymentMethod = {
+  cash: 'cash',
+  upi: 'upi',
+  bank_transfer: 'bank_transfer',
+  razorpay: 'razorpay',
+  other: 'other',
+} as const;
+
 export interface UpdateSalesOrderPaymentMetaPayload {
   /**
-     * Payment status override. Allowed values: paid, partially_paid, unpaid (null). Null clears the stored value.
+     * Payment status override. 'unpaid' stores null in the DB (clears the value). Other values are stored as-is.
      * @nullable
      */
-  paymentStatus?: string | null;
+  paymentStatus?: UpdateSalesOrderPaymentMetaPayloadPaymentStatus;
   /**
-     * Payment method used by the customer (e.g. 'Cash', 'Bank Transfer', 'UPI', 'Cheque').
+     * Payment method used by the customer.
      * @nullable
      */
-  paymentMethod?: string | null;
+  paymentMethod?: UpdateSalesOrderPaymentMetaPayloadPaymentMethod;
   /**
      * Payment reference or transaction ID (e.g. UTR number, cheque number, UPI reference).
      * @nullable

@@ -5,18 +5,20 @@
  * Mystics Inventory API — multi-tenant inventory SaaS
  * OpenAPI spec version: 0.1.0
  */
+import type { UpdateSalesOrderPaymentMetaPayloadPaymentMethod } from './updateSalesOrderPaymentMetaPayloadPaymentMethod';
+import type { UpdateSalesOrderPaymentMetaPayloadPaymentStatus } from './updateSalesOrderPaymentMetaPayloadPaymentStatus';
 
 export interface UpdateSalesOrderPaymentMetaPayload {
   /**
-     * Payment status override. Allowed values: paid, partially_paid, unpaid (null). Null clears the stored value.
+     * Payment status override. 'unpaid' stores null in the DB (clears the value). Other values are stored as-is.
      * @nullable
      */
-  paymentStatus?: string | null;
+  paymentStatus?: UpdateSalesOrderPaymentMetaPayloadPaymentStatus;
   /**
-     * Payment method used by the customer (e.g. 'Cash', 'Bank Transfer', 'UPI', 'Cheque').
+     * Payment method used by the customer.
      * @nullable
      */
-  paymentMethod?: string | null;
+  paymentMethod?: UpdateSalesOrderPaymentMetaPayloadPaymentMethod;
   /**
      * Payment reference or transaction ID (e.g. UTR number, cheque number, UPI reference).
      * @nullable

@@ -969,7 +969,8 @@ router.delete("/sales-orders/:id", async (req, res, next) => {
   }
 });
 
-const ALLOWED_PAYMENT_STATUSES = ["paid", "partially_paid", "unpaid"] as const;
+const ALLOWED_PAYMENT_STATUSES = ["paid", "partially_paid", "pending", "unpaid", "refunded", "void"] as const;
+const ALLOWED_PAYMENT_METHODS = ["cash", "upi", "bank_transfer", "razorpay", "other"] as const;
 
 router.patch("/sales-orders/:id/payment-meta", async (req, res, next) => {
   try {
@@ -999,6 +1000,16 @@ router.patch("/sales-orders/:id/payment-meta", async (req, res, next) => {
       if (!ALLOWED_PAYMENT_STATUSES.includes(b.paymentStatus)) {
         res.status(400).json({
           error: `Invalid paymentStatus. Allowed: ${ALLOWED_PAYMENT_STATUSES.join(", ")}`,
+        });
+        return;
+      }
+    }
+
+    // Validate paymentMethod if supplied
+    if (b.paymentMethod !== undefined && b.paymentMethod !== null && b.paymentMethod !== "") {
+      if (!ALLOWED_PAYMENT_METHODS.includes(b.paymentMethod)) {
+        res.status(400).json({
+          error: `Invalid paymentMethod. Allowed: ${ALLOWED_PAYMENT_METHODS.join(", ")}`,
         });
         return;
       }

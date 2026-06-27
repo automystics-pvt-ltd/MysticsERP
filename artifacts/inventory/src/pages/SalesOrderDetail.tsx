@@ -308,6 +308,7 @@ export default function SalesOrderDetail() {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getGetSalesOrderQueryKey(orderId) });
         queryClient.invalidateQueries({ queryKey: getListSalesOrderShipmentsQueryKey(orderId) });
+        queryClient.invalidateQueries({ queryKey: getListSalesOrdersQueryKey() });
         setEditTrackingId(null);
         toast({ title: "Tracking info updated" });
       },
@@ -1341,19 +1342,29 @@ export default function SalesOrderDetail() {
                 data-testid="select-payment-status"
               >
                 <option value="unpaid">Unpaid</option>
+                <option value="pending">Pending</option>
                 <option value="partially_paid">Partially Paid</option>
                 <option value="paid">Paid</option>
+                <option value="refunded">Refunded</option>
+                <option value="void">Void</option>
               </select>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="edit-payment-method">Payment Method</Label>
-              <Input
+              <select
                 id="edit-payment-method"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 value={paymentDetailsForm.paymentMethod}
                 onChange={(e) => setPaymentDetailsForm((f) => ({ ...f, paymentMethod: e.target.value }))}
-                placeholder="e.g. Cash, Bank Transfer, UPI, Cheque"
-                data-testid="input-payment-method"
-              />
+                data-testid="select-payment-method"
+              >
+                <option value="">— Select —</option>
+                <option value="cash">Cash</option>
+                <option value="upi">UPI</option>
+                <option value="bank_transfer">Bank Transfer</option>
+                <option value="razorpay">Razorpay</option>
+                <option value="other">Other</option>
+              </select>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="edit-payment-reference">Reference / Transaction ID</Label>
@@ -1386,8 +1397,8 @@ export default function SalesOrderDetail() {
                 updatePaymentMetaMutation.mutate({
                   id: orderId,
                   data: {
-                    paymentStatus: paymentDetailsForm.paymentStatus || null,
-                    paymentMethod: paymentDetailsForm.paymentMethod.trim() || null,
+                    paymentStatus: (paymentDetailsForm.paymentStatus || null) as import("@workspace/api-client-react").UpdateSalesOrderPaymentMetaPayloadPaymentStatus,
+                    paymentMethod: (paymentDetailsForm.paymentMethod.trim() || null) as import("@workspace/api-client-react").UpdateSalesOrderPaymentMetaPayloadPaymentMethod,
                     paymentReference: paymentDetailsForm.paymentReference.trim() || null,
                     paymentTerms: paymentDetailsForm.paymentTerms.trim() || null,
                   },

@@ -5371,10 +5371,12 @@ components:
       properties:
         paymentStatus:
           type: ["string", "null"]
-          description: "Payment status override. Allowed values: paid, partially_paid, unpaid (null). Null clears the stored value."
+          enum: ["paid", "partially_paid", "pending", "unpaid", "refunded", "void", null]
+          description: "Payment status override. 'unpaid' stores null in the DB (clears the value). Other values are stored as-is."
         paymentMethod:
           type: ["string", "null"]
-          description: "Payment method used by the customer (e.g. 'Cash', 'Bank Transfer', 'UPI', 'Cheque')."
+          enum: ["cash", "upi", "bank_transfer", "razorpay", "other", null]
+          description: "Payment method used by the customer."
         paymentReference:
           type: ["string", "null"]
           description: "Payment reference or transaction ID (e.g. UTR number, cheque number, UPI reference)."
