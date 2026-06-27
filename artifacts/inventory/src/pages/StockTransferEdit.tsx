@@ -384,7 +384,7 @@ export default function StockTransferEdit() {
   const { transfer } = data;
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6 max-w-7xl">
       <PageHeader
         title={`Edit Transfer ${transfer.transferNumber}`}
         breadcrumbs={[

@@ -45,7 +45,7 @@ export default function ReportLowStock() {
   ];
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6 max-w-7xl">
       <PageHeader 
         title="Low Stock Alerts" 
         description="Items that are below their configured min stock level."

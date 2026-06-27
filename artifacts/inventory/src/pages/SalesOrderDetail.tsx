@@ -493,7 +493,7 @@ export default function SalesOrderDetail() {
   );
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6 max-w-7xl">
       <PageHeader
         title={`Order ${order.orderNumber}`}
         backHref="/sales-orders"

@@ -192,7 +192,7 @@ export default function JobWorkOrderEdit() {
 
   if (isLoading) {
     return (
-      <div className="space-y-6 max-w-5xl">
+      <div className="space-y-6 max-w-7xl">
         <div className="h-8 w-48 bg-muted animate-pulse rounded" />
         <div className="h-64 bg-muted animate-pulse rounded" />
       </div>
@@ -201,14 +201,14 @@ export default function JobWorkOrderEdit() {
 
   if (!order) {
     return (
-      <div className="space-y-6 max-w-5xl">
+      <div className="space-y-6 max-w-7xl">
         <PageHeader title="Order not found" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6 max-w-7xl">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
           <Link href={`/job-work/${orderId}`}>

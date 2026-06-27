@@ -279,7 +279,7 @@ export default function PurchaseOrderDetail() {
     );
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6 max-w-7xl">
       <PageHeader
         title={`Purchase Order ${order.orderNumber}`}
         backHref="/purchase-orders"

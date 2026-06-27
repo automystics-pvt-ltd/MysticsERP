@@ -71,7 +71,7 @@ export default function ReportInventoryValuation() {
   ];
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6 max-w-7xl">
       <PageHeader
         title="Inventory Valuation"
         description="Total value of items currently in stock."

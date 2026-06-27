@@ -362,7 +362,7 @@ export default function StockTransferNew() {
     : [{ label: "Stock Transfers", href: "/transfers" }, { label: "New Transfer" }];
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6 max-w-7xl">
       <PageHeader
         title="New Stock Transfer"
         breadcrumbs={breadcrumbs}
