@@ -2240,7 +2240,7 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
 
     const refunds = await loadRefundsForOrder(t.organizationId, id);
     const created = refunds.find((r) => r.id === newRefund.id);
-    res.status(201).json(created);
+    res.status(200).json(created);
   } catch (err) {
     if (err instanceof Error) {
       if (err.message === "NOT_FOUND") {

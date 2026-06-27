@@ -398,7 +398,13 @@ export default function SalesOrderDetail() {
   });
 
   const warehousesQuery = useListWarehouses(undefined, {
-    query: { enabled: refundDialogOpen && refundForm.restockItems, queryKey: getListWarehousesQueryKey() },
+    // Fetch whenever the dialog is open and either:
+    // (a) global restock is toggled on (full/partial mode), or
+    // (b) item-wise mode is active — per-line restock checkboxes need options immediately
+    query: {
+      enabled: refundDialogOpen && (refundForm.restockItems || refundForm.refundType === "item_wise"),
+      queryKey: getListWarehousesQueryKey(),
+    },
   });
 
   // Per-shipment cancel-reason form state. Keyed by shipment id so two
