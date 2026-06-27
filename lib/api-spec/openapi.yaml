@@ -4264,6 +4264,7 @@ components:
         itemName: { type: string }
         sku: { type: string }
         quantity: { type: number }
+        unitPrice: { type: number }
         refundAmount: { type: number }
       required:
         - id
@@ -4272,6 +4273,7 @@ components:
         - itemName
         - sku
         - quantity
+        - unitPrice
         - refundAmount
 
     Refund:

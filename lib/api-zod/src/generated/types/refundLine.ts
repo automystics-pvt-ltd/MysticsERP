@@ -13,5 +13,6 @@ export interface RefundLine {
   itemName: string;
   sku: string;
   quantity: number;
+  unitPrice: number;
   refundAmount: number;
 }

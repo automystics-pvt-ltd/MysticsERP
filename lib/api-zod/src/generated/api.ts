@@ -2066,6 +2066,7 @@ export const ListSalesOrderRefundsResponseItem = zod.object({
   "itemName": zod.string(),
   "sku": zod.string(),
   "quantity": zod.number(),
+  "unitPrice": zod.number(),
   "refundAmount": zod.number()
 }))
 })

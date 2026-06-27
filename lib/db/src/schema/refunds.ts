@@ -88,6 +88,10 @@ export const refundLinesTable = pgTable(
      */
     quantity: numeric("quantity", { precision: 14, scale: 2 }).notNull(),
     /**
+     * Unit price at time of order (informational, for display and amount auto-calc).
+     */
+    unitPrice: numeric("unit_price", { precision: 14, scale: 2 }).notNull().default("0"),
+    /**
      * Money amount refunded for this line (informational).
      */
     refundAmount: numeric("refund_amount", { precision: 14, scale: 2 })

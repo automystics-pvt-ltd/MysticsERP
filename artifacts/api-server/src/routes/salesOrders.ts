@@ -1802,6 +1802,7 @@ function serializeRefund(
       itemName: string;
       sku: string;
       quantity: string;
+      unitPrice: string;
       refundAmount: string;
     }>;
   },
@@ -1825,6 +1826,7 @@ function serializeRefund(
       itemName: l.itemName,
       sku: l.sku,
       quantity: toNum(l.quantity),
+      unitPrice: toNum(l.unitPrice),
       refundAmount: toNum(l.refundAmount),
     })),
   };
@@ -1873,6 +1875,7 @@ async function loadRefundsForOrder(orgId: number, orderId: number) {
         itemName: row.itemName,
         sku: row.sku,
         quantity: row.line.quantity,
+        unitPrice: row.line.unitPrice ?? "0",
         refundAmount: row.line.refundAmount,
       })),
     }),
@@ -1935,6 +1938,7 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
     const resolvedLines: Array<{
       salesOrderLineId: number;
       itemId: number;
+      unitPrice: number;
       quantity: number;
       refundAmount: number;
     }> = [];
@@ -1949,6 +1953,7 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
         .select({
           id: salesOrderLinesTable.id,
           itemId: salesOrderLinesTable.itemId,
+          unitPrice: salesOrderLinesTable.unitPrice,
           quantity: salesOrderLinesTable.quantity,
           quantityShipped: salesOrderLinesTable.quantityShipped,
           salesOrderId: salesOrderLinesTable.salesOrderId,
@@ -1979,11 +1984,18 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
           });
           return;
         }
+        const unitPrice = toNum(sol.unitPrice);
+        // Use caller-supplied refundAmount if provided; otherwise auto-calc qty × unitPrice
+        const lineRefundAmount =
+          raw.refundAmount !== undefined && Number(raw.refundAmount) > 0
+            ? Number(raw.refundAmount)
+            : qty * unitPrice;
         resolvedLines.push({
           salesOrderLineId: sol.id,
           itemId: sol.itemId,
+          unitPrice,
           quantity: qty,
-          refundAmount: Number(raw.refundAmount ?? 0) || 0,
+          refundAmount: lineRefundAmount,
         });
       }
     }
@@ -2028,27 +2040,23 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
         );
       }
 
-      // Cap: cumulative refunds (existing + this one) cannot exceed amountPaid
-      const existingRefundRows = await tx
-        .select({ refundAmount: refundsTable.refundAmount })
-        .from(refundsTable)
-        .where(
-          and(
-            eq(refundsTable.organizationId, t.organizationId),
-            eq(refundsTable.salesOrderId, id),
-          ),
-        );
-      const alreadyRefunded = existingRefundRows.reduce(
-        (sum, r) => sum + toNum(r.refundAmount),
-        0,
-      );
+      // amountPaid here reflects the running balance AFTER prior refunds have already
+      // decremented it (each refund immediately updates the column). So just compare
+      // against the current locked value — no need to subtract alreadyRefunded again.
       const amountPaid = toNum(order.amountPaid ?? "0");
-      const availableToRefund = Math.max(0, amountPaid - alreadyRefunded);
-      if (refundAmount > availableToRefund + 0.001) {
+      if (refundAmount > amountPaid + 0.001) {
         throw new Error(
-          `OVER_REFUND:Refund amount (${refundAmount.toFixed(2)}) exceeds the amount available to refund (${availableToRefund.toFixed(2)}). Amount paid: ${amountPaid.toFixed(2)}, already refunded: ${alreadyRefunded.toFixed(2)}`,
+          `OVER_REFUND:Refund amount (${refundAmount.toFixed(2)}) exceeds the amount available to refund (${amountPaid.toFixed(2)})`,
         );
       }
+
+      // Derive type: full when refunding all remaining collected amount
+      const effectiveRefundType: "full" | "partial" | "item_wise" =
+        resolvedLines.length > 0
+          ? "item_wise"
+          : refundAmount >= amountPaid - 0.001
+          ? "full"
+          : "partial";
 
       const [inserted] = await tx
         .insert(refundsTable)
@@ -2057,7 +2065,7 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
           salesOrderId: id,
           refundNumber: nextOrderNumber("RFD"),
           refundDate: b.refundDate,
-          refundType,
+          refundType: effectiveRefundType,
           refundAmount: toStr(refundAmount),
           restockItems,
           warehouseId: warehouseId ?? null,
@@ -2074,30 +2082,28 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
             salesOrderLineId: l.salesOrderLineId,
             itemId: l.itemId,
             quantity: toStr(l.quantity),
+            unitPrice: toStr(l.unitPrice),
             refundAmount: toStr(l.refundAmount),
           })),
         );
       }
 
-      // Update order financial state: decrement amountPaid and re-derive balanceDue/paymentStatus
+      // Update order financial state: decrement amountPaid and re-derive balanceDue/paymentStatus.
+      // amountPaid is the authoritative locked value from the FOR UPDATE select; each refund
+      // decrements it so subsequent refunds always work against the correct remaining balance.
       const newAmountPaid = Math.max(0, amountPaid - refundAmount);
       const orderTotal = toNum(order.total ?? "0");
       const newBalanceDue = Math.max(0, orderTotal - newAmountPaid);
       let newPaymentStatus: string | null = order.paymentStatus ?? null;
-      // Keep paymentStatus in sync using the same logic as the PATCH handler
-      const curStatus = order.paymentStatus;
-      if (curStatus === "paid" || curStatus === "partially_paid" || curStatus === null) {
-        if (newAmountPaid <= 0) {
-          newPaymentStatus = null;
-        } else if (newBalanceDue <= 0.001) {
-          newPaymentStatus = "paid";
-        } else {
-          newPaymentStatus = "partially_paid";
-        }
-      }
-      // If the order was fully paid and the full amount was refunded, mark as refunded
-      if (newAmountPaid <= 0 && alreadyRefunded + refundAmount >= amountPaid - 0.001 && amountPaid > 0) {
+      if (newAmountPaid <= 0) {
+        // All collected money has been refunded
         newPaymentStatus = "refunded";
+      } else if (newBalanceDue <= 0.001) {
+        // Still has some amountPaid and fully covers the order
+        newPaymentStatus = "paid";
+      } else {
+        // Partial payment remaining
+        newPaymentStatus = "partially_paid";
       }
 
       await tx
@@ -2152,7 +2158,7 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
             organizationId: t.organizationId,
             itemId: l.itemId,
             warehouseId,
-            movementType: "sales_return",
+            movementType: "refund_return",
             quantity: toStr(l.quantity),
             referenceType: "refund",
             referenceId: inserted!.id,
