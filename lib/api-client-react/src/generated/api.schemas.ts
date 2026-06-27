@@ -995,6 +995,16 @@ export const SalesOrderOrderType = {
   sales_order: 'sales_order',
 } as const;
 
+/**
+ * Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines.
+ */
+export type SalesOrderShopifyTaxLines = {
+  title: string;
+  rate: number;
+  price: string;
+  channel_liable?: boolean;
+}[] | null;
+
 export interface EwbDetails {
   number: string;
   /** @nullable */
@@ -1115,6 +1125,18 @@ export interface SalesOrder {
      * @nullable
      */
   shopifyOrderId: string | null;
+  /**
+     * Raw Shopify fulfillment_status value (unfulfilled, partial, fulfilled, in_progress, on_hold, scheduled). Null for non-Shopify orders.
+     * @nullable
+     */
+  shopifyFulfillmentStatus: string | null;
+  /** Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines. */
+  shopifyTaxLines: SalesOrderShopifyTaxLines;
+  /**
+     * Shopify shipping line title (e.g. 'Standard Shipping'). Null for non-Shopify orders.
+     * @nullable
+     */
+  deliveryMethod: string | null;
   ewb: EwbDetails | null;
   einvoice: EinvoiceDetails | null;
   createdAt: string;

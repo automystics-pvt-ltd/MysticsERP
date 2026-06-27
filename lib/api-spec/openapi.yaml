@@ -4033,6 +4033,25 @@ components:
         shopifyOrderId:
           type: ["string", "null"]
           description: "Shopify order ID if this order originated in or is linked to Shopify."
+        shopifyFulfillmentStatus:
+          type: ["string", "null"]
+          description: "Raw Shopify fulfillment_status value (unfulfilled, partial, fulfilled, in_progress, on_hold, scheduled). Null for non-Shopify orders."
+        shopifyTaxLines:
+          description: "Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines."
+          oneOf:
+            - type: array
+              items:
+                type: object
+                properties:
+                  title: { type: string }
+                  rate: { type: number }
+                  price: { type: string }
+                  channel_liable: { type: boolean }
+                required: [title, rate, price]
+            - { type: "null" }
+        deliveryMethod:
+          type: ["string", "null"]
+          description: "Shopify shipping line title (e.g. 'Standard Shipping'). Null for non-Shopify orders."
         ewb:
           oneOf:
             - { $ref: "#/components/schemas/EwbDetails" }
@@ -4042,7 +4061,7 @@ components:
             - { $ref: "#/components/schemas/EinvoiceDetails" }
             - { type: "null" }
         createdAt: { type: string }
-      required: [id, orderNumber, customerId, customerName, walkinName, customerGstNumber, warehouseId, warehouseName, status, orderDate, expectedShipDate, subtotal, taxTotal, total, discountTotal, orderDiscountAmount, amountPaid, balanceDue, cashPaid, upiPaid, cardPaid, notes, orderType, saleChannel, paymentStatus, shopifyOrderId, ewb, einvoice, createdAt]
+      required: [id, orderNumber, customerId, customerName, walkinName, customerGstNumber, warehouseId, warehouseName, status, orderDate, expectedShipDate, subtotal, taxTotal, total, discountTotal, orderDiscountAmount, amountPaid, balanceDue, cashPaid, upiPaid, cardPaid, notes, orderType, saleChannel, paymentStatus, shopifyOrderId, shopifyFulfillmentStatus, shopifyTaxLines, deliveryMethod, ewb, einvoice, createdAt]
 
     SalesOrderDetail:
       type: object

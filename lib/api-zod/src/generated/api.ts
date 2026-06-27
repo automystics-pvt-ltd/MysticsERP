@@ -1216,6 +1216,14 @@ export const ListSalesOrdersResponseItem = zod.object({
   "saleChannel": zod.string().nullable().describe('Mode of Sale captured at POS checkout (walkin \/ website \/ store \/ whatsapp \/ phone \/ instagram \/ other). Null for regular sales orders.'),
   "paymentStatus": zod.string().nullable().describe('Shopify payment status: pending, paid, partially_paid, refunded, or void. Null for orders not linked to Shopify.'),
   "shopifyOrderId": zod.string().nullable().describe('Shopify order ID if this order originated in or is linked to Shopify.'),
+  "shopifyFulfillmentStatus": zod.string().nullable().describe('Raw Shopify fulfillment_status value (unfulfilled, partial, fulfilled, in_progress, on_hold, scheduled). Null for non-Shopify orders.'),
+  "shopifyTaxLines": zod.union([zod.array(zod.object({
+  "title": zod.string(),
+  "rate": zod.number(),
+  "price": zod.string(),
+  "channel_liable": zod.boolean().optional()
+})),zod.null()]).describe('Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines.'),
+  "deliveryMethod": zod.string().nullable().describe('Shopify shipping line title (e.g. \'Standard Shipping\'). Null for non-Shopify orders.'),
   "ewb": zod.union([zod.object({
   "number": zod.string(),
   "status": zod.string().nullable(),
@@ -1309,6 +1317,14 @@ export const GetSalesOrderResponse = zod.object({
   "saleChannel": zod.string().nullable().describe('Mode of Sale captured at POS checkout (walkin \/ website \/ store \/ whatsapp \/ phone \/ instagram \/ other). Null for regular sales orders.'),
   "paymentStatus": zod.string().nullable().describe('Shopify payment status: pending, paid, partially_paid, refunded, or void. Null for orders not linked to Shopify.'),
   "shopifyOrderId": zod.string().nullable().describe('Shopify order ID if this order originated in or is linked to Shopify.'),
+  "shopifyFulfillmentStatus": zod.string().nullable().describe('Raw Shopify fulfillment_status value (unfulfilled, partial, fulfilled, in_progress, on_hold, scheduled). Null for non-Shopify orders.'),
+  "shopifyTaxLines": zod.union([zod.array(zod.object({
+  "title": zod.string(),
+  "rate": zod.number(),
+  "price": zod.string(),
+  "channel_liable": zod.boolean().optional()
+})),zod.null()]).describe('Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines.'),
+  "deliveryMethod": zod.string().nullable().describe('Shopify shipping line title (e.g. \'Standard Shipping\'). Null for non-Shopify orders.'),
   "ewb": zod.union([zod.object({
   "number": zod.string(),
   "status": zod.string().nullable(),
@@ -1454,6 +1470,14 @@ export const UpdateSalesOrderResponse = zod.object({
   "saleChannel": zod.string().nullable().describe('Mode of Sale captured at POS checkout (walkin \/ website \/ store \/ whatsapp \/ phone \/ instagram \/ other). Null for regular sales orders.'),
   "paymentStatus": zod.string().nullable().describe('Shopify payment status: pending, paid, partially_paid, refunded, or void. Null for orders not linked to Shopify.'),
   "shopifyOrderId": zod.string().nullable().describe('Shopify order ID if this order originated in or is linked to Shopify.'),
+  "shopifyFulfillmentStatus": zod.string().nullable().describe('Raw Shopify fulfillment_status value (unfulfilled, partial, fulfilled, in_progress, on_hold, scheduled). Null for non-Shopify orders.'),
+  "shopifyTaxLines": zod.union([zod.array(zod.object({
+  "title": zod.string(),
+  "rate": zod.number(),
+  "price": zod.string(),
+  "channel_liable": zod.boolean().optional()
+})),zod.null()]).describe('Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines.'),
+  "deliveryMethod": zod.string().nullable().describe('Shopify shipping line title (e.g. \'Standard Shipping\'). Null for non-Shopify orders.'),
   "ewb": zod.union([zod.object({
   "number": zod.string(),
   "status": zod.string().nullable(),
@@ -1585,6 +1609,14 @@ export const UpdateSalesOrderStatusResponse = zod.object({
   "saleChannel": zod.string().nullable().describe('Mode of Sale captured at POS checkout (walkin \/ website \/ store \/ whatsapp \/ phone \/ instagram \/ other). Null for regular sales orders.'),
   "paymentStatus": zod.string().nullable().describe('Shopify payment status: pending, paid, partially_paid, refunded, or void. Null for orders not linked to Shopify.'),
   "shopifyOrderId": zod.string().nullable().describe('Shopify order ID if this order originated in or is linked to Shopify.'),
+  "shopifyFulfillmentStatus": zod.string().nullable().describe('Raw Shopify fulfillment_status value (unfulfilled, partial, fulfilled, in_progress, on_hold, scheduled). Null for non-Shopify orders.'),
+  "shopifyTaxLines": zod.union([zod.array(zod.object({
+  "title": zod.string(),
+  "rate": zod.number(),
+  "price": zod.string(),
+  "channel_liable": zod.boolean().optional()
+})),zod.null()]).describe('Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines.'),
+  "deliveryMethod": zod.string().nullable().describe('Shopify shipping line title (e.g. \'Standard Shipping\'). Null for non-Shopify orders.'),
   "ewb": zod.union([zod.object({
   "number": zod.string(),
   "status": zod.string().nullable(),
@@ -1709,6 +1741,14 @@ export const ReturnSalesOrderResponse = zod.object({
   "saleChannel": zod.string().nullable().describe('Mode of Sale captured at POS checkout (walkin \/ website \/ store \/ whatsapp \/ phone \/ instagram \/ other). Null for regular sales orders.'),
   "paymentStatus": zod.string().nullable().describe('Shopify payment status: pending, paid, partially_paid, refunded, or void. Null for orders not linked to Shopify.'),
   "shopifyOrderId": zod.string().nullable().describe('Shopify order ID if this order originated in or is linked to Shopify.'),
+  "shopifyFulfillmentStatus": zod.string().nullable().describe('Raw Shopify fulfillment_status value (unfulfilled, partial, fulfilled, in_progress, on_hold, scheduled). Null for non-Shopify orders.'),
+  "shopifyTaxLines": zod.union([zod.array(zod.object({
+  "title": zod.string(),
+  "rate": zod.number(),
+  "price": zod.string(),
+  "channel_liable": zod.boolean().optional()
+})),zod.null()]).describe('Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). Null for non-Shopify orders or orders with no tax lines.'),
+  "deliveryMethod": zod.string().nullable().describe('Shopify shipping line title (e.g. \'Standard Shipping\'). Null for non-Shopify orders.'),
   "ewb": zod.union([zod.object({
   "number": zod.string(),
   "status": zod.string().nullable(),

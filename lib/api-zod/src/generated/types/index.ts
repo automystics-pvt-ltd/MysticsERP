@@ -239,6 +239,7 @@ export * from './salesChannelDefault';
 export * from './salesOrder';
 export * from './salesOrderDetail';
 export * from './salesOrderOrderType';
+export * from './salesOrderShopifyTaxLines';
 export * from './salesSummaryReport';
 export * from './salesTrendPoint';
 export * from './setSalesChannelDefaultPayload';

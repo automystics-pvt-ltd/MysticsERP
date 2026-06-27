@@ -100,6 +100,21 @@ export const salesOrdersTable = pgTable(
     }),
     /** Shipping method name synced from Shopify (e.g. "Standard Shipping"). */
     deliveryMethod: text("delivery_method"),
+    /**
+     * Shopify fulfillment_status value, stored verbatim so the UI can show
+     * Shopify's own labels (unfulfilled / partial / fulfilled / in_progress /
+     * on_hold / scheduled) separately from the ERP's internal order status.
+     * Null for non-Shopify orders.
+     */
+    shopifyFulfillmentStatus: text("shopify_fulfillment_status"),
+    /**
+     * Order-level tax-line breakdown from Shopify, stored as a JSON array so
+     * the UI can render each tax component (CGST, SGST, IGST, etc.) with its
+     * title, rate, price, and whether it is included in the price.
+     * Shape: Array<{ title: string; rate: number; price: string; channel_liable?: boolean }>
+     * Null for non-Shopify orders or orders with no tax lines.
+     */
+    shopifyTaxLines: jsonb("shopify_tax_lines"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()

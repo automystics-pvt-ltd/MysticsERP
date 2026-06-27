@@ -487,7 +487,7 @@ export default function SalesOrderDetail() {
       <PageHeader
         title={`Order ${order.orderNumber}`}
         backHref="/sales-orders"
-        breadcrumbs={[{ label: "Sales Orders", href: "/sales-orders" }, { label: order.orderNumber }]}
+        breadcrumbs={[{ label: "Orders", href: "/sales-orders" }, { label: order.orderNumber }]}
         badge={
           <div className="flex items-center gap-1.5">
             <StatusBadge status={order.status} />
@@ -519,6 +519,37 @@ export default function SalesOrderDetail() {
                 data-testid="badge-shopify-order"
               >
                 Shopify
+              </Badge>
+            )}
+            {order.shopifyFulfillmentStatus && (
+              <Badge
+                variant="outline"
+                className={
+                  order.shopifyFulfillmentStatus === "fulfilled"
+                    ? "text-[10px] font-medium bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40"
+                    : order.shopifyFulfillmentStatus === "partial"
+                      ? "text-[10px] font-medium bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40"
+                      : order.shopifyFulfillmentStatus === "in_progress"
+                        ? "text-[10px] font-medium bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/40"
+                        : order.shopifyFulfillmentStatus === "on_hold"
+                          ? "text-[10px] font-medium bg-yellow-50 text-yellow-700 border-yellow-300 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800/40"
+                          : order.shopifyFulfillmentStatus === "scheduled"
+                            ? "text-[10px] font-medium bg-purple-50 text-purple-700 border-purple-300 dark:bg-purple-900/20 dark:text-purple-400 dark:border-purple-800/40"
+                            : "text-[10px] font-medium bg-gray-100 text-gray-600 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700"
+                }
+                data-testid="badge-shopify-fulfillment-status"
+              >
+                {order.shopifyFulfillmentStatus === "fulfilled"
+                  ? "Fulfilled"
+                  : order.shopifyFulfillmentStatus === "partial"
+                    ? "Partially Fulfilled"
+                    : order.shopifyFulfillmentStatus === "in_progress"
+                      ? "In Progress"
+                      : order.shopifyFulfillmentStatus === "on_hold"
+                        ? "On Hold"
+                        : order.shopifyFulfillmentStatus === "scheduled"
+                          ? "Scheduled"
+                          : "Unfulfilled"}
               </Badge>
             )}
           </div>
@@ -795,6 +826,27 @@ export default function SalesOrderDetail() {
               <span className="text-muted-foreground">Tax</span>
               <span>{formatCurrency(order.taxTotal)}</span>
             </div>
+            {order.shopifyTaxLines && order.shopifyTaxLines.length > 0 && (
+              <div className="space-y-1 pl-3 border-l-2 border-muted">
+                {order.shopifyTaxLines.map((tl, i) => (
+                  <div key={i} className="flex justify-between text-xs text-muted-foreground">
+                    <span>
+                      {tl.title} {Math.round(tl.rate * 100)}%
+                      {tl.channel_liable === false && (
+                        <span className="ml-1 text-[10px] italic">(Included)</span>
+                      )}
+                    </span>
+                    <span>{formatCurrency(Number(tl.price))}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {order.deliveryMethod && (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Delivery</span>
+                <span className="text-right">{order.deliveryMethod}</span>
+              </div>
+            )}
             <Separator />
             <div className="flex justify-between font-bold text-lg">
               <span>Total</span>

@@ -18,6 +18,7 @@ import {
 import { getDefaultWarehouseId } from "../lib/tenant";
 import {
   fetchShopifyProduct,
+  mapShopifyFulfillmentStatus,
   mapShopifyPaymentStatus,
   verifyWebhookSignature,
   verifyWebhookSignatureWithKey,
@@ -159,6 +160,7 @@ router.post("/webhooks/shopify", async (req, res, next) => {
               // it, and always update paymentStatus.
               const updates: Record<string, unknown> = {
                 paymentStatus: newPaymentStatus,
+                shopifyFulfillmentStatus: mapShopifyFulfillmentStatus(o.fulfillment_status),
               };
               const TERMINAL = new Set([
                 "shipped", "delivered", "invoiced", "paid", "returned",
@@ -177,10 +179,14 @@ router.post("/webhooks/shopify", async (req, res, next) => {
               // Sync delivery method from Shopify shipping lines
               const syncedMethod = o.shipping_lines?.[0]?.title ?? null;
               if (syncedMethod) updates["deliveryMethod"] = syncedMethod;
+              // Sync order-level tax breakdown when present
+              if (o.tax_lines && o.tax_lines.length > 0) {
+                updates["shopifyTaxLines"] = o.tax_lines;
+              }
 
               await db
                 .update(salesOrdersTable)
-                .set(updates as { paymentStatus?: string | null; status?: string; deliveryMethod?: string | null })
+                .set(updates as { paymentStatus?: string | null; status?: string; deliveryMethod?: string | null; shopifyFulfillmentStatus?: string | null; shopifyTaxLines?: unknown })
                 .where(
                   and(
                     eq(salesOrdersTable.organizationId, org.id),

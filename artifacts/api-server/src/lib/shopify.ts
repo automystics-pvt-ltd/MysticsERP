@@ -690,6 +690,14 @@ export async function addVariantToShopifyProduct(
   };
 }
 
+/** A single Shopify tax-line component (CGST, SGST, IGST, etc.). */
+export interface ShopifyTaxLine {
+  title: string;
+  rate: number;
+  price: string;
+  channel_liable?: boolean;
+}
+
 export interface ShopifyOrder {
   id: number;
   name: string;
@@ -701,6 +709,10 @@ export interface ShopifyOrder {
   currency: string;
   financial_status: string | null;
   fulfillment_status: string | null;
+  /** Order-level tax breakdown from Shopify (CGST, SGST, IGST, etc.). */
+  tax_lines?: ShopifyTaxLine[];
+  /** Whether any tax is included in the item prices. */
+  taxes_included?: boolean;
   customer: {
     id: number;
     first_name: string | null;
@@ -718,7 +730,7 @@ export interface ShopifyOrder {
     quantity: number;
     price: string;
     origin_location?: { id: number } | null;
-    tax_lines: Array<{ rate: number; price: string }>;
+    tax_lines: Array<{ title?: string; rate: number; price: string }>;
   }>;
   fulfillments?: Array<{
     id: number;
@@ -882,6 +894,18 @@ export async function setInventoryLevel(
     inventory_item_id: Number(inventoryItemId),
     available,
   });
+}
+
+/**
+ * Map Shopify's fulfillment_status to a human-readable label stored verbatim
+ * in shopifyFulfillmentStatus. We keep the raw Shopify value so the UI can
+ * render it with Shopify-style labels without any lossy mapping.
+ * Returns null for non-Shopify orders or when no value is provided.
+ */
+export function mapShopifyFulfillmentStatus(
+  fulfillmentStatus: string | null | undefined,
+): string | null {
+  return fulfillmentStatus ?? null;
 }
 
 /**

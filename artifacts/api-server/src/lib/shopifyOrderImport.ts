@@ -15,7 +15,7 @@ import {
 import { nextOrderNumber } from "./orderHelpers";
 import { generateUniqueBarcode } from "./barcodeGen";
 import { toNum, toStr } from "./numeric";
-import { mapShopifyPaymentStatus, type ShopifyOrder } from "./shopify";
+import { mapShopifyFulfillmentStatus, mapShopifyPaymentStatus, type ShopifyOrder } from "./shopify";
 import { ensureShopifyWarehouse } from "./tenant";
 
 export type ImportOutcome = "imported" | "duplicate";
@@ -349,6 +349,8 @@ export async function importShopifyOrder(
         shopifyOrderId: String(o.id),
         externalReference: `shopify:${o.id}`,
         paymentStatus: mapShopifyPaymentStatus(o.financial_status),
+        shopifyFulfillmentStatus: mapShopifyFulfillmentStatus(o.fulfillment_status),
+        shopifyTaxLines: o.tax_lines && o.tax_lines.length > 0 ? o.tax_lines : null,
         deliveryMethod: o.shipping_lines?.[0]?.title ?? null,
       })
       .onConflictDoNothing({
