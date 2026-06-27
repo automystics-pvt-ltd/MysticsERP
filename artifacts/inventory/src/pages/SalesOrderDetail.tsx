@@ -850,12 +850,7 @@ export default function SalesOrderDetail() {
               </div>
             )}
             <div className="flex justify-between">
-              <span className="text-muted-foreground flex items-center gap-1">
-                Tax
-                {order.shopifyTaxLines && order.shopifyTaxLines.length > 0 && order.shopifyTaxLines.every(tl => tl.channel_liable === false) && (
-                  <span className="text-xs font-normal">(tax included)</span>
-                )}
-              </span>
+              <span className="text-muted-foreground">Tax</span>
               <span>{formatCurrency(order.taxTotal)}</span>
             </div>
             {order.shopifyTaxLines && order.shopifyTaxLines.length > 0 && (

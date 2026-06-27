@@ -545,49 +545,46 @@ export default function SalesOrders() {
                       )}
                     </TableCell>
                     <TableCell>
-                      {order.shopifyFulfillmentStatus ? (
-                        <Badge
-                          variant="outline"
-                          className={
-                            order.shopifyFulfillmentStatus === "fulfilled"
-                              ? "text-[11px] font-medium bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40"
-                              : order.shopifyFulfillmentStatus === "partial"
-                                ? "text-[11px] font-medium bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40"
-                                : order.shopifyFulfillmentStatus === "in_progress"
-                                  ? "text-[11px] font-medium bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/40"
-                                  : order.shopifyFulfillmentStatus === "on_hold"
-                                    ? "text-[11px] font-medium bg-yellow-50 text-yellow-700 border-yellow-300 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800/40"
-                                    : order.shopifyFulfillmentStatus === "scheduled"
-                                      ? "text-[11px] font-medium bg-purple-50 text-purple-700 border-purple-300 dark:bg-purple-900/20 dark:text-purple-400 dark:border-purple-800/40"
-                                      : "text-[11px] font-medium bg-gray-100 text-gray-600 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700"
-                          }
-                          data-testid={`badge-so-fulfillment-status-${order.id}`}
-                        >
-                          {order.shopifyFulfillmentStatus === "fulfilled"
-                            ? "Fulfilled"
-                            : order.shopifyFulfillmentStatus === "partial"
-                              ? "Partial"
-                              : order.shopifyFulfillmentStatus === "in_progress"
-                                ? "In Progress"
-                                : order.shopifyFulfillmentStatus === "on_hold"
-                                  ? "On Hold"
-                                  : order.shopifyFulfillmentStatus === "scheduled"
-                                    ? "Scheduled"
-                                    : "Unfulfilled"}
-                        </Badge>
-                      ) : (
+                      <div className="flex flex-col gap-1">
                         <StatusBadge status={order.status} />
-                      )}
+                        {order.shopifyFulfillmentStatus && (
+                          <Badge
+                            variant="outline"
+                            className={
+                              order.shopifyFulfillmentStatus === "fulfilled"
+                                ? "text-[11px] font-medium bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40"
+                                : order.shopifyFulfillmentStatus === "partial"
+                                  ? "text-[11px] font-medium bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40"
+                                  : order.shopifyFulfillmentStatus === "in_progress"
+                                    ? "text-[11px] font-medium bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/40"
+                                    : order.shopifyFulfillmentStatus === "on_hold"
+                                      ? "text-[11px] font-medium bg-yellow-50 text-yellow-700 border-yellow-300 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800/40"
+                                      : order.shopifyFulfillmentStatus === "scheduled"
+                                        ? "text-[11px] font-medium bg-purple-50 text-purple-700 border-purple-300 dark:bg-purple-900/20 dark:text-purple-400 dark:border-purple-800/40"
+                                        : "text-[11px] font-medium bg-gray-100 text-gray-600 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700"
+                            }
+                            data-testid={`badge-so-fulfillment-status-${order.id}`}
+                          >
+                            {order.shopifyFulfillmentStatus === "fulfilled"
+                              ? "Fulfilled"
+                              : order.shopifyFulfillmentStatus === "partial"
+                                ? "Partial"
+                                : order.shopifyFulfillmentStatus === "in_progress"
+                                  ? "In Progress"
+                                  : order.shopifyFulfillmentStatus === "on_hold"
+                                    ? "On Hold"
+                                    : order.shopifyFulfillmentStatus === "scheduled"
+                                      ? "Scheduled"
+                                      : "Unfulfilled"}
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {(order.itemCount ?? 0) > 0 ? (
-                        <span className="flex items-center justify-end gap-1 text-sm">
-                          <Package className="h-3.5 w-3.5 text-muted-foreground" />
-                          {order.itemCount}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
+                      <span className="flex items-center justify-end gap-1 text-sm">
+                        <Package className="h-3.5 w-3.5 text-muted-foreground" />
+                        {order.itemCount ?? 0}
+                      </span>
                     </TableCell>
                     <TableCell>
                       {order.latestShipmentStatus ? (
