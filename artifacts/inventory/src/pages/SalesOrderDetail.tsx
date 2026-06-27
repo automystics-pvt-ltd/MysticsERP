@@ -473,29 +473,27 @@ export default function SalesOrderDetail() {
         badge={
           <div className="flex items-center gap-1.5">
             <StatusBadge status={order.status} />
-            {order.paymentStatus && order.paymentStatus !== "pending" && (
-              <Badge
-                variant="outline"
-                className={
-                  order.paymentStatus === "paid"
-                    ? "text-[10px] font-medium bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40"
-                    : order.paymentStatus === "partially_paid"
-                      ? "text-[10px] font-medium bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40"
-                      : order.paymentStatus === "refunded"
-                        ? "text-[10px] font-medium bg-red-50 text-red-700 border-red-300 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800/40"
-                        : "text-[10px] font-medium"
-                }
-                data-testid="badge-payment-status-header"
-              >
-                {order.paymentStatus === "paid"
-                  ? "Paid"
+            <Badge
+              variant="outline"
+              className={
+                order.paymentStatus === "paid"
+                  ? "text-[10px] font-medium bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40"
                   : order.paymentStatus === "partially_paid"
-                    ? "Partially Paid"
+                    ? "text-[10px] font-medium bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40"
                     : order.paymentStatus === "refunded"
-                      ? "Refunded"
-                      : order.paymentStatus}
-              </Badge>
-            )}
+                      ? "text-[10px] font-medium bg-red-50 text-red-700 border-red-300 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800/40"
+                      : "text-[10px] font-medium bg-red-50 text-red-700 border-red-300 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800/40"
+              }
+              data-testid="badge-payment-status-header"
+            >
+              {order.paymentStatus === "paid"
+                ? "Paid"
+                : order.paymentStatus === "partially_paid"
+                  ? "Partially Paid"
+                  : order.paymentStatus === "refunded"
+                    ? "Refunded"
+                    : "Unpaid"}
+            </Badge>
             {order.shopifyOrderId && (
               <Badge
                 variant="outline"

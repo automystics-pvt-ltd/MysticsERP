@@ -1117,10 +1117,10 @@ router.post("/fulfillments/:id/dispatch", async (req, res, next) => {
         }));
 
         const subject = `Your order ${row.orderNumber} has been dispatched`;
-        let emailStatus = "sent";
+        let emailStatus = "skipped";
         let emailError: string | undefined;
         try {
-          await sendShippingConfirmationEmail({
+          const result = await sendShippingConfirmationEmail({
             to: row.customerEmail,
             customerName: row.customerName,
             orderNumber: row.orderNumber,
@@ -1129,7 +1129,13 @@ router.post("/fulfillments/:id/dispatch", async (req, res, next) => {
             trackingUrl,
             items,
           });
-          logger.info({ fulfillmentId, orderNumber: row.orderNumber }, "dispatch: shipping confirmation email sent");
+          if (result === null) {
+            emailStatus = "skipped";
+            logger.info({ fulfillmentId }, "dispatch: shipping confirmation skipped (SMTP not configured)");
+          } else {
+            emailStatus = "sent";
+            logger.info({ fulfillmentId, orderNumber: row.orderNumber }, "dispatch: shipping confirmation email sent");
+          }
         } catch (sendErr) {
           emailStatus = "failed";
           emailError = sendErr instanceof Error ? sendErr.message : String(sendErr);
