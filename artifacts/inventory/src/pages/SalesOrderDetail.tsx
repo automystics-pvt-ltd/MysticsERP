@@ -1,3 +1,4 @@
+import type { PaymentEntry, ReversalEntry, RefundEntry, TimelineEntry } from "@/types/salesOrder";
 import { useParams, Link, useLocation } from "wouter";
 import { useImageSrc } from "@/hooks/use-image-src";
 import { PageHeader } from "@/components/PageHeader";
@@ -1103,33 +1104,6 @@ export default function SalesOrderDetail() {
 
       {(() => {
         const MANUAL_MODES = new Set(["cash", "upi", "bank"]);
-
-        type PaymentEntry = {
-          kind: "payment";
-          date: string;
-          paymentId: number;
-          mode: string;
-          referenceNumber: string | null;
-          amount: number;
-        };
-        type ReversalEntry = {
-          kind: "reversal";
-          date: string;
-          shipmentNumber: string;
-          warehouseName: string;
-          items: Array<{ itemName: string; sku: string; quantity: number }>;
-        };
-        type RefundEntry = {
-          kind: "refund";
-          date: string;
-          refundId: number;
-          refundNumber: string;
-          refundType: "full" | "partial" | "item_wise";
-          amount: number;
-          reason: string | null;
-          restockItems: boolean;
-        };
-        type TimelineEntry = PaymentEntry | ReversalEntry | RefundEntry;
 
         const paymentEntries: PaymentEntry[] = orderDetail.paymentBreakdown.map((p) => ({
           kind: "payment" as const,
