@@ -636,7 +636,7 @@ export default function SalesOrderDetail() {
       <PageHeader
         title={`Order ${order.orderNumber}`}
         backHref="/sales-orders"
-        breadcrumbs={[{ label: "Orders", href: "/sales-orders" }, { label: order.orderNumber }]}
+        breadcrumbs={[{ label: "Sales Orders", href: "/sales-orders" }, { label: order.orderNumber }]}
         badge={
           <div className="flex items-center gap-1.5">
             <StatusBadge status={order.status === "paid" ? "confirmed" : order.status} />

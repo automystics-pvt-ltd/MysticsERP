@@ -94,7 +94,7 @@ const navSections: NavSection[] = [
     items: [
       { name: "POS", href: "/pos", icon: ScanLine, module: "pos" },
       { name: "Day Closing", href: "/pos/sessions", icon: CalendarCheck, module: "pos" },
-      { name: "Orders", href: "/sales-orders", icon: ShoppingCart, module: "sales_orders" },
+      { name: "Sales Orders", href: "/sales-orders", icon: ShoppingCart, module: "sales_orders" },
       { name: "Payments", href: "/payments", icon: IndianRupee, module: "payments" },
       { name: "Customers", href: "/customers", icon: Users, module: "customers" },
     ],
