@@ -59,6 +59,7 @@ import {
   CreditCard,
   ClipboardList,
   RotateCcw,
+  Info,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -979,147 +980,153 @@ export default function SalesOrderDetail() {
           <CardHeader>
             <CardTitle>Summary</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Subtotal</span>
-              <div className="text-right">
-                <span className="text-xs text-muted-foreground mr-2">
-                  {lines.length} {lines.length === 1 ? "item" : "items"}
-                </span>
-                <span>{formatCurrency(order.subtotal)}</span>
-              </div>
-            </div>
-            {Number(order.discountTotal ?? 0) > 0 && (
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground pl-3 italic">Includes {formatCurrency(order.discountTotal)} discount</span>
-              </div>
-            )}
-            {Number(order.taxTotal) > 0 && (
-              order.taxesIncluded ? (
-                // Tax-inclusive path — show tax as informational, never add to total
-                order.shopifyTaxLines && order.shopifyTaxLines.length > 0 ? (
-                  // Shopify order-level tax breakdown available
-                  order.shopifyTaxLines.map((tl, i) => (
-                    <div key={i} className="flex items-baseline gap-2">
-                      <span className="text-muted-foreground shrink-0">
-                        {i === 0 ? "Taxes" : ""}
-                      </span>
-                      <span className="text-xs text-muted-foreground/70 flex-1">
-                        {formatCurrency(Number(tl.price))} INR • {tl.title} {Math.round(tl.rate * 100)}%
-                      </span>
-                      <span className="text-sm text-muted-foreground italic shrink-0">Included</span>
-                    </div>
-                  ))
-                ) : (
-                  // No order-level tax lines — aggregate from line items for display
-                  (() => {
-                    const firstTaxedLine = lines.find(l => Number(l.taxRate) > 0);
-                    const rateLabel = firstTaxedLine
-                      ? ` • GST ${Number(firstTaxedLine.taxRate)}%`
-                      : "";
-                    return (
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-muted-foreground shrink-0">Taxes</span>
-                        <span className="text-xs text-muted-foreground/70 flex-1">
-                          {formatCurrency(order.taxTotal)} INR{rateLabel}
-                        </span>
-                        <span className="text-sm text-muted-foreground italic shrink-0">Included</span>
-                      </div>
-                    );
-                  })()
-                )
-              ) : (
-                // Standard additive tax — tax is added on top of prices
+          <CardContent className="space-y-0 pt-2">
+            {/* ── 3-column grid matching Shopify's Payment layout ── */}
+            <div className="grid grid-cols-[auto_1fr_auto] items-baseline gap-x-4 gap-y-2.5 py-2">
+
+              {/* Subtotal */}
+              <span className="text-sm text-muted-foreground">Subtotal</span>
+              <span className="text-sm text-muted-foreground">
+                {lines.length} {lines.length === 1 ? "item" : "items"}
+              </span>
+              <span className="text-sm font-medium tabular-nums">
+                {formatCurrency(order.subtotal)}
+              </span>
+
+              {/* Discount — always shown */}
+              <span className="text-sm text-muted-foreground">Discount</span>
+              <span className="text-sm text-muted-foreground">
+                {Number(order.discountTotal ?? 0) > 0 ? `−${formatCurrency(order.discountTotal)}` : "—"}
+              </span>
+              <span className={`text-sm tabular-nums ${Number(order.discountTotal ?? 0) > 0 ? "text-green-600 dark:text-green-400 font-medium" : "text-muted-foreground"}`}>
+                {Number(order.discountTotal ?? 0) > 0 ? `−${formatCurrency(order.discountTotal)}` : "—"}
+              </span>
+
+              {/* Delivery / Shipping */}
+              {order.deliveryMethod && (
                 <>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Tax</span>
-                    <span>{formatCurrency(order.taxTotal)}</span>
-                  </div>
-                  {order.shopifyTaxLines && order.shopifyTaxLines.length > 0 && (
-                    <div className="space-y-1 pl-3 border-l-2 border-muted">
-                      {order.shopifyTaxLines.map((tl, i) => (
-                        <div key={i} className="flex justify-between text-xs text-muted-foreground">
-                          <span>{tl.title} {Math.round(tl.rate * 100)}%</span>
-                          <span>{formatCurrency(Number(tl.price))}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <span className="text-sm text-muted-foreground">Shipping</span>
+                  <span className="text-sm text-muted-foreground">{order.deliveryMethod}</span>
+                  <span className="text-sm text-muted-foreground tabular-nums">—</span>
                 </>
-              )
-            )}
-            {order.deliveryMethod && (
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Delivery</span>
-                <span className="text-right">{order.deliveryMethod}</span>
-              </div>
-            )}
-            <Separator />
-            <div className="flex justify-between font-bold text-lg">
+              )}
+
+              {/* Tax row */}
+              {Number(order.taxTotal) > 0 && (
+                order.taxesIncluded ? (
+                  <>
+                    {/* Label with info icon */}
+                    <span className="text-sm text-muted-foreground flex items-center gap-1">
+                      Estimated tax
+                      <Info className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+                    </span>
+                    {/* Middle: amount • rate% title */}
+                    <span className="text-sm text-muted-foreground">
+                      {order.shopifyTaxLines && order.shopifyTaxLines.length > 0
+                        ? order.shopifyTaxLines.map((tl, i) => (
+                            <span key={i}>
+                              {i > 0 && ", "}
+                              {formatCurrency(Number(tl.price))} • {Math.round(tl.rate * 100)}% {tl.title}
+                            </span>
+                          ))
+                        : (() => {
+                            const firstTaxed = lines.find(l => Number(l.taxRate) > 0);
+                            return `${formatCurrency(order.taxTotal)}${firstTaxed ? ` • ${Number(firstTaxed.taxRate)}% GST` : ""}`;
+                          })()
+                      }
+                    </span>
+                    {/* Right: "Included" */}
+                    <span className="text-sm text-muted-foreground italic text-right">Included</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-sm text-muted-foreground">Tax</span>
+                    <span className="text-sm text-muted-foreground">
+                      {order.shopifyTaxLines && order.shopifyTaxLines.length > 0
+                        ? order.shopifyTaxLines.map((tl, i) => (
+                            <span key={i}>{i > 0 && ", "}{tl.title} {Math.round(tl.rate * 100)}%</span>
+                          ))
+                        : ""}
+                    </span>
+                    <span className="text-sm tabular-nums">{formatCurrency(order.taxTotal)}</span>
+                  </>
+                )
+              )}
+            </div>
+
+            <Separator className="my-3" />
+
+            {/* Total */}
+            <div className="flex justify-between items-baseline font-bold text-lg py-1">
               <span>Total</span>
-              <span>
+              <span className="tabular-nums">
                 {formatCurrency(order.taxesIncluded ? order.subtotal : order.total)}
               </span>
             </div>
-            <Separator />
-            {(order.paymentStatus === "paid" || Number(order.amountPaid) > 0) && (
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Paid</span>
-                <span data-testid="text-amount-paid">
-                  {formatCurrency(
-                    Number(order.amountPaid) > 0
-                      ? order.amountPaid
-                      : order.taxesIncluded
-                        ? order.subtotal
-                        : order.total
-                  )}
-                </span>
-              </div>
-            )}
-            {Number(order.amountPaid) > 0 && Number(order.balanceDue) === 0 ? null : (
-              <div className="flex justify-between text-sm font-medium">
-                <span>Balance due</span>
-                <span
-                  className={Number(order.balanceDue) > 0 ? "text-orange-600" : ""}
-                  data-testid="text-balance-due"
-                >
-                  {formatCurrency(order.balanceDue)}
-                </span>
-              </div>
-            )}
-            {order.paymentStatus && (
-              <>
-                <Separator />
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-muted-foreground">Payment status</span>
-                  <Badge
-                    variant="outline"
-                    className={
-                      order.paymentStatus === "paid"
-                        ? "font-medium bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40"
-                        : order.paymentStatus === "partially_paid"
-                          ? "font-medium bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40"
-                          : order.paymentStatus === "refunded"
-                            ? "font-medium bg-red-50 text-red-700 border-red-300 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800/40"
-                            : order.paymentStatus === "void"
-                              ? "font-medium bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700"
-                              : "font-medium bg-yellow-50 text-yellow-700 border-yellow-300 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800/40"
-                    }
-                    data-testid="badge-payment-status"
-                  >
-                    {order.paymentStatus === "paid"
-                      ? "Paid"
-                      : order.paymentStatus === "partially_paid"
-                        ? "Partially Paid"
-                        : order.paymentStatus === "refunded"
-                          ? "Refunded"
-                          : order.paymentStatus === "void"
-                            ? "Void"
-                            : "Payment Pending"}
-                  </Badge>
+
+            <Separator className="my-3" />
+
+            {/* Paid / Balance rows */}
+            <div className="space-y-2">
+              {(order.paymentStatus === "paid" || Number(order.amountPaid) > 0) && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Paid</span>
+                  <span className="tabular-nums" data-testid="text-amount-paid">
+                    {formatCurrency(
+                      Number(order.amountPaid) > 0
+                        ? order.amountPaid
+                        : order.taxesIncluded
+                          ? order.subtotal
+                          : order.total
+                    )}
+                  </span>
                 </div>
-              </>
-            )}
+              )}
+              {!(Number(order.amountPaid) > 0 && Number(order.balanceDue) === 0) && (
+                <div className="flex justify-between text-sm font-medium">
+                  <span>Balance due</span>
+                  <span
+                    className={`tabular-nums ${Number(order.balanceDue) > 0 ? "text-orange-600" : ""}`}
+                    data-testid="text-balance-due"
+                  >
+                    {formatCurrency(order.balanceDue)}
+                  </span>
+                </div>
+              )}
+              {order.paymentStatus && (
+                <>
+                  <Separator />
+                  <div className="flex justify-between items-center text-sm pt-1">
+                    <span className="text-muted-foreground">Payment status</span>
+                    <Badge
+                      variant="outline"
+                      className={
+                        order.paymentStatus === "paid"
+                          ? "font-medium bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40"
+                          : order.paymentStatus === "partially_paid"
+                            ? "font-medium bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40"
+                            : order.paymentStatus === "refunded"
+                              ? "font-medium bg-red-50 text-red-700 border-red-300 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800/40"
+                              : order.paymentStatus === "void"
+                                ? "font-medium bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700"
+                                : "font-medium bg-yellow-50 text-yellow-700 border-yellow-300 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800/40"
+                      }
+                      data-testid="badge-payment-status"
+                    >
+                      {order.paymentStatus === "paid"
+                        ? "Paid"
+                        : order.paymentStatus === "partially_paid"
+                          ? "Partially Paid"
+                          : order.paymentStatus === "refunded"
+                            ? "Refunded"
+                            : order.paymentStatus === "void"
+                              ? "Void"
+                              : "Payment Pending"}
+                    </Badge>
+                  </div>
+                </>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
