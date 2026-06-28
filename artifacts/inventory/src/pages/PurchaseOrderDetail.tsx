@@ -46,6 +46,7 @@ import { useRecordVisit } from "@/lib/recentRecords";
 import { Can } from "@/components/Can";
 import { ApprovalActions } from "@/components/ApprovalActions";
 import { useCanI } from "@/hooks/usePermissions";
+import type { PdfDownloadError, MutationError, FetchBodyError } from "@/types/purchaseOrder";
 
 const RETURNABLE_PURCHASE_STATUSES = ["received", "billed", "paid"];
 const PAYABLE_PURCHASE_STATUSES = ["ordered", "partially_received", "received", "billed"];
@@ -106,7 +107,7 @@ export default function PurchaseOrderDetail() {
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 0);
     } catch (err) {
-      const e = err as { response?: { data?: { error?: string } } };
+      const e = err as PdfDownloadError;
       toast({
         title: "Could not download purchase order",
         description:
@@ -186,7 +187,7 @@ export default function PurchaseOrderDetail() {
         toast({ title: "Return processed", description: "Stock has been removed from the warehouse." });
       },
       onError: (err: unknown) => {
-        const e = err as { data?: { message?: string; error?: string } };
+        const e = err as MutationError;
         toast({
           title: "Could not process return",
           description: e.data?.message ?? e.data?.error ?? "Please try again.",
@@ -203,7 +204,7 @@ export default function PurchaseOrderDetail() {
         toast({ title: "Receipt cancelled", description: "Stock has been reversed." });
       },
       onError: (err: unknown) => {
-        const e = err as { data?: { message?: string; error?: string } };
+        const e = err as MutationError;
         toast({
           title: "Could not cancel receipt",
           description: e.data?.message ?? e.data?.error ?? "Please try again.",
@@ -217,7 +218,7 @@ export default function PurchaseOrderDetail() {
     mutationFn: async (id: number) => {
       const res = await fetch(`/api/purchase-orders/${id}/short-close`, { method: "POST" });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({})) as { message?: string; error?: string };
+        const body = await res.json().catch(() => ({})) as FetchBodyError;
         throw new Error(body.message ?? body.error ?? "Request failed");
       }
       return res.json();
@@ -227,7 +228,7 @@ export default function PurchaseOrderDetail() {
       toast({ title: "Order short-closed", description: "Marked as fully received with remaining qty waived." });
     },
     onError: (err: unknown) => {
-      const e = err as { message?: string };
+      const e = err as Pick<FetchBodyError, "message">;
       toast({ title: "Could not short-close order", description: e.message ?? "Please try again.", variant: "destructive" });
     },
   });
