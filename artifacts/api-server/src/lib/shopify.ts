@@ -950,24 +950,43 @@ export async function createShopifyFulfillment(
   shopDomain: string,
   accessToken: string,
   shopifyOrderId: string,
-  locationId: string | null,
+  _locationId: string | null,
   tracking?: {
     number?: string | null;
     company?: string | null;
     url?: string | null;
   },
 ): Promise<CreateFulfillmentResult> {
+  // Modern Fulfillment Orders API (2022-07+). The legacy
+  // POST /orders/{id}/fulfillments.json was removed in 2022-07.
+  // We must:
+  //   1. Fetch the fulfillment orders for the Shopify order.
+  //   2. Filter to those still open (not yet fulfilled/cancelled).
+  //   3. POST to /fulfillments.json with line_items_by_fulfillment_order.
+  const fulfillmentOrders = await fetchFulfillmentOrders(shopDomain, accessToken, shopifyOrderId);
+  const openFOs = fulfillmentOrders.filter(
+    (fo) => ["open", "in_progress", "scheduled"].includes(fo.status),
+  );
+  if (openFOs.length === 0) {
+    return { ok: false, reason: "already_fulfilled" };
+  }
+
   const payload: Record<string, unknown> = {
+    line_items_by_fulfillment_order: openFOs.map((fo) => ({
+      fulfillment_order_id: fo.id,
+    })),
     notify_customer: false,
   };
-  if (locationId) {
-    payload["location_id"] = Number(locationId);
-  }
-  if (tracking?.number) payload["tracking_number"] = tracking.number;
-  if (tracking?.company) payload["tracking_company"] = tracking.company;
-  if (tracking?.url) payload["tracking_url"] = tracking.url;
 
-  const url = `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/orders/${shopifyOrderId}/fulfillments.json`;
+  if (tracking?.number || tracking?.company || tracking?.url) {
+    const info: Record<string, string> = {};
+    if (tracking?.number) info["number"] = tracking.number;
+    if (tracking?.company) info["company"] = tracking.company;
+    if (tracking?.url) info["url"] = tracking.url;
+    payload["tracking_info"] = info;
+  }
+
+  const url = `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/fulfillments.json`;
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -993,16 +1012,18 @@ export async function createShopifyFulfillment(
 }
 
 /**
- * Cancel a fulfillment on Shopify using the legacy REST endpoint.
+ * Cancel a fulfillment on Shopify.
  * No-op (swallowed) when the fulfillment is already cancelled.
  */
 export async function cancelShopifyFulfillment(
   shopDomain: string,
   accessToken: string,
-  shopifyOrderId: string,
+  _shopifyOrderId: string,
   shopifyFulfillmentId: string,
 ): Promise<void> {
-  const url = `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/orders/${shopifyOrderId}/fulfillments/${shopifyFulfillmentId}/cancel.json`;
+  // Modern endpoint: POST /fulfillments/{id}/cancel.json
+  // (The legacy /orders/{orderId}/fulfillments/{id}/cancel.json was removed in 2022-07.)
+  const url = `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/fulfillments/${shopifyFulfillmentId}/cancel.json`;
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -1014,19 +1035,18 @@ export async function cancelShopifyFulfillment(
   // 422 = already cancelled or unprocessable; treat as success
   if (!res.ok && res.status !== 422) {
     throw new Error(
-      `Shopify POST /orders/${shopifyOrderId}/fulfillments/${shopifyFulfillmentId}/cancel failed: ${res.status} ${await res.text()}`,
+      `Shopify POST /fulfillments/${shopifyFulfillmentId}/cancel failed: ${res.status} ${await res.text()}`,
     );
   }
 }
 
 /**
  * Update carrier tracking on an existing Shopify fulfillment.
- * Uses the legacy REST PUT endpoint (2023-01).
  */
 export async function updateShopifyFulfillmentTracking(
   shopDomain: string,
   accessToken: string,
-  shopifyOrderId: string,
+  _shopifyOrderId: string,
   shopifyFulfillmentId: string,
   tracking: {
     number?: string | null;
@@ -1034,15 +1054,17 @@ export async function updateShopifyFulfillmentTracking(
     url?: string | null;
   },
 ): Promise<void> {
-  const payload: Record<string, unknown> = { id: Number(shopifyFulfillmentId) };
-  if (tracking.number != null) payload["tracking_number"] = tracking.number;
-  if (tracking.company != null) payload["tracking_company"] = tracking.company;
-  if (tracking.url != null) payload["tracking_url"] = tracking.url;
-  await shopifyPut(
+  // Modern endpoint: POST /fulfillments/{id}/update_tracking.json
+  // (The legacy PUT /orders/{orderId}/fulfillments/{id}.json was removed in 2022-07.)
+  const info: Record<string, string | null> = {};
+  if (tracking.number != null) info["number"] = tracking.number;
+  if (tracking.company != null) info["company"] = tracking.company;
+  if (tracking.url != null) info["url"] = tracking.url;
+  await shopifyPost(
     shopDomain,
     accessToken,
-    `/orders/${shopifyOrderId}/fulfillments/${shopifyFulfillmentId}.json`,
-    { fulfillment: payload },
+    `/fulfillments/${shopifyFulfillmentId}/update_tracking.json`,
+    { fulfillment: { tracking_info: info, notify_customer: false } },
   );
 }
 
