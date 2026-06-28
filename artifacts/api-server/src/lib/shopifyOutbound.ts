@@ -20,6 +20,7 @@ import {
   createShopifyFulfillmentEvent,
   createShopifyProduct,
   createShopifyProductWithVariants,
+  createShopifyRefund,
   fetchFulfillmentOrders,
   holdFulfillmentOrder,
   openFulfillmentOrder,
@@ -1544,7 +1545,78 @@ async function pushFulfillmentStatusToShopifyAsync(
   }
 }
 
-// ─── Bulk retry ───────────────────────────────────────────────────────────────
+// ─── Refund push ──────────────────────────────────────────────────────────────
+
+/**
+ * Fire-and-forget: push an ERP-side refund to Shopify as a manual transaction.
+ * No-op when:
+ *   - the org isn't connected to Shopify, OR
+ *   - the order has no shopifyOrderId (not a Shopify order).
+ *
+ * Uses a transaction-only refund (no line items) because the ERP does not
+ * store Shopify line-item IDs. This is enough to update Shopify's
+ * financial_status to partially_refunded / refunded.
+ */
+export function pushRefundToShopify(
+  orgId: number,
+  salesOrderId: number,
+  refundId: number,
+  amountRupees: number,
+  reason: string | null,
+): void {
+  pushRefundToShopifyAsync(orgId, salesOrderId, refundId, amountRupees, reason).catch((err) => {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err), orgId, salesOrderId, refundId },
+      "Shopify outbound refund push failed",
+    );
+  });
+}
+
+async function pushRefundToShopifyAsync(
+  orgId: number,
+  salesOrderId: number,
+  refundId: number,
+  amountRupees: number,
+  reason: string | null,
+): Promise<void> {
+  const org = await fetchOrgCreds(orgId);
+  if (!org) return;
+
+  const [orderRow] = await db
+    .select({ shopifyOrderId: salesOrdersTable.shopifyOrderId })
+    .from(salesOrdersTable)
+    .where(and(eq(salesOrdersTable.id, salesOrderId), eq(salesOrdersTable.organizationId, orgId)))
+    .limit(1);
+  if (!orderRow?.shopifyOrderId) return;
+
+  try {
+    await createShopifyRefund(org.shopDomain, org.accessToken, orderRow.shopifyOrderId, {
+      amountRupees,
+      note: reason ?? "",
+    });
+    writeSyncLog(orgId, {
+      entity: "refund",
+      action: "create",
+      status: "success",
+      shopifyId: orderRow.shopifyOrderId,
+      erpId: String(refundId),
+    });
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    writeSyncLog(orgId, {
+      entity: "refund",
+      action: "create",
+      status: "error",
+      shopifyId: orderRow.shopifyOrderId,
+      erpId: String(refundId),
+      errorMessage,
+      failureReason: classifyError(errorMessage),
+    });
+    throw err;
+  }
+}
+
+// ─── Retry failed product syncs ───────────────────────────────────────────────
 
 /**
  * Re-trigger createProductInShopify for every ERP item in this org that has a

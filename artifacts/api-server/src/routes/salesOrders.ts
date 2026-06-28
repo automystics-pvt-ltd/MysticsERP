@@ -28,7 +28,7 @@ import {
 } from "../lib/serializers";
 import { computeOrderTotals, nextOrderNumber } from "../lib/orderHelpers";
 import { toNum, toStr } from "../lib/numeric";
-import { pushDeliveryToShopify, pushFulfillmentStatusToShopify, pushOrderNotesToShopify, pushStockToShopify } from "../lib/shopifyOutbound";
+import { pushDeliveryToShopify, pushFulfillmentStatusToShopify, pushOrderNotesToShopify, pushRefundToShopify, pushStockToShopify } from "../lib/shopifyOutbound";
 import { loadShipmentsForOrder } from "./shipments";
 import { loadInvoiceForOrder } from "../lib/invoiceData";
 import { sendEmail, sendShippingConfirmationEmail, EmailNotConfiguredError } from "../lib/email";
@@ -2319,6 +2319,9 @@ router.post("/sales-orders/:id/refunds", async (req, res, next) => {
     for (const itemId of new Set(refundedItemIds)) {
       pushStockToShopify(t.organizationId, itemId);
     }
+
+    // Push refund to Shopify (fire-and-forget; no-op for non-Shopify orders)
+    pushRefundToShopify(t.organizationId, id, newRefund.id, refundAmount, b.reason ? String(b.reason).trim() : null);
 
     const refunds = await loadRefundsForOrder(t.organizationId, id);
     const created = refunds.find((r) => r.id === newRefund.id);

@@ -1244,4 +1244,37 @@ export async function updateShopifyOrderNote(
   });
 }
 
+/**
+ * Create a refund on a Shopify order. Sends a manual transaction for the
+ * given amount so Shopify's financial_status is updated to partially_refunded
+ * or refunded. No line items are sent because the ERP doesn't store Shopify
+ * line-item IDs — the transaction-only form is sufficient to sync the money.
+ */
+export async function createShopifyRefund(
+  shopDomain: string,
+  accessToken: string,
+  shopifyOrderId: string,
+  opts: {
+    amountRupees: number;
+    currency?: string;
+    note?: string | null;
+    notify?: boolean;
+  },
+): Promise<void> {
+  await shopifyPost(shopDomain, accessToken, `/orders/${shopifyOrderId}/refunds.json`, {
+    refund: {
+      currency: opts.currency ?? "INR",
+      notify: opts.notify ?? false,
+      note: opts.note ?? "",
+      transactions: [
+        {
+          amount: opts.amountRupees.toFixed(2),
+          kind: "refund",
+          gateway: "manual",
+        },
+      ],
+    },
+  });
+}
+
 export { REQUIRED_SCOPES, WEBHOOK_TOPICS };
