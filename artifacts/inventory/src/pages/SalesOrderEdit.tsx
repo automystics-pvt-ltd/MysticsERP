@@ -873,7 +873,7 @@ export default function SalesOrderEdit() {
 
 
           {/* Action buttons */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 justify-end">
             <Button
               type="submit"
               disabled={updateMutation.isPending || hasStockViolations}
