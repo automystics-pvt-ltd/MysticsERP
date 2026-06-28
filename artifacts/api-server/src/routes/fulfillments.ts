@@ -20,7 +20,7 @@ import {
 import { tenantMiddleware } from "../lib/tenant";
 import { nextOrderNumber } from "../lib/orderHelpers";
 import { toNum, toStr } from "../lib/numeric";
-import { pushFulfillmentToShopify, pushStockToShopify } from "../lib/shopifyOutbound";
+import { pushFulfillmentStatusToShopify, pushFulfillmentToShopify, pushStockToShopify } from "../lib/shopifyOutbound";
 import { serializeShipment } from "../lib/serializers";
 import { sendShippingConfirmationEmail } from "../lib/email";
 import { logger } from "../lib/logger";
@@ -352,6 +352,11 @@ router.post("/sales-orders/:id/fulfillments", async (req, res, next) => {
     }
 
     const data = await loadFulfillmentWithLines(t.organizationId, result.fulfillmentId);
+
+    // Notify Shopify that this order is now being prepared (releases any holds,
+    // moves the fulfillment order to in-progress so merchants can see it).
+    pushFulfillmentStatusToShopify(t.organizationId, orderId, "in_progress");
+
     res.status(201).json(data);
   } catch (err) {
     next(err);

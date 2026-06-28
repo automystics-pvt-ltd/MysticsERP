@@ -654,9 +654,14 @@ async function pushFulfillmentToShopifyAsync(
   const org = await fetchOrgCreds(orgId);
   if (!org) return;
 
-  // Fetch shipment (need shopifyFulfillmentId for idempotency check)
+  // Fetch shipment — idempotency key + fallback tracking fields
   const [shipmentRow] = await db
-    .select({ shopifyFulfillmentId: shipmentsTable.shopifyFulfillmentId })
+    .select({
+      shopifyFulfillmentId: shipmentsTable.shopifyFulfillmentId,
+      awb: shipmentsTable.awb,
+      courierName: shipmentsTable.courierName,
+      trackingUrl: shipmentsTable.trackingUrl,
+    })
     .from(shipmentsTable)
     .where(
       and(
@@ -705,13 +710,22 @@ async function pushFulfillmentToShopifyAsync(
     .orderBy(desc(fulfillmentsTable.dispatchedAt))
     .limit(1);
 
+  // Prefer tracking from the dispatched ERP fulfillment row (set during the
+  // fulfillment dispatch flow). Fall back to fields stored directly on the
+  // shipment — these are set via PATCH /shipments/:id (AWB entry by staff)
+  // and may exist even when no ERP fulfillment row was created.
+  const effectiveTracking = {
+    awbNumber: trackingRow?.awbNumber ?? shipmentRow?.awb ?? null,
+    courierName: trackingRow?.courierName ?? shipmentRow?.courierName ?? null,
+    trackingUrl: trackingRow?.trackingUrl ?? shipmentRow?.trackingUrl ?? null,
+  };
+
   // Idempotency: if this shipment was already linked to a Shopify fulfillment
   // (either pushed by us previously or stamped by an inbound webhook), update
   // tracking info rather than creating a duplicate fulfillment.
   if (shipmentRow?.shopifyFulfillmentId) {
-    const hasTracking = trackingRow && (
-      trackingRow.awbNumber || trackingRow.courierName || trackingRow.trackingUrl
-    );
+    const hasTracking =
+      effectiveTracking.awbNumber || effectiveTracking.courierName || effectiveTracking.trackingUrl;
     if (hasTracking) {
       try {
         await updateShopifyFulfillmentTracking(
@@ -720,9 +734,9 @@ async function pushFulfillmentToShopifyAsync(
           order.shopifyOrderId,
           shipmentRow.shopifyFulfillmentId,
           {
-            number: trackingRow!.awbNumber,
-            company: trackingRow!.courierName,
-            url: trackingRow!.trackingUrl,
+            number: effectiveTracking.awbNumber,
+            company: effectiveTracking.courierName,
+            url: effectiveTracking.trackingUrl,
           },
         );
         await db.insert(shopifySyncLogsTable).values({
@@ -770,16 +784,18 @@ async function pushFulfillmentToShopifyAsync(
     .limit(1);
   const locationId = whRows[0]?.shopifyLocationId ?? org.orgLocationId;
 
+  const hasEffectiveTracking =
+    effectiveTracking.awbNumber || effectiveTracking.courierName || effectiveTracking.trackingUrl;
   const result = await createShopifyFulfillment(
     org.shopDomain,
     org.accessToken,
     order.shopifyOrderId,
     locationId,
-    trackingRow
+    hasEffectiveTracking
       ? {
-          number: trackingRow.awbNumber,
-          company: trackingRow.courierName,
-          url: trackingRow.trackingUrl,
+          number: effectiveTracking.awbNumber,
+          company: effectiveTracking.courierName,
+          url: effectiveTracking.trackingUrl,
         }
       : undefined,
   );
