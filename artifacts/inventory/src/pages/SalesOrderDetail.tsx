@@ -1304,11 +1304,13 @@ export default function SalesOrderDetail() {
         );
       })()}
 
-      <PaymentLinkCard
-        salesOrderId={order.id}
-        balanceDue={Number(order.balanceDue)}
-        orderStatus={order.status}
-      />
+      {!order.shopifyOrderId && (
+        <PaymentLinkCard
+          salesOrderId={order.id}
+          balanceDue={Number(order.balanceDue)}
+          orderStatus={order.status}
+        />
+      )}
 
       <RecordPaymentDialog
         open={paymentOpen}
@@ -1852,12 +1854,14 @@ export default function SalesOrderDetail() {
         </DialogContent>
       </Dialog>
 
-      <EwbPanel
-        orderId={order.id}
-        orderNumber={order.orderNumber}
-        orderStatus={order.status}
-        ewb={order.ewb ?? null}
-      />
+      {!order.shopifyOrderId && (
+        <EwbPanel
+          orderId={order.id}
+          orderNumber={order.orderNumber}
+          orderStatus={order.status}
+          ewb={order.ewb ?? null}
+        />
+      )}
 
       <EinvoicePanel
         orderId={order.id}
@@ -2251,7 +2255,7 @@ export default function SalesOrderDetail() {
         </Card>
       )}
 
-      {canInvoice && (
+      {canInvoice && !order.shopifyOrderId && (
         <Card data-testid="card-email-log">
           <CardHeader>
             <CardTitle>Email history</CardTitle>

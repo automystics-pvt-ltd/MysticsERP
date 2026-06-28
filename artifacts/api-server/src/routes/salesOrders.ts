@@ -28,7 +28,7 @@ import {
 } from "../lib/serializers";
 import { computeOrderTotals, nextOrderNumber } from "../lib/orderHelpers";
 import { toNum, toStr } from "../lib/numeric";
-import { pushStockToShopify } from "../lib/shopifyOutbound";
+import { pushOrderNotesToShopify, pushStockToShopify } from "../lib/shopifyOutbound";
 import { loadShipmentsForOrder } from "./shipments";
 import { loadInvoiceForOrder } from "../lib/invoiceData";
 import { sendEmail, sendShippingConfirmationEmail, EmailNotConfiguredError } from "../lib/email";
@@ -891,6 +891,12 @@ router.patch("/sales-orders/:id", async (req, res, next) => {
           eq(salesOrdersTable.id, id),
         ),
       );
+
+    // Push updated notes to Shopify if the notes field changed
+    if (b.notes !== undefined && b.notes !== existing.notes) {
+      pushOrderNotesToShopify(t.organizationId, id);
+    }
+
     const detail = await loadDetail(t.organizationId, id);
     res.json(detail);
   } catch (err) {

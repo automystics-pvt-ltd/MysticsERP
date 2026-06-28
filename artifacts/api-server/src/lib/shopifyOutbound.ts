@@ -22,6 +22,7 @@ import {
   setInventoryLevel,
   updateShopifyCustomer,
   updateShopifyFulfillmentTracking,
+  updateShopifyOrderNote,
   updateShopifyOrderPaymentStatus,
   updateShopifyProduct,
 } from "./shopify";
@@ -1273,6 +1274,80 @@ async function syncPaymentStatusToShopifyAsync(orgId: number, salesOrderId: numb
       shopifyId: order.shopifyOrderId,
       erpId: String(salesOrderId),
       name: "payment_status",
+      errorMessage,
+      failureReason: classifyError(errorMessage),
+    });
+    throw err;
+  }
+}
+
+// ─── Order notes sync (ERP → Shopify) ────────────────────────────────────────
+
+/**
+ * Fire-and-forget: push the ERP sales order `notes` field to Shopify when the
+ * operator edits it. No-op when the org isn't connected to Shopify or the
+ * order has no shopifyOrderId.
+ */
+export function pushOrderNotesToShopify(orgId: number, salesOrderId: number): void {
+  pushOrderNotesToShopifyAsync(orgId, salesOrderId).catch((err) => {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err), orgId, salesOrderId },
+      "Shopify outbound order notes sync failed",
+    );
+  });
+}
+
+async function pushOrderNotesToShopifyAsync(orgId: number, salesOrderId: number): Promise<void> {
+  const org = await fetchOrgCreds(orgId);
+  if (!org) return;
+
+  const [order] = await db
+    .select({
+      shopifyOrderId: salesOrdersTable.shopifyOrderId,
+      notes: salesOrdersTable.notes,
+    })
+    .from(salesOrdersTable)
+    .where(
+      and(
+        eq(salesOrdersTable.id, salesOrderId),
+        eq(salesOrdersTable.organizationId, orgId),
+      ),
+    )
+    .limit(1);
+
+  if (!order?.shopifyOrderId) return;
+
+  try {
+    await updateShopifyOrderNote(
+      org.shopDomain,
+      org.accessToken,
+      order.shopifyOrderId,
+      order.notes,
+    );
+
+    await db.insert(shopifySyncLogsTable).values({
+      organizationId: orgId,
+      direction: "outbound",
+      entity: "order",
+      action: "update",
+      status: "success",
+      shopifyId: order.shopifyOrderId,
+      erpId: String(salesOrderId),
+      name: "notes",
+    });
+
+    logger.info({ orgId, salesOrderId }, "Shopify order notes synced");
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    await db.insert(shopifySyncLogsTable).values({
+      organizationId: orgId,
+      direction: "outbound",
+      entity: "order",
+      action: "update",
+      status: "error",
+      shopifyId: order.shopifyOrderId,
+      erpId: String(salesOrderId),
+      name: "notes",
       errorMessage,
       failureReason: classifyError(errorMessage),
     });

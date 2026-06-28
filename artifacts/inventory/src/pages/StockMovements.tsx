@@ -41,6 +41,8 @@ const MOVEMENT_TYPE_LABELS: Record<string, string> = {
   shopify_order: "Shopify Order",
   shopify_sync: "Shopify Sync",
   shopify_webhook: "Shopify Update",
+  shopify_reserve: "Shopify Reserve",
+  job_work_consume: "Job Work Consume",
 };
 
 const MOVEMENT_TYPE_COLOR: Record<string, string> = {
@@ -58,6 +60,11 @@ const MOVEMENT_TYPE_COLOR: Record<string, string> = {
   expired: "text-orange-700 border-orange-200 bg-orange-50 dark:text-orange-400 dark:border-orange-800/40 dark:bg-orange-900/20",
   lost: "text-orange-700 border-orange-200 bg-orange-50 dark:text-orange-400 dark:border-orange-800/40 dark:bg-orange-900/20",
   theft: "text-orange-700 border-orange-200 bg-orange-50 dark:text-orange-400 dark:border-orange-800/40 dark:bg-orange-900/20",
+  shopify_order: "text-violet-700 border-violet-200 bg-violet-50 dark:text-violet-400 dark:border-violet-800/40 dark:bg-violet-900/20",
+  shopify_sync: "text-violet-700 border-violet-200 bg-violet-50 dark:text-violet-400 dark:border-violet-800/40 dark:bg-violet-900/20",
+  shopify_webhook: "text-violet-700 border-violet-200 bg-violet-50 dark:text-violet-400 dark:border-violet-800/40 dark:bg-violet-900/20",
+  shopify_reserve: "text-violet-700 border-violet-200 bg-violet-50 dark:text-violet-400 dark:border-violet-800/40 dark:bg-violet-900/20",
+  job_work_consume: "text-amber-700 border-amber-200 bg-amber-50 dark:text-amber-400 dark:border-amber-800/40 dark:bg-amber-900/20",
 };
 
 export default function StockMovements() {

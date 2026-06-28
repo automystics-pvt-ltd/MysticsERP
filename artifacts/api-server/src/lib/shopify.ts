@@ -1157,4 +1157,19 @@ export async function updateShopifyOrderPaymentStatus(
   });
 }
 
+/**
+ * Update the `note` field on a Shopify order. Used to sync ERP order notes
+ * back to Shopify when the operator edits them in the ERP.
+ */
+export async function updateShopifyOrderNote(
+  shopDomain: string,
+  accessToken: string,
+  shopifyOrderId: string,
+  note: string | null,
+): Promise<void> {
+  await shopifyPut(shopDomain, accessToken, `/orders/${shopifyOrderId}.json`, {
+    order: { id: Number(shopifyOrderId), note: note ?? "" },
+  });
+}
+
 export { REQUIRED_SCOPES, WEBHOOK_TOPICS };
