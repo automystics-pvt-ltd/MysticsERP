@@ -604,6 +604,18 @@ router.post("/sales-orders/:id/shipments", async (req, res, next) => {
       }
 
       await deriveAndUpdateOrderStatus(tx, t.organizationId, orderId);
+
+      // Auto-set deliveryMethod to "Shipping" when not already populated.
+      // This ensures the Delivery Method column on the order list shows something
+      // useful even for orders that didn't come from Shopify (which would have
+      // deliveryMethod synced from shipping_lines).
+      if (!order.deliveryMethod) {
+        await tx
+          .update(salesOrdersTable)
+          .set({ deliveryMethod: "Shipping" })
+          .where(and(eq(salesOrdersTable.id, orderId), eq(salesOrdersTable.organizationId, t.organizationId)));
+      }
+
       return {
         kind: "ok" as const,
         shipmentId: shipment.id,

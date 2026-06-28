@@ -160,7 +160,10 @@ router.post("/webhooks/shopify", async (req, res, next) => {
               // it, and always update paymentStatus.
               const updates: Record<string, unknown> = {
                 paymentStatus: newPaymentStatus,
-                shopifyFulfillmentStatus: mapShopifyFulfillmentStatus(o.fulfillment_status),
+                // Always store a non-null string so the UI can distinguish
+                // "unfulfilled" from "unknown". Shopify uses null for unfulfilled
+                // orders; we normalise that to "unfulfilled".
+                shopifyFulfillmentStatus: mapShopifyFulfillmentStatus(o.fulfillment_status) ?? "unfulfilled",
               };
               const TERMINAL = new Set([
                 "shipped", "delivered", "invoiced", "paid", "returned",
@@ -1195,6 +1198,23 @@ router.post("/webhooks/shopify", async (req, res, next) => {
                 ),
               );
           }
+
+          // Mark fulfillment as "in_progress" on the ERP shopifyFulfillmentStatus
+          // if it isn't already at a further-along state. This fires on
+          // fulfillments/create so the order list shows "In Progress" as soon
+          // as Shopify starts picking — before orders/updated fires "fulfilled".
+          const NOT_IN_PROGRESS = ["fulfilled", "on_hold"];
+          const [foRow] = await db
+            .select({ shopifyFulfillmentStatus: salesOrdersTable.shopifyFulfillmentStatus })
+            .from(salesOrdersTable)
+            .where(and(eq(salesOrdersTable.organizationId, org.id), eq(salesOrdersTable.id, erpOrder.id)))
+            .limit(1);
+          if (foRow && !NOT_IN_PROGRESS.includes(foRow.shopifyFulfillmentStatus ?? "")) {
+            await db
+              .update(salesOrdersTable)
+              .set({ shopifyFulfillmentStatus: "in_progress" })
+              .where(and(eq(salesOrdersTable.organizationId, org.id), eq(salesOrdersTable.id, erpOrder.id)));
+          }
         }
 
         // ── Carrier delivery confirmation ─────────────────────────────────
@@ -1367,6 +1387,62 @@ router.post("/webhooks/shopify", async (req, res, next) => {
           });
         }
 
+        await db
+          .update(organizationsTable)
+          .set({ shopifyLastWebhookAt: new Date() })
+          .where(eq(organizationsTable.id, org.id));
+        break;
+      }
+
+      case "fulfillment_orders/placed_on_hold": {
+        // Shopify placed a fulfillment order on hold — reflect this in the ERP
+        // so the Fulfillment Status column shows "On Hold".
+        const fo = body as { order_id?: number };
+        if (!fo.order_id) break;
+        const [foOrderRow] = await db
+          .select({ id: salesOrdersTable.id })
+          .from(salesOrdersTable)
+          .where(
+            and(
+              eq(salesOrdersTable.organizationId, org.id),
+              eq(salesOrdersTable.shopifyOrderId, String(fo.order_id)),
+            ),
+          )
+          .limit(1);
+        if (foOrderRow) {
+          await db
+            .update(salesOrdersTable)
+            .set({ shopifyFulfillmentStatus: "on_hold" })
+            .where(and(eq(salesOrdersTable.organizationId, org.id), eq(salesOrdersTable.id, foOrderRow.id)));
+        }
+        await db
+          .update(organizationsTable)
+          .set({ shopifyLastWebhookAt: new Date() })
+          .where(eq(organizationsTable.id, org.id));
+        break;
+      }
+
+      case "fulfillment_orders/hold_released": {
+        // Shopify released a hold — revert to "unfulfilled" so the ERP
+        // Fulfillment Status shows "Unfulfilled" until picking resumes.
+        const fo2 = body as { order_id?: number };
+        if (!fo2.order_id) break;
+        const [fo2OrderRow] = await db
+          .select({ id: salesOrdersTable.id })
+          .from(salesOrdersTable)
+          .where(
+            and(
+              eq(salesOrdersTable.organizationId, org.id),
+              eq(salesOrdersTable.shopifyOrderId, String(fo2.order_id)),
+            ),
+          )
+          .limit(1);
+        if (fo2OrderRow) {
+          await db
+            .update(salesOrdersTable)
+            .set({ shopifyFulfillmentStatus: "unfulfilled" })
+            .where(and(eq(salesOrdersTable.organizationId, org.id), eq(salesOrdersTable.id, fo2OrderRow.id)));
+        }
         await db
           .update(organizationsTable)
           .set({ shopifyLastWebhookAt: new Date() })

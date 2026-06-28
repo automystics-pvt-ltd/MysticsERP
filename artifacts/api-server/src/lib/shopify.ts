@@ -41,6 +41,8 @@ const WEBHOOK_TOPICS = [
   "fulfillments/create",
   "fulfillments/update",
   "fulfillments/cancel",
+  "fulfillment_orders/placed_on_hold",
+  "fulfillment_orders/hold_released",
   "products/create",
   "products/update",
   "products/delete",

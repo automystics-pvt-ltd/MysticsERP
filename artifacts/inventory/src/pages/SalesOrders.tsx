@@ -595,28 +595,36 @@ export default function SalesOrders() {
                     <TableCell>
                       {(() => {
                         const s = order.status;
-                        // Derive a fulfillment-specific label/color from the order status.
-                        // Order status mixes payment and fulfillment concerns — we only surface
-                        // the shipping/delivery dimension here.
-                        const fulfilled =
-                          s === "delivered"
-                            ? { label: "Delivered", cls: "bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40" }
-                            : s === "shipped"
-                              ? { label: "Shipped", cls: "bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/40" }
-                              : s === "partially_shipped"
-                                ? { label: "Partially Shipped", cls: "bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40" }
-                                : s === "returned"
-                                  ? { label: "Returned", cls: "bg-orange-50 text-orange-700 border-orange-300 dark:bg-orange-900/20 dark:text-orange-400 dark:border-orange-800/40" }
-                                  : s === "cancelled" || s === "refunded"
-                                    ? null
-                                    : { label: "Unfulfilled", cls: "bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700" };
-                        return fulfilled ? (
-                          <Badge
-                            variant="outline"
-                            className={`text-[11px] font-medium ${fulfilled.cls}`}
-                            data-testid={`badge-so-fulfillment-${order.id}`}
-                          >
-                            {fulfilled.label}
+                        const shopifyFs = order.shopifyFulfillmentStatus;
+                        // Fulfillment Status = picking/packing workflow state.
+                        // For Shopify orders: use shopifyFulfillmentStatus directly.
+                        // For ERP-only orders: derive from order status.
+                        let badge: { label: string; cls: string } | null = null;
+                        if (order.shopifyOrderId) {
+                          const fsMap: Record<string, { label: string; cls: string }> = {
+                            fulfilled:   { label: "Fulfilled",   cls: "bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40" },
+                            in_progress: { label: "In Progress", cls: "bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/40" },
+                            on_hold:     { label: "On Hold",     cls: "bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40" },
+                            partial:     { label: "Partial",     cls: "bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40" },
+                            unfulfilled: { label: "Unfulfilled", cls: "bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700" },
+                            scheduled:   { label: "Scheduled",   cls: "bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700" },
+                          };
+                          badge = fsMap[shopifyFs ?? "unfulfilled"] ?? { label: "Unfulfilled", cls: "bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700" };
+                          if (s === "cancelled" || s === "refunded") badge = null;
+                        } else {
+                          if (s === "shipped" || s === "delivered") {
+                            badge = { label: "Fulfilled", cls: "bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40" };
+                          } else if (s === "partially_shipped") {
+                            badge = { label: "Partial", cls: "bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40" };
+                          } else if (s === "cancelled" || s === "refunded") {
+                            badge = null;
+                          } else {
+                            badge = { label: "Unfulfilled", cls: "bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700" };
+                          }
+                        }
+                        return badge ? (
+                          <Badge variant="outline" className={`text-[11px] font-medium ${badge.cls}`} data-testid={`badge-so-fulfillment-${order.id}`}>
+                            {badge.label}
                           </Badge>
                         ) : (
                           <span className="text-muted-foreground text-xs">—</span>
@@ -631,34 +639,29 @@ export default function SalesOrders() {
                     </TableCell>
                     <TableCell>
                       {(() => {
-                        // For Shopify orders use the Shopify fulfillment status directly.
-                        // For ERP orders fall back to the latest shipment tracking/status.
-                        const shopifyFs = order.shopifyFulfillmentStatus;
-                        if (shopifyFs) {
-                          const map: Record<string, { label: string; cls: string }> = {
-                            fulfilled: { label: "Fulfilled", cls: "bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40" },
-                            partial:   { label: "Partially Fulfilled", cls: "bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40" },
-                            unfulfilled: { label: "Unfulfilled", cls: "bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700" },
-                            restocked: { label: "Restocked", cls: "bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/40" },
-                          };
-                          const entry = map[shopifyFs];
-                          if (entry) {
-                            return (
-                              <Badge variant="outline" className={`text-[11px] font-medium ${entry.cls}`}>
-                                {entry.label}
-                              </Badge>
-                            );
-                          }
-                          return <span className="text-sm text-muted-foreground capitalize">{shopifyFs.replace(/_/g, " ")}</span>;
-                        }
-                        if (order.latestShipmentStatus) {
-                          return (
-                            <span className="text-sm text-muted-foreground capitalize">
-                              {order.latestShipmentStatus.replace(/_/g, " ")}
-                            </span>
-                          );
-                        }
-                        return <span className="text-muted-foreground text-xs">—</span>;
+                        const s = order.status;
+                        // Delivery Status = physical delivery state derived from ERP order status.
+                        // Pending → order placed but not yet shipped
+                        // Shipped → at least partially shipped
+                        // Delivered → carrier confirmed delivery
+                        const deliveryMap: Record<string, { label: string; cls: string } | null> = {
+                          delivered:        { label: "Delivered",         cls: "bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40" },
+                          shipped:          { label: "Shipped",           cls: "bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/40" },
+                          partially_shipped:{ label: "Partially Shipped", cls: "bg-sky-50 text-sky-700 border-sky-300 dark:bg-sky-900/20 dark:text-sky-400 dark:border-sky-800/40" },
+                          returned:         { label: "Returned",          cls: "bg-orange-50 text-orange-700 border-orange-300 dark:bg-orange-900/20 dark:text-orange-400 dark:border-orange-800/40" },
+                          cancelled:        null,
+                          refunded:         null,
+                        };
+                        const entry = Object.prototype.hasOwnProperty.call(deliveryMap, s)
+                          ? deliveryMap[s]
+                          : { label: "Pending", cls: "bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700" };
+                        return entry ? (
+                          <Badge variant="outline" className={`text-[11px] font-medium ${entry.cls}`} data-testid={`badge-so-delivery-${order.id}`}>
+                            {entry.label}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">—</span>
+                        );
                       })()}
                     </TableCell>
                     <TableCell>
