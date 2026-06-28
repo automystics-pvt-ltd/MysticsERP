@@ -35,7 +35,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -565,7 +564,7 @@ export default function SalesOrderNew() {
           <Card>
             <CardContent className="pt-6 px-0 pb-0">
               <div className="px-6 pb-3 flex items-center justify-between">
-                <h3 className="font-semibold text-base">Invoice</h3>
+                <h3 className="font-semibold text-base">Line Items</h3>
               </div>
 
               <div className="overflow-x-auto">
@@ -959,51 +958,11 @@ export default function SalesOrderNew() {
             </CardContent>
           </Card>
 
-          {/* Terms & Conditions + Private Notes */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <FormField
-              control={form.control}
-              name="termsAndConditions"
-              render={({ field }) => (
-                <FormItem>
-                  <Label className="text-sm font-medium">Terms &amp; Conditions</Label>
-                  <FormControl>
-                    <Textarea
-                      {...field}
-                      className="h-28 mt-1"
-                      placeholder="Enter terms and conditions..."
-                      data-testid="input-terms"
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="notes"
-              render={({ field }) => (
-                <FormItem>
-                  <Label className="text-sm font-medium">
-                    Private notes{" "}
-                    <span className="text-muted-foreground font-normal text-xs">
-                      (not shown to client)
-                    </span>
-                  </Label>
-                  <FormControl>
-                    <Textarea
-                      {...field}
-                      className="h-28 mt-1"
-                      placeholder="Internal notes..."
-                      data-testid="input-notes"
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-          </div>
-
           {/* Action buttons */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center justify-end gap-3">
+            <Button type="button" variant="ghost" asChild>
+              <Link href="/sales-orders">Cancel</Link>
+            </Button>
             <Button
               type="submit"
               disabled={createMutation.isPending || hasStockViolations}
@@ -1018,17 +977,6 @@ export default function SalesOrderNew() {
               ) : (
                 "Create Order"
               )}
-            </Button>
-            <Button
-              type="submit"
-              variant="outline"
-              disabled={createMutation.isPending || hasStockViolations}
-              data-testid="btn-save-draft"
-            >
-              Save as draft
-            </Button>
-            <Button type="button" variant="ghost" asChild>
-              <Link href="/sales-orders">Cancel</Link>
             </Button>
           </div>
 
