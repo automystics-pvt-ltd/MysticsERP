@@ -248,7 +248,7 @@ describe("shopify webhook cross-tenant isolation", () => {
       expect(importShopifyOrderMock).toHaveBeenCalledTimes(1);
       // First arg is the orgId; it must be ORG_B (matching the shop
       // domain), never ORG_A even though the body referenced "SKU-A".
-      const callArgs = importShopifyOrderMock.mock.calls[0]!;
+      const callArgs = importShopifyOrderMock.mock.calls[0] as unknown[];
       expect(callArgs[0]).toBe(ORG_B);
       expect(callArgs[1]).toBe(b.warehouseId);
     });

@@ -19,7 +19,7 @@ import express, {
   type Express,
   type NextFunction,
   type Request,
-  type Response,
+  type Response as ExpressResponse,
 } from "express";
 import request from "supertest";
 
@@ -135,7 +135,7 @@ const { bucket, FakeObjectStorageService, FakeObjectNotFoundError, state } =
 
       async downloadObject(objectFile: {
         __path: string;
-      }): Promise<Response> {
+      }): Promise<globalThis.Response> {
         const stored = bucket.get(objectFile.__path)!;
         return new Response(stored.body, {
           headers: { "Content-Type": stored.contentType },
@@ -152,7 +152,7 @@ vi.mock("../../src/lib/objectStorage", () => ({
 }));
 
 vi.mock("../../src/lib/tenant", () => ({
-  tenantMiddleware: (req: Request, res: Response, next: NextFunction) => {
+  tenantMiddleware: (req: Request, res: ExpressResponse, next: NextFunction) => {
     const orgId = Number(req.header("x-test-org-id"));
     if (!Number.isFinite(orgId) || orgId <= 0) {
       res.status(401).json({ error: "missing x-test-org-id header" });
@@ -164,6 +164,10 @@ vi.mock("../../src/lib/tenant", () => ({
       role: "owner",
       clerkUserId: `user_test_${orgId}`,
       isSuperAdmin: false,
+      canEditBills: true,
+      canEditStocks: true,
+      permissions: new Set(),
+      can: () => true,
     };
     next();
   },

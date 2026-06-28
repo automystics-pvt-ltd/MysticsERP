@@ -37,6 +37,10 @@ vi.mock("../../src/lib/tenant", async () => {
         role: "owner",
         clerkUserId: `user_test_${orgId}`,
         isSuperAdmin: false,
+        canEditBills: true,
+        canEditStocks: true,
+        permissions: new Set(),
+        can: () => true,
       };
       next();
     },

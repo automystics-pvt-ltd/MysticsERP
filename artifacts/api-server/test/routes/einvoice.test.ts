@@ -6,7 +6,12 @@ import {
   afterEach,
   vi,
 } from "vitest";
-import express, { type Express, type NextFunction, type Request, type Response } from "express";
+import express, {
+  type Express,
+  type NextFunction,
+  type Request,
+  type Response as ExpressResponse,
+} from "express";
 import request from "supertest";
 import { createDbModuleMock, drizzleOrmMock } from "../helpers/mockModules";
 
@@ -20,13 +25,17 @@ import { createDbModuleMock, drizzleOrmMock } from "../helpers/mockModules";
 vi.mock("@workspace/db", () => createDbModuleMock());
 vi.mock("drizzle-orm", () => drizzleOrmMock);
 vi.mock("../../src/lib/tenant", () => ({
-  tenantMiddleware: (req: Request, _res: Response, next: NextFunction) => {
+  tenantMiddleware: (req: Request, _res: ExpressResponse, next: NextFunction) => {
     req.tenant = {
       userId: 1,
       organizationId: 1,
       role: "owner",
       clerkUserId: "user_test",
       isSuperAdmin: false,
+      canEditBills: true,
+      canEditStocks: true,
+      permissions: new Set(),
+      can: () => true,
     };
     next();
   },
@@ -50,7 +59,7 @@ function makeApp(): Express {
   return app;
 }
 
-function jsonResponse(status: number, body: unknown): Response {
+function jsonResponse(status: number, body: unknown): globalThis.Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
@@ -390,8 +399,8 @@ describe("POST /api/sales-orders/:id/einvoice/generate (concurrency)", () => {
     // touching IRP. Then we resolve the fetch and let the winner
     // finish.
 
-    let resolveFetch!: (r: Response) => void;
-    const fetchDeferred = new Promise<Response>((resolve) => {
+    let resolveFetch!: (r: globalThis.Response) => void;
+    const fetchDeferred = new Promise<globalThis.Response>((resolve) => {
       resolveFetch = resolve;
     });
     const fetchSpy = vi
@@ -1592,8 +1601,8 @@ describe("Bulk worker vs. manual /generate (concurrency)", () => {
     //   3. Resolve the worker's fetch with a normal success and let
     //      it finish.
     //   4. Assert IRP was hit exactly once across the whole race.
-    let resolveFetch!: (r: Response) => void;
-    const fetchDeferred = new Promise<Response>((resolve) => {
+    let resolveFetch!: (r: globalThis.Response) => void;
+    const fetchDeferred = new Promise<globalThis.Response>((resolve) => {
       resolveFetch = resolve;
     });
     const fetchSpy = vi

@@ -26,6 +26,8 @@ export interface TenantInfo {
   organizationId: number;
   role: string;
   isSuperAdmin: boolean;
+  /** The Clerk user id for this session, if populated (e.g. Clerk-auth path). */
+  clerkUserId?: string;
   /** Per-member toggles that gate specific edit capabilities. */
   canEditBills: boolean;
   canEditStocks: boolean;

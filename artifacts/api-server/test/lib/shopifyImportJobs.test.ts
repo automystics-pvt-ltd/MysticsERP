@@ -16,7 +16,7 @@ const {
   reconcileOrphanedImportJobs,
   sweepFinishedImportJobs,
   stopImportJobSweep,
-} = await import("../../src/lib/shopifyImportJobs.ts");
+} = await import("../../src/lib/shopifyImportJobs");
 
 const ORG_A = 101;
 const ORG_B = 202;

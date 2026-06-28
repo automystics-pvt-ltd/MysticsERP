@@ -23,6 +23,7 @@ function baseOrder(overrides: Partial<OrderForIrn> = {}): OrderForIrn {
     status: "shipped",
     irn: null,
     irpStatus: null,
+    irpAckNumber: null,
     irpAckDate: null,
     customer: {
       id: 7,

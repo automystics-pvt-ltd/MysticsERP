@@ -66,7 +66,8 @@ export const testDb = drizzle(pool, { schema: schemaModule });
 for (const value of Object.values(schemaModule)) {
   if (!value || typeof value !== "object") continue;
   try {
-    const name = getTableName(value as never);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const name = getTableName(value as any);
     if (typeof name === "string" && name.length > 0) {
       (value as { __table?: string }).__table = name;
     }
@@ -83,7 +84,8 @@ function collectTables(): Record<string, unknown> {
   for (const value of Object.values(schemaModule)) {
     if (!value || typeof value !== "object") continue;
     try {
-      const name = getTableName(value as never);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const name = getTableName(value as any);
       if (typeof name === "string" && name.length > 0) {
         out[name] = value;
       }
@@ -277,10 +279,12 @@ export const memDb = {
     row: T,
   ): Promise<Record<string, unknown>> {
     await ensureSchemaReady();
-    const [inserted] = await testDb
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rows = (await testDb
       .insert(table as never)
       .values(row as never)
-      .returning();
+      .returning()) as Record<string, unknown>[];
+    const [inserted] = rows;
     return inserted as Record<string, unknown>;
   },
 
@@ -298,7 +302,10 @@ export const memDb = {
 // Re-export the real drizzle tables under the legacy `tables` keys
 // the test files reference. Keys mirror the JS export names from
 // `@workspace/db/schema` (which are camelCase, e.g. `customersTable`).
-export const tables = schemaModule as unknown as Record<string, unknown>;
+export const tables = schemaModule as unknown as Record<
+  string,
+  { __table: string } & Record<string, unknown>
+>;
 
 export function createInMemoryDbModuleMock() {
   // Override the package's `db`/`pool` with our worker-scoped ones,
