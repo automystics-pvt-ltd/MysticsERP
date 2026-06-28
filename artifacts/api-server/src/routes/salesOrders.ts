@@ -185,7 +185,7 @@ router.get("/sales-orders", async (req, res, next) => {
         AND cp.mode = 'card'
       )`,
       itemCount: sql<number>`(
-        SELECT COUNT(*)
+        SELECT COALESCE(SUM(sol.quantity), 0)
         FROM sales_order_lines sol
         WHERE sol.sales_order_id = ${salesOrdersTable.id}
       )`,

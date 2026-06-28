@@ -630,17 +630,40 @@ export default function SalesOrders() {
                       </span>
                     </TableCell>
                     <TableCell>
-                      {order.latestShipmentStatus ? (
-                        <span className="text-sm text-muted-foreground capitalize">
-                          {order.latestShipmentStatus.replace(/_/g, " ")}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground text-xs">—</span>
-                      )}
+                      {(() => {
+                        // For Shopify orders use the Shopify fulfillment status directly.
+                        // For ERP orders fall back to the latest shipment tracking/status.
+                        const shopifyFs = order.shopifyFulfillmentStatus;
+                        if (shopifyFs) {
+                          const map: Record<string, { label: string; cls: string }> = {
+                            fulfilled: { label: "Fulfilled", cls: "bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40" },
+                            partial:   { label: "Partially Fulfilled", cls: "bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40" },
+                            unfulfilled: { label: "Unfulfilled", cls: "bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700" },
+                            restocked: { label: "Restocked", cls: "bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/40" },
+                          };
+                          const entry = map[shopifyFs];
+                          if (entry) {
+                            return (
+                              <Badge variant="outline" className={`text-[11px] font-medium ${entry.cls}`}>
+                                {entry.label}
+                              </Badge>
+                            );
+                          }
+                          return <span className="text-sm text-muted-foreground capitalize">{shopifyFs.replace(/_/g, " ")}</span>;
+                        }
+                        if (order.latestShipmentStatus) {
+                          return (
+                            <span className="text-sm text-muted-foreground capitalize">
+                              {order.latestShipmentStatus.replace(/_/g, " ")}
+                            </span>
+                          );
+                        }
+                        return <span className="text-muted-foreground text-xs">—</span>;
+                      })()}
                     </TableCell>
                     <TableCell>
                       {order.deliveryMethod ? (
-                        <span className="text-sm text-muted-foreground">{order.deliveryMethod}</span>
+                        <span className="text-sm">{order.deliveryMethod}</span>
                       ) : (
                         <span className="text-muted-foreground text-xs">—</span>
                       )}
