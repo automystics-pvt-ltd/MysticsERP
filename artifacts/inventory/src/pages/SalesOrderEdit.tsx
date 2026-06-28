@@ -560,7 +560,17 @@ export default function SalesOrderEdit() {
           <Card>
             <CardContent className="pt-6 px-0 pb-0">
               <div className="px-6 pb-3 flex items-center justify-between">
-                <h3 className="font-semibold text-base">Invoice</h3>
+                <h3 className="font-semibold text-base">Item List</h3>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => append(emptyLineDefaults())}
+                  data-testid="btn-add-line"
+                  className="h-7 px-2 text-xs"
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  Add line
+                </Button>
               </div>
 
               <div className="overflow-x-auto">
@@ -591,18 +601,7 @@ export default function SalesOrderEdit() {
                       <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground w-[100px]">
                         Total
                       </th>
-                      <th className="px-3 py-2 w-[100px] text-right">
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={() => append(emptyLineDefaults())}
-                          data-testid="btn-add-line"
-                          className="h-7 px-2 text-xs"
-                        >
-                          <Plus className="h-3 w-3 mr-1" />
-                          Add line
-                        </Button>
-                      </th>
+                      <th className="px-3 py-2 w-[50px]"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -639,7 +638,7 @@ export default function SalesOrderEdit() {
                               name={`lines.${index}.itemId`}
                               render={({ field: selectField, fieldState }) => (
                                 <ItemPicker
-                                  items={inStockItems}
+                                  items={items}
                                   selectedItemId={selectField.value || null}
                                   parentSelection={parentByLine[field.id] ?? null}
                                   onParentChange={(pid) =>
@@ -872,29 +871,6 @@ export default function SalesOrderEdit() {
             </CardContent>
           </Card>
 
-          {/* Notes */}
-          <FormField
-            control={form.control}
-            name="notes"
-            render={({ field }) => (
-              <FormItem>
-                <Label className="text-sm font-medium">
-                  Private notes{" "}
-                  <span className="text-muted-foreground font-normal text-xs">
-                    (not shown to client)
-                  </span>
-                </Label>
-                <FormControl>
-                  <Textarea
-                    {...field}
-                    className="h-24 mt-1"
-                    placeholder="Internal notes..."
-                    data-testid="input-notes"
-                  />
-                </FormControl>
-              </FormItem>
-            )}
-          />
 
           {/* Action buttons */}
           <div className="flex items-center gap-3">
