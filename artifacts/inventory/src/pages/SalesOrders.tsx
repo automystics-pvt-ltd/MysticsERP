@@ -264,7 +264,7 @@ export default function SalesOrders() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Sales Orders"
+        title="Orders"
         description="Manage customer orders and fulfillments."
         actions={
           <Can module="sales_orders" action="create">
