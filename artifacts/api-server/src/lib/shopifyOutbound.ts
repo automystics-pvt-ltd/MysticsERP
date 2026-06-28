@@ -17,6 +17,7 @@ import {
   cancelShopifyFulfillment,
   createShopifyCustomer,
   createShopifyFulfillment,
+  createShopifyFulfillmentEvent,
   createShopifyProduct,
   createShopifyProductWithVariants,
   fetchFulfillmentOrders,
@@ -1351,6 +1352,93 @@ async function pushOrderNotesToShopifyAsync(orgId: number, salesOrderId: number)
       shopifyId: order.shopifyOrderId,
       erpId: String(salesOrderId),
       name: "notes",
+      errorMessage,
+      failureReason: classifyError(errorMessage),
+    });
+    throw err;
+  }
+}
+
+// ─── Delivery push ────────────────────────────────────────────────────────────
+
+/**
+ * Fire-and-forget: push an ERP "delivered" status to Shopify by creating a
+ * "delivered" fulfillment event on the most recent Shopify-linked shipment.
+ * No-op when the org isn't connected or the order has no shopifyFulfillmentId.
+ */
+export function pushDeliveryToShopify(orgId: number, salesOrderId: number): void {
+  pushDeliveryToShopifyAsync(orgId, salesOrderId).catch((err) => {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err), orgId, salesOrderId },
+      "Shopify outbound delivery push failed",
+    );
+  });
+}
+
+async function pushDeliveryToShopifyAsync(orgId: number, salesOrderId: number): Promise<void> {
+  const org = await fetchOrgCreds(orgId);
+  if (!org) return;
+
+  // Find the most recently created non-cancelled shipment that has a
+  // Shopify fulfillment id.
+  const [shipmentRow] = await db
+    .select({ shopifyFulfillmentId: shipmentsTable.shopifyFulfillmentId })
+    .from(shipmentsTable)
+    .where(
+      and(
+        eq(shipmentsTable.organizationId, orgId),
+        eq(shipmentsTable.salesOrderId, salesOrderId),
+        sql`${shipmentsTable.status} != 'cancelled'`,
+        sql`${shipmentsTable.shopifyFulfillmentId} IS NOT NULL`,
+      ),
+    )
+    .orderBy(desc(shipmentsTable.createdAt))
+    .limit(1);
+
+  if (!shipmentRow?.shopifyFulfillmentId) return;
+
+  try {
+    await createShopifyFulfillmentEvent(
+      org.shopDomain,
+      org.accessToken,
+      shipmentRow.shopifyFulfillmentId,
+      "delivered",
+    );
+
+    const [orderRow] = await db
+      .select({ shopifyOrderId: salesOrdersTable.shopifyOrderId })
+      .from(salesOrdersTable)
+      .where(and(eq(salesOrdersTable.id, salesOrderId), eq(salesOrdersTable.organizationId, orgId)))
+      .limit(1);
+
+    await db.insert(shopifySyncLogsTable).values({
+      organizationId: orgId,
+      direction: "outbound",
+      entity: "order",
+      action: "update",
+      status: "success",
+      shopifyId: orderRow?.shopifyOrderId ?? null,
+      erpId: String(salesOrderId),
+      name: "delivered",
+    });
+
+    logger.info({ orgId, salesOrderId }, "Shopify delivery event pushed");
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    const [orderRow] = await db
+      .select({ shopifyOrderId: salesOrdersTable.shopifyOrderId })
+      .from(salesOrdersTable)
+      .where(and(eq(salesOrdersTable.id, salesOrderId), eq(salesOrdersTable.organizationId, orgId)))
+      .limit(1);
+    await db.insert(shopifySyncLogsTable).values({
+      organizationId: orgId,
+      direction: "outbound",
+      entity: "order",
+      action: "update",
+      status: "error",
+      shopifyId: orderRow?.shopifyOrderId ?? null,
+      erpId: String(salesOrderId),
+      name: "delivered",
       errorMessage,
       failureReason: classifyError(errorMessage),
     });

@@ -310,6 +310,9 @@ export default function SalesOrderDetail() {
   const [editTrackingId, setEditTrackingId] = useState<number | null>(null);
   const [trackingForm, setTrackingForm] = useState({ awb: "", courierName: "", trackingUrl: "" });
 
+  // Inline tracking form state (shown when order is shipped but has no tracking)
+  const [inlineTracking, setInlineTracking] = useState({ awb: "", carrier: "" });
+
   // Edit payment terms dialog state
   const [editPaymentDetailsOpen, setEditPaymentDetailsOpen] = useState(false);
   const [paymentDetailsForm, setPaymentDetailsForm] = useState({
@@ -653,6 +656,9 @@ export default function SalesOrderDetail() {
 
   const { order, lines, shipments } = orderDetail;
   const canShip = order.status === "confirmed" || order.status === "partially_shipped";
+  const activeShipments = shipments.filter((s) => s.status !== "cancelled");
+  const hasTracking = activeShipments.some((s) => !!s.awb);
+  const firstActiveShipment = activeShipments[0] ?? null;
   const canCancelShipments = order.status === "shipped" || order.status === "partially_shipped";
   const allFullyShipped = lines.every(
     (l) => Number(l.quantity) - Number(l.quantityShipped) <= 1e-6,
@@ -758,7 +764,7 @@ export default function SalesOrderDetail() {
               )}
             </Can>
             <Can module="sales_orders" action="approve">
-              {order.status === "shipped" && (
+              {order.status === "shipped" && hasTracking && (
                 <Button
                   size="sm"
                   onClick={() => handleUpdateStatus("delivered")}
@@ -963,6 +969,68 @@ export default function SalesOrderDetail() {
             </AlertDialogContent>
           </AlertDialog>
         )}
+
+      {/* Inline tracking card — shown when order is fully shipped but has no tracking yet */}
+      {order.status === "shipped" && !hasTracking && firstActiveShipment && (
+        <Card className="border-amber-200 bg-amber-50/60 dark:border-amber-800/40 dark:bg-amber-900/10">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Truck className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              Add Tracking Information
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Enter the tracking number and carrier to automatically mark this order as delivered.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-3 items-end">
+              <div className="flex-1 min-w-40 space-y-1.5">
+                <label className="text-sm font-medium" htmlFor="inline-tracking-awb">
+                  Tracking Number
+                </label>
+                <input
+                  id="inline-tracking-awb"
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  placeholder="AWB / tracking number"
+                  value={inlineTracking.awb}
+                  onChange={(e) => setInlineTracking((f) => ({ ...f, awb: e.target.value }))}
+                  data-testid="input-inline-tracking-awb"
+                />
+              </div>
+              <div className="flex-1 min-w-40 space-y-1.5">
+                <label className="text-sm font-medium" htmlFor="inline-tracking-carrier">
+                  Shipping Carrier
+                </label>
+                <input
+                  id="inline-tracking-carrier"
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  placeholder="e.g. Delhivery, DTDC, FedEx"
+                  value={inlineTracking.carrier}
+                  onChange={(e) => setInlineTracking((f) => ({ ...f, carrier: e.target.value }))}
+                  data-testid="input-inline-tracking-carrier"
+                />
+              </div>
+              <Button
+                size="sm"
+                disabled={!inlineTracking.awb.trim() || updateShipmentMutation.isPending}
+                data-testid="btn-inline-save-tracking"
+                onClick={() => {
+                  if (!inlineTracking.awb.trim() || !firstActiveShipment) return;
+                  updateShipmentMutation.mutate({
+                    id: firstActiveShipment.id,
+                    data: {
+                      awb: inlineTracking.awb.trim(),
+                      courierName: inlineTracking.carrier.trim() || null,
+                    },
+                  });
+                }}
+              >
+                {updateShipmentMutation.isPending ? "Saving…" : "Save & Mark Delivered"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid md:grid-cols-2 gap-6">
         <Card>

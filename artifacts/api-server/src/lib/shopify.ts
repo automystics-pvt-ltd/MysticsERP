@@ -1194,6 +1194,25 @@ export async function holdFulfillmentOrder(
 }
 
 /**
+ * Create a fulfillment event on a Shopify fulfillment — used to mark an
+ * order as "delivered" after we receive confirmation that the carrier
+ * delivered the package. Status must be one of Shopify's event statuses.
+ */
+export async function createShopifyFulfillmentEvent(
+  shopDomain: string,
+  accessToken: string,
+  shopifyFulfillmentId: string,
+  status: "delivered" | "in_transit" | "out_for_delivery" | "ready_for_pickup",
+): Promise<void> {
+  await shopifyPost(
+    shopDomain,
+    accessToken,
+    `/fulfillments/${shopifyFulfillmentId}/events.json`,
+    { event: { status } },
+  );
+}
+
+/**
  * Release a hold (or move from scheduled → open) on a Shopify fulfillment order.
  * Moves status back to "open" / "in_progress" on Shopify.
  */

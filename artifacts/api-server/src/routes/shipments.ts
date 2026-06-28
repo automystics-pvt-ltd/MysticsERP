@@ -21,7 +21,7 @@ import {
 } from "../lib/serializers";
 import { nextOrderNumber } from "../lib/orderHelpers";
 import { toNum, toStr } from "../lib/numeric";
-import { cancelFulfillmentOnShopify, pushFulfillmentToShopify, pushStockToShopify } from "../lib/shopifyOutbound";
+import { cancelFulfillmentOnShopify, pushDeliveryToShopify, pushFulfillmentToShopify, pushStockToShopify } from "../lib/shopifyOutbound";
 import {
   applyBatchStockChange,
   insertBatchMovement,
@@ -753,7 +753,7 @@ router.patch("/shipments/:id", async (req, res, next) => {
     // shipment.shopifyFulfillmentId so a manual tracking entry also creates
     // the Shopify fulfillment when none exists yet.
     const [orderRow] = await db
-      .select({ shopifyOrderId: salesOrdersTable.shopifyOrderId })
+      .select({ shopifyOrderId: salesOrdersTable.shopifyOrderId, status: salesOrdersTable.status })
       .from(salesOrdersTable)
       .where(
         and(
@@ -764,6 +764,22 @@ router.patch("/shipments/:id", async (req, res, next) => {
       .limit(1); // org-scope-allow: already scoped by eq(salesOrdersTable.organizationId)
     if (orderRow?.shopifyOrderId) {
       pushFulfillmentToShopify(t.organizationId, salesOrderId, shipmentId);
+    }
+
+    // Auto-advance: when tracking (AWB) is set on a fully-shipped order,
+    // automatically mark it as delivered and push the delivery event to Shopify.
+    const trackingAdded = awb !== undefined && awb !== null && awb.trim() !== "";
+    if (trackingAdded && orderRow?.status === "shipped") {
+      await db
+        .update(salesOrdersTable)
+        .set({ status: "delivered" })
+        .where(
+          and(
+            eq(salesOrdersTable.organizationId, t.organizationId),
+            eq(salesOrdersTable.id, salesOrderId),
+          ),
+        );
+      pushDeliveryToShopify(t.organizationId, salesOrderId);
     }
 
     const shipments = await loadShipmentsForOrder(t.organizationId, salesOrderId);

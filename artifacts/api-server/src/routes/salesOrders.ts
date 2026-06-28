@@ -28,7 +28,7 @@ import {
 } from "../lib/serializers";
 import { computeOrderTotals, nextOrderNumber } from "../lib/orderHelpers";
 import { toNum, toStr } from "../lib/numeric";
-import { pushFulfillmentStatusToShopify, pushOrderNotesToShopify, pushStockToShopify } from "../lib/shopifyOutbound";
+import { pushDeliveryToShopify, pushFulfillmentStatusToShopify, pushOrderNotesToShopify, pushStockToShopify } from "../lib/shopifyOutbound";
 import { loadShipmentsForOrder } from "./shipments";
 import { loadInvoiceForOrder } from "../lib/invoiceData";
 import { sendEmail, sendShippingConfirmationEmail, EmailNotConfiguredError } from "../lib/email";
@@ -1208,6 +1208,28 @@ router.patch("/sales-orders/:id/status", async (req, res, next) => {
       });
       return;
     }
+    if (newStatus === "delivered") {
+      // Require at least one non-cancelled shipment with a tracking number.
+      const trackingRows = await db
+        .select({ awb: shipmentsTable.awb })
+        .from(shipmentsTable)
+        .where(
+          and(
+            eq(shipmentsTable.organizationId, t.organizationId),
+            eq(shipmentsTable.salesOrderId, id),
+            sql`${shipmentsTable.status} != 'cancelled'`,
+            sql`${shipmentsTable.awb} IS NOT NULL`,
+          ),
+        )
+        .limit(1);
+      if (trackingRows.length === 0) {
+        res.status(400).json({
+          error:
+            "Please add a tracking number before marking the order as delivered.",
+        });
+        return;
+      }
+    }
     if (newStatus === "invoiced" && !["shipped", "delivered"].includes(order.status)) {
       res.status(400).json({
         error: "Invoiced is only valid after the order has shipped.",
@@ -1230,6 +1252,11 @@ router.patch("/sales-orders/:id/status", async (req, res, next) => {
           eq(salesOrdersTable.id, id),
         ),
       );
+
+    // When the ERP marks an order delivered, push a Shopify delivery event.
+    if (newStatus === "delivered") {
+      pushDeliveryToShopify(t.organizationId, id);
+    }
 
     // Best-effort auto-register an IRN with the IRP whenever an
     // order transitions into `invoiced`. tryAutoGenerateIrn caps
