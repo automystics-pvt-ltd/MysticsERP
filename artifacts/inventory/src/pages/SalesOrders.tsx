@@ -377,7 +377,6 @@ export default function SalesOrders() {
               <TableHead>Fulfillment</TableHead>
               <TableHead className="text-right">Items</TableHead>
               <TableHead>Delivery Status</TableHead>
-              <TableHead>Delivery Method</TableHead>
               <TableHead className="w-[140px]"></TableHead>
             </TableRow>
           </TableHeader>
@@ -597,29 +596,28 @@ export default function SalesOrders() {
                         const s = order.status;
                         const shopifyFs = order.shopifyFulfillmentStatus;
                         // Fulfillment Status = picking/packing workflow state.
-                        // For Shopify orders: use shopifyFulfillmentStatus directly.
-                        // For ERP-only orders: derive from order status.
+                        // If shopifyFulfillmentStatus is set (any order — Shopify or ERP),
+                        // use it directly. Otherwise derive from ERP order status.
+                        const fsMap: Record<string, { label: string; cls: string }> = {
+                          fulfilled:   { label: "Fulfilled",   cls: "bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40" },
+                          in_progress: { label: "In Progress", cls: "bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/40" },
+                          on_hold:     { label: "On Hold",     cls: "bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40" },
+                          partial:     { label: "Partial",     cls: "bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40" },
+                          unfulfilled: { label: "Unfulfilled", cls: "bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700" },
+                          scheduled:   { label: "Scheduled",   cls: "bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700" },
+                        };
                         let badge: { label: string; cls: string } | null = null;
-                        if (order.shopifyOrderId) {
-                          const fsMap: Record<string, { label: string; cls: string }> = {
-                            fulfilled:   { label: "Fulfilled",   cls: "bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40" },
-                            in_progress: { label: "In Progress", cls: "bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/40" },
-                            on_hold:     { label: "On Hold",     cls: "bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40" },
-                            partial:     { label: "Partial",     cls: "bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40" },
-                            unfulfilled: { label: "Unfulfilled", cls: "bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700" },
-                            scheduled:   { label: "Scheduled",   cls: "bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700" },
-                          };
-                          badge = fsMap[shopifyFs ?? "unfulfilled"] ?? { label: "Unfulfilled", cls: "bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700" };
-                          if (s === "cancelled" || s === "refunded") badge = null;
+                        if (s === "cancelled" || s === "refunded") {
+                          badge = null;
+                        } else if (shopifyFs) {
+                          badge = fsMap[shopifyFs] ?? { label: shopifyFs, cls: "bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700" };
                         } else {
                           if (s === "shipped" || s === "delivered") {
-                            badge = { label: "Fulfilled", cls: "bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40" };
+                            badge = fsMap.fulfilled;
                           } else if (s === "partially_shipped") {
-                            badge = { label: "Partial", cls: "bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40" };
-                          } else if (s === "cancelled" || s === "refunded") {
-                            badge = null;
+                            badge = fsMap.partial;
                           } else {
-                            badge = { label: "Unfulfilled", cls: "bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700" };
+                            badge = fsMap.unfulfilled;
                           }
                         }
                         return badge ? (
@@ -641,9 +639,6 @@ export default function SalesOrders() {
                       {(() => {
                         const s = order.status;
                         // Delivery Status = physical delivery state derived from ERP order status.
-                        // Pending → order placed but not yet shipped
-                        // Shipped → at least partially shipped
-                        // Delivered → carrier confirmed delivery
                         const deliveryMap: Record<string, { label: string; cls: string } | null> = {
                           delivered:        { label: "Delivered",         cls: "bg-green-50 text-green-700 border-green-300 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800/40" },
                           shipped:          { label: "Shipped",           cls: "bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/40" },
@@ -655,21 +650,25 @@ export default function SalesOrders() {
                         const entry = Object.prototype.hasOwnProperty.call(deliveryMap, s)
                           ? deliveryMap[s]
                           : { label: "Pending", cls: "bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700" };
-                        return entry ? (
-                          <Badge variant="outline" className={`text-[11px] font-medium ${entry.cls}`} data-testid={`badge-so-delivery-${order.id}`}>
-                            {entry.label}
-                          </Badge>
-                        ) : (
-                          <span className="text-muted-foreground text-xs">—</span>
+                        const awb = (order as { latestShipmentAwb?: string | null }).latestShipmentAwb;
+                        const courier = (order as { latestShipmentCourier?: string | null }).latestShipmentCourier;
+                        return (
+                          <div className="flex flex-col gap-0.5">
+                            {entry ? (
+                              <Badge variant="outline" className={`text-[11px] font-medium w-fit ${entry.cls}`} data-testid={`badge-so-delivery-${order.id}`}>
+                                {entry.label}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">—</span>
+                            )}
+                            {awb && (
+                              <span className="text-[11px] text-muted-foreground truncate max-w-[160px]" title={awb}>
+                                {courier ? `${courier}: ` : ""}{awb}
+                              </span>
+                            )}
+                          </div>
                         );
                       })()}
-                    </TableCell>
-                    <TableCell>
-                      {order.deliveryMethod ? (
-                        <span className="text-sm">{order.deliveryMethod}</span>
-                      ) : (
-                        <span className="text-muted-foreground text-xs">—</span>
-                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       {canPay && (
@@ -696,7 +695,7 @@ export default function SalesOrders() {
               {(() => {
                 const totalAmt = orders.reduce((s, o) => s + Number(o.total ?? 0), 0);
                 const colsBefore = (showSelection ? 1 : 0) + 3;
-                const colsAfter = (overdueFilter ? 1 : 0) + 6;
+                const colsAfter = (overdueFilter ? 1 : 0) + 5;
                 return (
                   <TableRow className="border-t-2 font-semibold bg-muted/30">
                     <TableCell colSpan={colsBefore} className="text-muted-foreground text-sm">

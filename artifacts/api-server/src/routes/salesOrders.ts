@@ -198,6 +198,26 @@ router.get("/sales-orders", async (req, res, next) => {
         ORDER BY sh.created_at DESC
         LIMIT 1
       )`,
+      latestShipmentAwb: sql<string | null>`(
+        SELECT sh.awb
+        FROM shipments sh
+        WHERE sh.sales_order_id = ${salesOrdersTable.id}
+          AND sh.organization_id = ${salesOrdersTable.organizationId}
+          AND sh.status != 'cancelled'
+          AND sh.awb IS NOT NULL
+        ORDER BY sh.created_at DESC
+        LIMIT 1
+      )`,
+      latestShipmentCourier: sql<string | null>`(
+        SELECT sh.courier_name
+        FROM shipments sh
+        WHERE sh.sales_order_id = ${salesOrdersTable.id}
+          AND sh.organization_id = ${salesOrdersTable.organizationId}
+          AND sh.status != 'cancelled'
+          AND sh.courier_name IS NOT NULL
+        ORDER BY sh.created_at DESC
+        LIMIT 1
+      )`,
     };
 
     const serializeRow = (r: {
@@ -211,6 +231,8 @@ router.get("/sales-orders", async (req, res, next) => {
       cardPaid: string;
       itemCount: number;
       latestShipmentStatus: string | null;
+      latestShipmentAwb: string | null;
+      latestShipmentCourier: string | null;
     }) => ({
       ...serializeSalesOrder(
         r.order,
@@ -224,6 +246,8 @@ router.get("/sales-orders", async (req, res, next) => {
       cardPaid: Number(r.cardPaid),
       itemCount: Number(r.itemCount),
       latestShipmentStatus: r.latestShipmentStatus ?? null,
+      latestShipmentAwb: r.latestShipmentAwb ?? null,
+      latestShipmentCourier: r.latestShipmentCourier ?? null,
     });
 
     if (rawPage !== null && !Number.isNaN(rawPage)) {
@@ -1102,18 +1126,16 @@ router.patch("/sales-orders/:id/fulfillment-status", async (req, res, next) => {
       res.status(404).json({ error: "Not found" });
       return;
     }
-    if (!order.shopifyOrderId) {
-      res.status(400).json({ error: "Order is not linked to Shopify" });
-      return;
-    }
 
     await db
       .update(salesOrdersTable)
       .set({ shopifyFulfillmentStatus: status })
       .where(and(eq(salesOrdersTable.organizationId, t.organizationId), eq(salesOrdersTable.id, id)));
 
-    // Fire-and-forget push to Shopify Fulfillment Orders API
-    pushFulfillmentStatusToShopify(t.organizationId, id, status);
+    // Push to Shopify only when the order is linked (no-op for ERP-only orders)
+    if (order.shopifyOrderId) {
+      pushFulfillmentStatusToShopify(t.organizationId, id, status);
+    }
 
     const detail = await loadDetail(t.organizationId, id);
     res.json(detail);

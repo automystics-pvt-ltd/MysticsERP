@@ -837,8 +837,8 @@ export default function SalesOrderDetail() {
                     </DropdownMenuItem>
                   )}
                 </Can>
-                {order.shopifyOrderId &&
-                  !["fulfilled", "partial"].includes(order.shopifyFulfillmentStatus ?? "") && (
+                {!["fulfilled", "partial"].includes(order.shopifyFulfillmentStatus ?? "") &&
+                  !["cancelled", "refunded", "returned"].includes(order.status) && (
                   <>
                     <DropdownMenuSeparator />
                     {order.shopifyFulfillmentStatus !== "in_progress" && (
