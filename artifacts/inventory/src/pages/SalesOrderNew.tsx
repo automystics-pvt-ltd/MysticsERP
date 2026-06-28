@@ -139,7 +139,7 @@ export default function SalesOrderNew() {
           itemId: 0,
           quantity: 1,
           unitPrice: 0,
-          taxRate: 18,
+          taxRate: 5,
           discountPercent: 0,
           discountAmount: 0,
           description: "",
@@ -207,7 +207,7 @@ export default function SalesOrderNew() {
           itemId: 0,
           quantity: 1,
           unitPrice: 0,
-          taxRate: 18,
+          taxRate: 5,
           discountPercent: 0,
           discountAmount: 0,
           description: "",
@@ -228,7 +228,7 @@ export default function SalesOrderNew() {
     return 0;
   };
 
-  const taxMode = (org as any)?.taxMode ?? "exclusive";
+  const taxMode = (org as any)?.taxMode ?? "inclusive";
   const { subtotal, taxTotal } = watchLines.reduce(
     (acc, line) => {
       const gross = line.quantity * line.unitPrice;
@@ -577,9 +577,6 @@ export default function SalesOrderNew() {
                       <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground min-w-[200px]">
                         Item Name
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground w-[90px]">
-                        HSN/SAC
-                      </th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground w-[80px]">
                         QTY
                       </th>
@@ -737,13 +734,6 @@ export default function SalesOrderNew() {
                                 </div>
                               )}
                             </div>
-                          </td>
-
-                          {/* HSN/SAC — auto-filled from item master */}
-                          <td className="px-3 py-2">
-                            <span className="text-xs text-muted-foreground font-mono">
-                              {lineItem?.hsnCode ?? "—"}
-                            </span>
                           </td>
 
                           {/* QTY */}
