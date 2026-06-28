@@ -1,4 +1,12 @@
-import type { PaymentEntry, ReversalEntry, RefundEntry, TimelineEntry } from "@/types/salesOrder";
+import type { TimelineEntry } from "@/types/salesOrder";
+import {
+  apiPaymentBreakdownEntrySchema,
+  apiShipmentForReversalSchema,
+  apiRefundSchema,
+  mapPaymentToEntry,
+  mapShipmentToReversalEntry,
+  mapRefundToEntry,
+} from "@/types/salesOrder";
 import { useParams, Link, useLocation } from "wouter";
 import { useImageSrc } from "@/hooks/use-image-src";
 import { PageHeader } from "@/components/PageHeader";
@@ -1134,39 +1142,19 @@ export default function SalesOrderDetail() {
       {(() => {
         const MANUAL_MODES = new Set(["cash", "upi", "bank"]);
 
-        const paymentEntries: PaymentEntry[] = orderDetail.paymentBreakdown.map((p) => ({
-          kind: "payment" as const,
-          date: p.paymentDate ?? p.paymentDate ?? "",
-          paymentId: p.paymentId,
-          mode: p.mode,
-          referenceNumber: p.referenceNumber,
-          amount: p.amount,
-        }));
+        const paymentEntries = orderDetail.paymentBreakdown.map((p) =>
+          mapPaymentToEntry(apiPaymentBreakdownEntrySchema.parse(p)),
+        );
 
-        const reversalEntries: ReversalEntry[] = shipments
-          .filter((s) => s.status === "cancelled" && s.cancelledAt)
-          .map((s) => ({
-            kind: "reversal" as const,
-            date: s.cancelledAt!,
-            shipmentNumber: s.shipmentNumber,
-            warehouseName: order.warehouseName,
-            items: s.lines.map((l) => ({
-              itemName: l.itemName,
-              sku: l.sku,
-              quantity: l.quantity,
-            })),
-          }));
+        const reversalEntries = shipments.flatMap((s) => {
+          const parsed = apiShipmentForReversalSchema.parse(s);
+          const entry = mapShipmentToReversalEntry(parsed, order.warehouseName);
+          return entry ? [entry] : [];
+        });
 
-        const refundEntries: RefundEntry[] = (refundsQuery.data ?? []).map((r) => ({
-          kind: "refund" as const,
-          date: r.createdAt,
-          refundId: r.id,
-          refundNumber: r.refundNumber,
-          refundType: r.refundType,
-          amount: r.refundAmount,
-          reason: r.reason,
-          restockItems: r.restockItems,
-        }));
+        const refundEntries = (refundsQuery.data ?? []).map((r) =>
+          mapRefundToEntry(apiRefundSchema.parse(r)),
+        );
 
         const timelineEntries: TimelineEntry[] = [...paymentEntries, ...reversalEntries, ...refundEntries].sort(
           (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
