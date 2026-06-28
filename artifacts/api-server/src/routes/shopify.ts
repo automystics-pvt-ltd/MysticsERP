@@ -363,6 +363,33 @@ router.post("/shopify/connect-custom", async (req, res, next) => {
   }
 });
 
+router.post("/shopify/webhooks/sync", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const orgRows = await db
+      .select({
+        shopDomain: organizationsTable.shopifyShopDomain,
+        accessToken: organizationsTable.shopifyAccessToken,
+      })
+      .from(organizationsTable)
+      .where(eq(organizationsTable.id, t.organizationId))
+      .limit(1);
+    const org = orgRows[0];
+    if (!org?.shopDomain || !org.accessToken) {
+      res.status(400).json({ error: "Shopify not connected" });
+      return;
+    }
+    await registerWebhooks(org.shopDomain, org.accessToken);
+    await db
+      .update(organizationsTable)
+      .set({ shopifyWebhookRegisteredAt: new Date() })
+      .where(eq(organizationsTable.id, t.organizationId));
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post("/shopify/sync", async (req, res, next) => {
   try {
     const t = req.tenant!;

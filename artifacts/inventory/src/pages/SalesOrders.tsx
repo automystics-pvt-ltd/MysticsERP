@@ -377,6 +377,7 @@ export default function SalesOrders() {
               <TableHead>Fulfillment</TableHead>
               <TableHead className="text-right">Items</TableHead>
               <TableHead>Delivery Status</TableHead>
+              <TableHead>Delivery Method</TableHead>
               <TableHead className="w-[140px]"></TableHead>
             </TableRow>
           </TableHeader>
@@ -650,8 +651,6 @@ export default function SalesOrders() {
                         const entry = Object.prototype.hasOwnProperty.call(deliveryMap, s)
                           ? deliveryMap[s]
                           : { label: "Pending", cls: "bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700" };
-                        const awb = (order as { latestShipmentAwb?: string | null }).latestShipmentAwb;
-                        const courier = (order as { latestShipmentCourier?: string | null }).latestShipmentCourier;
                         return (
                           <div className="flex flex-col gap-0.5">
                             {entry ? (
@@ -661,9 +660,21 @@ export default function SalesOrders() {
                             ) : (
                               <span className="text-muted-foreground text-xs">—</span>
                             )}
+                          </div>
+                        );
+                      })()}
+                    </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const awb = (order as { latestShipmentAwb?: string | null }).latestShipmentAwb;
+                        const courier = (order as { latestShipmentCourier?: string | null }).latestShipmentCourier;
+                        if (!awb && !courier) return <span className="text-muted-foreground text-xs">—</span>;
+                        return (
+                          <div className="flex flex-col gap-0.5">
+                            {courier && <span className="text-xs font-medium">{courier}</span>}
                             {awb && (
                               <span className="text-[11px] text-muted-foreground truncate max-w-[160px]" title={awb}>
-                                {courier ? `${courier}: ` : ""}{awb}
+                                {awb}
                               </span>
                             )}
                           </div>
@@ -695,7 +706,7 @@ export default function SalesOrders() {
               {(() => {
                 const totalAmt = orders.reduce((s, o) => s + Number(o.total ?? 0), 0);
                 const colsBefore = (showSelection ? 1 : 0) + 3;
-                const colsAfter = (overdueFilter ? 1 : 0) + 5;
+                const colsAfter = (overdueFilter ? 1 : 0) + 6;
                 return (
                   <TableRow className="border-t-2 font-semibold bg-muted/30">
                     <TableCell colSpan={colsBefore} className="text-muted-foreground text-sm">

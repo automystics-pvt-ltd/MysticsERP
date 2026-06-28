@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request } from "express";
-import { and, eq, isNull, ne, notInArray } from "drizzle-orm";
+import { and, eq, isNull, isNotNull, ne, notInArray } from "drizzle-orm";
 import {
   db,
   customersTable,
@@ -29,6 +29,7 @@ import { generateUniqueBarcode } from "../lib/barcodeGen";
 import { importShopifyOrder } from "../lib/shopifyOrderImport";
 import { cancelOrderShipments, cancelShipmentCore } from "../lib/cancelShipment";
 import { pushStockToShopify } from "../lib/shopifyOutbound";
+import { nextOrderNumber } from "../lib/orderHelpers";
 import { deriveAndUpdateOrderStatus } from "./shipments";
 import { toNum, toStr } from "../lib/numeric";
 
@@ -268,11 +269,27 @@ router.post("/webhooks/shopify", async (req, res, next) => {
           // and release the corresponding ecommerce reservation.
           const touchedItemIds = new Set<number>();
           const fulfillments = (o.fulfillments ?? []) as Array<{
+            id?: number | null;
             line_items?: Array<{ variant_id?: number | null; quantity: number; origin_location?: { id?: number } }>;
             location_id?: number | null;
           }>;
 
           for (const fulfillment of fulfillments) {
+            // Guard: if fulfillments/create already created an ERP shipment for this
+            // Shopify fulfillment, skip its stock work to avoid double-decrement.
+            if (fulfillment.id != null) {
+              const [alreadyHandled] = await db
+                .select({ id: shipmentsTable.id })
+                .from(shipmentsTable) // org-scope-allow: orders/fulfilled webhook, org resolved from shop domain
+                .where(
+                  and(
+                    eq(shipmentsTable.organizationId, org.id),
+                    eq(shipmentsTable.shopifyFulfillmentId, String(fulfillment.id)),
+                  ),
+                )
+                .limit(1);
+              if (alreadyHandled) continue;
+            }
             const fulfillLocId = fulfillment.location_id != null ? String(fulfillment.location_id) : null;
             for (const li of (fulfillment.line_items ?? [])) {
               const qty = li.quantity;
@@ -1098,6 +1115,15 @@ router.post("/webhooks/shopify", async (req, res, next) => {
           tracking_company?: string | null;
           tracking_url?: string | null;
           tracking_urls?: string[];
+          /** Shopify fulfillment location */
+          location_id?: number | null;
+          /** Line items included in this fulfillment */
+          line_items?: Array<{
+            variant_id?: number | null;
+            sku?: string | null;
+            quantity: number;
+            origin_location?: { id?: number | null };
+          }>;
         };
         if (!f.order_id) break;
         const shopifyFulfillmentOrderId = String(f.order_id);
@@ -1117,46 +1143,64 @@ router.post("/webhooks/shopify", async (req, res, next) => {
         if (!erpOrder) break;
 
         // ── Store shopifyFulfillmentId on matching ERP shipment ───────────
-        // Link the Shopify fulfillment ID to an ERP shipment so cancel /
-        // tracking-update webhooks can find the right row. We look for the
-        // most recent active shipment for this order that isn't already
-        // linked to a different Shopify fulfillment — if outbound push ran
-        // first it will already be stamped and we update in place.
+        // Track whether an ERP shipment already covers this Shopify fulfillment.
+        // `erpShipmentFound = true` means we must NOT create a new one below.
+        let erpShipmentFound = false;
+
         if (inboundFulfillmentId) {
-          const [existingShipment] = await db
-            .select({ id: shipmentsTable.id, shopifyFulfillmentId: shipmentsTable.shopifyFulfillmentId })
+          // Fast-path idempotency: a shipment with this Shopify ID already exists
+          const [byFulId] = await db
+            .select({ id: shipmentsTable.id })
             .from(shipmentsTable)
             .where(
               and(
                 eq(shipmentsTable.organizationId, org.id),
-                eq(shipmentsTable.salesOrderId, erpOrder.id),
-                eq(shipmentsTable.status, "shipped"),
+                eq(shipmentsTable.shopifyFulfillmentId, inboundFulfillmentId),
               ),
             )
-            .orderBy(shipmentsTable.id)
             .limit(1);
 
-          if (existingShipment && !existingShipment.shopifyFulfillmentId) {
-            await db
-              .update(shipmentsTable)
-              .set({ shopifyFulfillmentId: inboundFulfillmentId })
+          if (byFulId) {
+            erpShipmentFound = true;
+          } else {
+            // Look for an ERP-created shipment that hasn't been linked yet
+            // (ERP fulfilled first, Shopify webhook arrives after)
+            const [unlinkedShipment] = await db
+              .select({ id: shipmentsTable.id })
+              .from(shipmentsTable)
               .where(
                 and(
                   eq(shipmentsTable.organizationId, org.id),
-                  eq(shipmentsTable.id, existingShipment.id),
+                  eq(shipmentsTable.salesOrderId, erpOrder.id),
+                  eq(shipmentsTable.status, "shipped"),
+                  isNull(shipmentsTable.shopifyFulfillmentId),
                 ),
-              );
-            // Stamp the matching ERP fulfillment record too.
-            await db
-              .update(fulfillmentsTable)
-              .set({ shopifyFulfillmentId: inboundFulfillmentId })
-              .where(
-                and(
-                  eq(fulfillmentsTable.organizationId, org.id),
-                  eq(fulfillmentsTable.salesOrderId, erpOrder.id),
-                  eq(fulfillmentsTable.status, "dispatched"),
-                ),
-              );
+              )
+              .orderBy(shipmentsTable.id)
+              .limit(1);
+
+            if (unlinkedShipment) {
+              erpShipmentFound = true;
+              await db
+                .update(shipmentsTable)
+                .set({ shopifyFulfillmentId: inboundFulfillmentId })
+                .where(
+                  and(
+                    eq(shipmentsTable.organizationId, org.id),
+                    eq(shipmentsTable.id, unlinkedShipment.id),
+                  ),
+                );
+              await db
+                .update(fulfillmentsTable)
+                .set({ shopifyFulfillmentId: inboundFulfillmentId })
+                .where(
+                  and(
+                    eq(fulfillmentsTable.organizationId, org.id),
+                    eq(fulfillmentsTable.salesOrderId, erpOrder.id),
+                    eq(fulfillmentsTable.status, "dispatched"),
+                  ),
+                );
+            }
           }
         }
 
@@ -1278,6 +1322,158 @@ router.post("/webhooks/shopify", async (req, res, next) => {
                 ),
               );
           }
+        }
+
+        // ── Create ERP shipment + stock history when Shopify fulfills directly ──
+        // When Shopify admin creates a fulfillment without going through ERP,
+        // we create an ERP shipment, a fulfillments record, and the corresponding
+        // stock movements (movementType="sale") so Stock History stays in sync.
+        // This only runs on fulfillments/create (not updates) to avoid duplicates.
+        if (
+          topic === "fulfillments/create" &&
+          !erpShipmentFound &&
+          inboundFulfillmentId &&
+          shopifyFulIsActive &&
+          f.line_items?.length
+        ) {
+          const fLocId = f.location_id != null ? String(f.location_id) : null;
+
+          // Resolve Shopify location → ERP warehouse
+          const whRows2 = await db
+            .select({ id: warehousesTable.id, shopifyLocationId: warehousesTable.shopifyLocationId })
+            .from(warehousesTable)
+            .where(
+              and(
+                eq(warehousesTable.organizationId, org.id),
+                isNotNull(warehousesTable.shopifyLocationId),
+              ),
+            );
+          const locToWh2 = new Map<string, number>();
+          for (const w of whRows2) if (w.shopifyLocationId) locToWh2.set(w.shopifyLocationId, w.id);
+          const fallbackWh2 = await getDefaultWarehouseId(org.id);
+          const mainWarehouseId = (fLocId && locToWh2.get(fLocId)) || fallbackWh2;
+
+          await db.transaction(async (tx) => {
+            // 1. Shipment row
+            const [newShipment] = await tx
+              .insert(shipmentsTable)
+              .values({
+                organizationId: org.id,
+                salesOrderId: erpOrder.id,
+                shipmentNumber: nextOrderNumber("SHIP"),
+                shipDate: new Date().toISOString().slice(0, 10),
+                status: "shipped",
+                shopifyFulfillmentId: inboundFulfillmentId,
+                ...(trackingNumber ? { awb: trackingNumber } : {}),
+                ...(trackingCompany ? { courierName: trackingCompany } : {}),
+                ...(trackingUrl ? { trackingUrl } : {}),
+              })
+              .returning();
+
+            // 2. ERP fulfillment record (mirrors the internal flow)
+            await tx
+              .insert(fulfillmentsTable)
+              .values({
+                organizationId: org.id,
+                salesOrderId: erpOrder.id,
+                shipmentId: newShipment.id,
+                fulfillmentNumber: nextOrderNumber("FULFIL"),
+                status: "dispatched",
+                warehouseId: mainWarehouseId,
+                shopifyFulfillmentId: inboundFulfillmentId,
+                ...(trackingNumber ? { awbNumber: trackingNumber } : {}),
+                ...(trackingCompany ? { courierName: trackingCompany } : {}),
+                ...(trackingUrl ? { trackingUrl } : {}),
+                dispatchedAt: new Date(),
+              });
+
+            // 3. Per line item: quantity_shipped + stock movement + stock decrement
+            for (const li of f.line_items!) {
+              const qty = li.quantity;
+              if (qty <= 0 || (!li.variant_id && !li.sku)) continue;
+
+              let erpItem: { id: number } | undefined;
+              if (li.variant_id) {
+                [erpItem] = await tx
+                  .select({ id: itemsTable.id })
+                  .from(itemsTable)
+                  .where(
+                    and(
+                      eq(itemsTable.organizationId, org.id),
+                      eq(itemsTable.shopifyVariantId, String(li.variant_id)),
+                    ),
+                  )
+                  .limit(1);
+              }
+              if (!erpItem && li.sku) {
+                [erpItem] = await tx
+                  .select({ id: itemsTable.id })
+                  .from(itemsTable)
+                  .where(and(eq(itemsTable.organizationId, org.id), eq(itemsTable.sku, li.sku)))
+                  .limit(1);
+              }
+              if (!erpItem) continue;
+
+              // Update quantity_shipped on the sales order line
+              const [soLine] = await tx
+                .select({ id: salesOrderLinesTable.id, quantityShipped: salesOrderLinesTable.quantityShipped })
+                .from(salesOrderLinesTable)
+                .where(
+                  and(
+                    eq(salesOrderLinesTable.salesOrderId, erpOrder.id),
+                    eq(salesOrderLinesTable.itemId, erpItem.id),
+                  ),
+                )
+                .limit(1);
+              if (soLine) {
+                await tx
+                  .update(salesOrderLinesTable)
+                  .set({ quantityShipped: toStr(toNum(soLine.quantityShipped ?? "0") + qty) })
+                  .where(eq(salesOrderLinesTable.id, soLine.id));
+              }
+
+              // Per-item warehouse (prefer origin_location, fall back to fulfillment location)
+              const liLocId = li.origin_location?.id != null ? String(li.origin_location.id) : null;
+              const itemWhId = (liLocId && locToWh2.get(liLocId)) || mainWarehouseId;
+
+              // Decrement physical stock
+              const [stockRow] = await tx
+                .select({ id: itemWarehouseStockTable.id, quantity: itemWarehouseStockTable.quantity })
+                .from(itemWarehouseStockTable) // org-scope-allow: fulfillments/create webhook, org resolved from shop domain
+                .where(
+                  and(
+                    eq(itemWarehouseStockTable.organizationId, org.id),
+                    eq(itemWarehouseStockTable.itemId, erpItem.id),
+                    eq(itemWarehouseStockTable.warehouseId, itemWhId),
+                  ),
+                )
+                .for("update")
+                .limit(1);
+              if (stockRow) {
+                await tx
+                  .update(itemWarehouseStockTable)
+                  .set({ quantity: toStr(Math.max(0, toNum(stockRow.quantity) - qty)) }) // org-scope-allow: fulfillments/create webhook, org resolved from shop domain
+                  .where(
+                    and(
+                      eq(itemWarehouseStockTable.id, stockRow.id),
+                      eq(itemWarehouseStockTable.organizationId, org.id),
+                    ),
+                  );
+              }
+
+              // Stock movement with sale/shipment types so Stock History shows it
+              await tx.insert(stockMovementsTable).values({
+                organizationId: org.id,
+                itemId: erpItem.id,
+                warehouseId: itemWhId,
+                movementType: "sale",
+                quantity: toStr(-qty),
+                referenceType: "shipment",
+                referenceId: newShipment.id,
+                notes: "Shopify fulfillment (inbound)",
+              });
+            }
+          });
         }
 
         // ── Sync log ──────────────────────────────────────────────────────
