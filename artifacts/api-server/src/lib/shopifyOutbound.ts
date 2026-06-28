@@ -1522,9 +1522,12 @@ async function pushFulfillmentStatusToShopifyAsync(
         await holdFulfillmentOrder(org.shopDomain, org.accessToken, fo.id);
       }
     } else {
-      // "in_progress" or "unfulfilled" — release any existing holds / scheduled states.
+      // "in_progress" or "unfulfilled" — release holds / move scheduled FOs to open.
+      // Only "on_hold" and "scheduled" can be moved via /open.json.
+      // Already-open FOs are already in the correct state — calling /open.json on
+      // them returns 422 and would abort the entire push with an error.
       const releasable = fulfillmentOrders.filter(
-        (fo) => ["on_hold", "scheduled", "open"].includes(fo.status),
+        (fo) => ["on_hold", "scheduled"].includes(fo.status),
       );
       for (const fo of releasable) {
         await openFulfillmentOrder(org.shopDomain, org.accessToken, fo.id);

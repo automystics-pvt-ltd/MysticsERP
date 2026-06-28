@@ -1646,6 +1646,34 @@ router.post("/webhooks/shopify", async (req, res, next) => {
         break;
       }
 
+      case "fulfillment_orders/in_progress": {
+        // A fulfillment service (or Shopify itself) marked the fulfillment order
+        // as in_progress — reflect this on the ERP order's shopifyFulfillmentStatus.
+        const foIp = body as { order_id?: number };
+        if (!foIp.order_id) break;
+        const [foIpRow] = await db
+          .select({ id: salesOrdersTable.id, shopifyFulfillmentStatus: salesOrdersTable.shopifyFulfillmentStatus })
+          .from(salesOrdersTable)
+          .where(
+            and(
+              eq(salesOrdersTable.organizationId, org.id),
+              eq(salesOrdersTable.shopifyOrderId, String(foIp.order_id)),
+            ),
+          )
+          .limit(1); // org-scope-allow: webhook — org resolved from verified shop domain
+        if (foIpRow && !["fulfilled", "on_hold"].includes(foIpRow.shopifyFulfillmentStatus ?? "")) {
+          await db
+            .update(salesOrdersTable)
+            .set({ shopifyFulfillmentStatus: "in_progress" })
+            .where(and(eq(salesOrdersTable.organizationId, org.id), eq(salesOrdersTable.id, foIpRow.id)));
+        }
+        await db
+          .update(organizationsTable)
+          .set({ shopifyLastWebhookAt: new Date() })
+          .where(eq(organizationsTable.id, org.id));
+        break;
+      }
+
       default:
         req.log?.info({ topic, shopDomain }, "Unhandled Shopify webhook topic");
     }
