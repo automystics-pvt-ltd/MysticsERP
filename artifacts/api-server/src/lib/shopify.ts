@@ -1157,6 +1157,59 @@ export async function updateShopifyOrderPaymentStatus(
   });
 }
 
+// ─── Fulfillment Orders API ───────────────────────────────────────────────────
+
+/**
+ * Fetch all fulfillment orders for a Shopify order.
+ * Returns the subset of fields we need (id + status).
+ */
+export async function fetchFulfillmentOrders(
+  shopDomain: string,
+  accessToken: string,
+  shopifyOrderId: string,
+): Promise<Array<{ id: number; status: string }>> {
+  const data = await shopifyGet<{
+    fulfillment_orders: Array<{ id: number; status: string }>;
+  }>(shopDomain, accessToken, `/orders/${shopifyOrderId}/fulfillment_orders.json`);
+  return data.fulfillment_orders ?? [];
+}
+
+/**
+ * Place a hold on a Shopify fulfillment order.
+ * The fulfillment_order status becomes "on_hold" and the parent order's
+ * fulfillment_status reflects "on_hold".
+ */
+export async function holdFulfillmentOrder(
+  shopDomain: string,
+  accessToken: string,
+  fulfillmentOrderId: number,
+  reasonNotes?: string,
+): Promise<void> {
+  await shopifyPost(
+    shopDomain,
+    accessToken,
+    `/fulfillment_orders/${fulfillmentOrderId}/hold.json`,
+    { fulfillment_hold: { reason: "other", reason_notes: reasonNotes ?? "Held via ERP" } },
+  );
+}
+
+/**
+ * Release a hold (or move from scheduled → open) on a Shopify fulfillment order.
+ * Moves status back to "open" / "in_progress" on Shopify.
+ */
+export async function openFulfillmentOrder(
+  shopDomain: string,
+  accessToken: string,
+  fulfillmentOrderId: number,
+): Promise<void> {
+  await shopifyPost(
+    shopDomain,
+    accessToken,
+    `/fulfillment_orders/${fulfillmentOrderId}/open.json`,
+    {},
+  );
+}
+
 /**
  * Update the `note` field on a Shopify order. Used to sync ERP order notes
  * back to Shopify when the operator edits them in the ERP.

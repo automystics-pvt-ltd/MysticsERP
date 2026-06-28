@@ -87,7 +87,7 @@ import { SendInvoiceDialog } from "@/components/SendInvoiceDialog";
 import { PaymentLinkCard } from "@/components/PaymentLinkCard";
 import { Can } from "@/components/Can";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Separator } from "@/components/ui/separator";
@@ -342,6 +342,33 @@ export default function SalesOrderDetail() {
       restock: boolean;
       lineWarehouseId: string;
     }>,
+  });
+
+  const fulfillmentStatusMutation = useMutation({
+    mutationFn: async (newStatus: string) => {
+      const res = await fetch(`/api/sales-orders/${orderId}/fulfillment-status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? "Failed to update fulfillment status");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getGetSalesOrderQueryKey(orderId) });
+      queryClient.invalidateQueries({ queryKey: getListSalesOrdersQueryKey() });
+      toast({ title: "Fulfillment status updated", description: "Shopify will reflect the change shortly." });
+    },
+    onError: (err: unknown) => {
+      toast({
+        title: "Could not update fulfillment status",
+        description: err instanceof Error ? err.message : "Please try again.",
+        variant: "destructive",
+      });
+    },
   });
 
   const updateShipmentMutation = useUpdateShipment({
@@ -804,6 +831,39 @@ export default function SalesOrderDetail() {
                     </DropdownMenuItem>
                   )}
                 </Can>
+                {order.shopifyOrderId &&
+                  !["fulfilled", "partial"].includes(order.shopifyFulfillmentStatus ?? "") && (
+                  <>
+                    <DropdownMenuSeparator />
+                    {order.shopifyFulfillmentStatus !== "in_progress" && (
+                      <DropdownMenuItem
+                        onClick={() => fulfillmentStatusMutation.mutate("in_progress")}
+                        disabled={fulfillmentStatusMutation.isPending}
+                        data-testid="btn-fulfillment-in-progress"
+                      >
+                        <Truck className="mr-2 h-4 w-4" /> Mark In Progress
+                      </DropdownMenuItem>
+                    )}
+                    {order.shopifyFulfillmentStatus !== "on_hold" && (
+                      <DropdownMenuItem
+                        onClick={() => fulfillmentStatusMutation.mutate("on_hold")}
+                        disabled={fulfillmentStatusMutation.isPending}
+                        data-testid="btn-fulfillment-on-hold"
+                      >
+                        <Package className="mr-2 h-4 w-4" /> Place On Hold
+                      </DropdownMenuItem>
+                    )}
+                    {order.shopifyFulfillmentStatus === "on_hold" && (
+                      <DropdownMenuItem
+                        onClick={() => fulfillmentStatusMutation.mutate("in_progress")}
+                        disabled={fulfillmentStatusMutation.isPending}
+                        data-testid="btn-fulfillment-release-hold"
+                      >
+                        <RotateCcw className="mr-2 h-4 w-4" /> Release Hold
+                      </DropdownMenuItem>
+                    )}
+                  </>
+                )}
                 {(RETURNABLE_SALES_STATUSES.includes(order.status) ||
                   (["draft", "confirmed"].includes(order.status) && canEditBillsForUser)) && (
                   <DropdownMenuSeparator />

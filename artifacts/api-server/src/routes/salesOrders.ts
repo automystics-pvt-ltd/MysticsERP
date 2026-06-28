@@ -28,7 +28,7 @@ import {
 } from "../lib/serializers";
 import { computeOrderTotals, nextOrderNumber } from "../lib/orderHelpers";
 import { toNum, toStr } from "../lib/numeric";
-import { pushOrderNotesToShopify, pushStockToShopify } from "../lib/shopifyOutbound";
+import { pushFulfillmentStatusToShopify, pushOrderNotesToShopify, pushStockToShopify } from "../lib/shopifyOutbound";
 import { loadShipmentsForOrder } from "./shipments";
 import { loadInvoiceForOrder } from "../lib/invoiceData";
 import { sendEmail, sendShippingConfirmationEmail, EmailNotConfiguredError } from "../lib/email";
@@ -1067,6 +1067,55 @@ router.patch("/sales-orders/:id/payment-meta", async (req, res, next) => {
     }
 
     const detail = await loadDetail(t.organizationId, updated.id);
+    res.json(detail);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * PATCH /sales-orders/:id/fulfillment-status
+ * Set the Shopify fulfillment status for a Shopify-linked order and push the
+ * change to Shopify via the Fulfillment Orders API. Allowed values:
+ * unfulfilled | in_progress | on_hold
+ * ("fulfilled" is always driven by the shipment flow, not set here.)
+ */
+router.patch("/sales-orders/:id/fulfillment-status", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const id = Number(req.params.id);
+    const { status } = (req.body ?? {}) as { status?: string };
+
+    const ALLOWED = ["unfulfilled", "in_progress", "on_hold"];
+    if (!status || !ALLOWED.includes(status)) {
+      res.status(400).json({ error: `status must be one of: ${ALLOWED.join(", ")}` });
+      return;
+    }
+
+    const [order] = await db
+      .select({ id: salesOrdersTable.id, shopifyOrderId: salesOrdersTable.shopifyOrderId })
+      .from(salesOrdersTable)
+      .where(and(eq(salesOrdersTable.id, id), eq(salesOrdersTable.organizationId, t.organizationId)))
+      .limit(1);
+
+    if (!order) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    if (!order.shopifyOrderId) {
+      res.status(400).json({ error: "Order is not linked to Shopify" });
+      return;
+    }
+
+    await db
+      .update(salesOrdersTable)
+      .set({ shopifyFulfillmentStatus: status })
+      .where(and(eq(salesOrdersTable.organizationId, t.organizationId), eq(salesOrdersTable.id, id)));
+
+    // Fire-and-forget push to Shopify Fulfillment Orders API
+    pushFulfillmentStatusToShopify(t.organizationId, id, status);
+
+    const detail = await loadDetail(t.organizationId, id);
     res.json(detail);
   } catch (err) {
     next(err);

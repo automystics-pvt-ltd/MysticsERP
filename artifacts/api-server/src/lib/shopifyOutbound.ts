@@ -19,6 +19,9 @@ import {
   createShopifyFulfillment,
   createShopifyProduct,
   createShopifyProductWithVariants,
+  fetchFulfillmentOrders,
+  holdFulfillmentOrder,
+  openFulfillmentOrder,
   setInventoryLevel,
   updateShopifyCustomer,
   updateShopifyFulfillmentTracking,
@@ -1348,6 +1351,104 @@ async function pushOrderNotesToShopifyAsync(orgId: number, salesOrderId: number)
       shopifyId: order.shopifyOrderId,
       erpId: String(salesOrderId),
       name: "notes",
+      errorMessage,
+      failureReason: classifyError(errorMessage),
+    });
+    throw err;
+  }
+}
+
+// ─── Fulfillment status push ──────────────────────────────────────────────────
+
+/**
+ * Fire-and-forget: push a fulfillment status change (in_progress / on_hold /
+ * unfulfilled) to Shopify via the Fulfillment Orders API. The `fulfilled`
+ * state is always managed by the normal shipment flow, not this helper.
+ */
+export function pushFulfillmentStatusToShopify(
+  orgId: number,
+  salesOrderId: number,
+  newStatus: string,
+): void {
+  pushFulfillmentStatusToShopifyAsync(orgId, salesOrderId, newStatus).catch((err) => {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err), orgId, salesOrderId, newStatus },
+      "Shopify outbound fulfillment status push failed",
+    );
+  });
+}
+
+async function pushFulfillmentStatusToShopifyAsync(
+  orgId: number,
+  salesOrderId: number,
+  newStatus: string,
+): Promise<void> {
+  const org = await fetchOrgCreds(orgId);
+  if (!org) return;
+
+  const [order] = await db
+    .select({ shopifyOrderId: salesOrdersTable.shopifyOrderId })
+    .from(salesOrdersTable)
+    .where(
+      and(
+        eq(salesOrdersTable.id, salesOrderId),
+        eq(salesOrdersTable.organizationId, orgId),
+      ),
+    )
+    .limit(1);
+
+  if (!order?.shopifyOrderId) return;
+
+  const fulfillmentOrders = await fetchFulfillmentOrders(
+    org.shopDomain,
+    org.accessToken,
+    order.shopifyOrderId,
+  );
+
+  if (fulfillmentOrders.length === 0) return;
+
+  try {
+    if (newStatus === "on_hold") {
+      // Place a hold on every fulfillment order that isn't already on_hold or fulfilled.
+      const holdable = fulfillmentOrders.filter(
+        (fo) => !["on_hold", "success", "cancelled", "incomplete"].includes(fo.status),
+      );
+      for (const fo of holdable) {
+        await holdFulfillmentOrder(org.shopDomain, org.accessToken, fo.id);
+      }
+    } else {
+      // "in_progress" or "unfulfilled" — release any existing holds / scheduled states.
+      const releasable = fulfillmentOrders.filter(
+        (fo) => ["on_hold", "scheduled", "open"].includes(fo.status),
+      );
+      for (const fo of releasable) {
+        await openFulfillmentOrder(org.shopDomain, org.accessToken, fo.id);
+      }
+    }
+
+    await db.insert(shopifySyncLogsTable).values({
+      organizationId: orgId,
+      direction: "outbound",
+      entity: "order",
+      action: "update",
+      status: "success",
+      shopifyId: order.shopifyOrderId,
+      erpId: String(salesOrderId),
+      name: `fulfillment_status:${newStatus}`,
+    });
+
+    logger.info({ orgId, salesOrderId, newStatus }, "Shopify fulfillment status synced");
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    await db.insert(shopifySyncLogsTable).values({
+      organizationId: orgId,
+      direction: "outbound",
+      entity: "order",
+      action: "update",
+      status: "error",
+      shopifyId: order.shopifyOrderId,
+      erpId: String(salesOrderId),
+      name: `fulfillment_status:${newStatus}`,
       errorMessage,
       failureReason: classifyError(errorMessage),
     });
