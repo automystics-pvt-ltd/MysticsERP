@@ -127,7 +127,7 @@ router.post("/webhooks/shopify", async (req, res, next) => {
         // status and fulfillment status from Shopify without re-importing.
         if (outcome === "duplicate") {
           const existingRows = await db
-            .select({ id: salesOrdersTable.id, status: salesOrdersTable.status })
+            .select({ id: salesOrdersTable.id, status: salesOrdersTable.status, shopifyFulfillmentStatus: salesOrdersTable.shopifyFulfillmentStatus })
             .from(salesOrdersTable)
             .where(
               and(
@@ -159,13 +159,29 @@ router.post("/webhooks/shopify", async (req, res, next) => {
             } else {
               // Normal sync — advance fulfillment status if not already past
               // it, and always update paymentStatus.
+              //
+              // Shopify sends null/"unfulfilled" for orders where ERP may have
+              // already set "in_progress" (picking underway). Never downgrade:
+              // only overwrite shopifyFulfillmentStatus when Shopify's value is
+              // at least as far along as the ERP's current value.
+              const FULFILLMENT_RANK: Record<string, number> = {
+                "unfulfilled": 0,
+                "on_hold": 0,
+                "in_progress": 1,
+                "partial": 2,
+                "fulfilled": 3,
+              };
+              const incomingFulfillmentStatus = mapShopifyFulfillmentStatus(o.fulfillment_status) ?? "unfulfilled";
+              const currentFulfillmentStatus = existing.shopifyFulfillmentStatus ?? "unfulfilled";
+              const incomingRank = FULFILLMENT_RANK[incomingFulfillmentStatus] ?? 0;
+              const currentRank = FULFILLMENT_RANK[currentFulfillmentStatus] ?? 0;
               const updates: Record<string, unknown> = {
                 paymentStatus: newPaymentStatus,
-                // Always store a non-null string so the UI can distinguish
-                // "unfulfilled" from "unknown". Shopify uses null for unfulfilled
-                // orders; we normalise that to "unfulfilled".
-                shopifyFulfillmentStatus: mapShopifyFulfillmentStatus(o.fulfillment_status) ?? "unfulfilled",
               };
+              // Only update fulfillment status if Shopify is equal or more advanced.
+              if (incomingRank >= currentRank) {
+                updates["shopifyFulfillmentStatus"] = incomingFulfillmentStatus;
+              }
               const TERMINAL = new Set([
                 "shipped", "delivered", "invoiced", "paid", "returned",
                 "refunded", "cancelled",

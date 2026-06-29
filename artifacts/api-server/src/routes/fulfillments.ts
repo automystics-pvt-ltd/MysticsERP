@@ -339,6 +339,22 @@ router.post("/sales-orders/:id/fulfillments", async (req, res, next) => {
         })),
       );
 
+      // Mark the ERP order as "in_progress" immediately so the Fulfillment
+      // Status column reflects picking has started. Only advance — never
+      // downgrade a status that's already further along.
+      const NON_ADVANCEABLE = ["on_hold", "in_progress", "partial", "fulfilled"];
+      if (!NON_ADVANCEABLE.includes(order.shopifyFulfillmentStatus ?? "")) {
+        await tx
+          .update(salesOrdersTable)
+          .set({ shopifyFulfillmentStatus: "in_progress" })
+          .where(
+            and(
+              eq(salesOrdersTable.id, orderId),
+              eq(salesOrdersTable.organizationId, t.organizationId),
+            ),
+          );
+      }
+
       return { kind: "ok" as const, fulfillmentId: fulfillment.id };
     });
 
