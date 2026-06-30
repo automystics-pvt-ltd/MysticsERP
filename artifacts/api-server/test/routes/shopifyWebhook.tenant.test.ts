@@ -53,6 +53,15 @@ vi.mock("../../src/lib/shopifyOrderImport", () => ({
   importShopifyOrder: importShopifyOrderMock,
 }));
 
+// The webhook route now enqueues jobs instead of processing synchronously.
+// Mock the queue so tests control when (and whether) processing runs.
+const { enqueueWebhookJobMock } = vi.hoisted(() => ({
+  enqueueWebhookJobMock: vi.fn(async () => undefined),
+}));
+vi.mock("../../src/lib/shopifyWebhookQueue", () => ({
+  enqueueWebhookJob: enqueueWebhookJobMock,
+}));
+
 vi.mock("../../src/lib/shopify", async () => {
   const actual = await vi.importActual<typeof import("../../src/lib/shopify")>(
     "../../src/lib/shopify",
@@ -63,7 +72,9 @@ vi.mock("../../src/lib/shopify", async () => {
   };
 });
 
-import shopifyWebhookRouter from "../../src/routes/shopifyWebhook";
+import shopifyWebhookRouter, {
+  processWebhookTopic,
+} from "../../src/routes/shopifyWebhook";
 
 const ORG_A = 1001;
 const ORG_B = 2002;
@@ -162,6 +173,7 @@ describe("shopify webhook cross-tenant isolation", () => {
   beforeEach(async () => {
     await memDb.reset();
     importShopifyOrderMock.mockClear();
+    enqueueWebhookJobMock.mockClear();
     a = await seedOrg("A", ORG_A, SHOP_A);
     b = await seedOrg("B", ORG_B, SHOP_B);
     app = buildApp();
@@ -245,9 +257,25 @@ describe("shopify webhook cross-tenant isolation", () => {
         .set("content-type", "application/json")
         .send(raw);
       expect(res.status).toBe(200);
+
+      // The webhook now enqueues async — verify the enqueued org id is
+      // ORG_B (shop domain determines org, not any id in the body).
+      expect(enqueueWebhookJobMock).toHaveBeenCalledTimes(1);
+      const [enqueuedOrgId, enqueuedTopic, enqueuedPayload] =
+        enqueueWebhookJobMock.mock.calls[0] as [
+          number,
+          string,
+          Record<string, unknown>,
+          string | null,
+        ];
+      expect(enqueuedOrgId).toBe(ORG_B);
+      expect(enqueuedTopic).toBe("orders/create");
+
+      // Simulate the worker draining the queue — processing must call
+      // the importer with ORG_B, never ORG_A even though body refs SKU-A.
+      await processWebhookTopic(enqueuedOrgId, enqueuedTopic, enqueuedPayload);
+
       expect(importShopifyOrderMock).toHaveBeenCalledTimes(1);
-      // First arg is the orgId; it must be ORG_B (matching the shop
-      // domain), never ORG_A even though the body referenced "SKU-A".
       const callArgs = importShopifyOrderMock.mock.calls[0] as unknown[];
       expect(callArgs[0]).toBe(ORG_B);
       expect(callArgs[1]).toBe(b.warehouseId);
@@ -305,6 +333,18 @@ describe("shopify webhook cross-tenant isolation", () => {
         .set("content-type", "application/json")
         .send(raw);
       expect(res.status).toBe(200);
+
+      // Enqueued with ORG_B — simulate the worker processing it.
+      expect(enqueueWebhookJobMock).toHaveBeenCalledTimes(1);
+      const [enqueuedOrgId, enqueuedTopic, enqueuedPayload] =
+        enqueueWebhookJobMock.mock.calls[0] as [
+          number,
+          string,
+          Record<string, unknown>,
+          string | null,
+        ];
+      expect(enqueuedOrgId).toBe(ORG_B);
+      await processWebhookTopic(enqueuedOrgId, enqueuedTopic, enqueuedPayload);
 
       const aOrg = (await memDb
         .rowsOf(tables.organizationsTable.__table))
