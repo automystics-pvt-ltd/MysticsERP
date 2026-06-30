@@ -7,6 +7,12 @@ import {
   startBulkBatchPruneScheduler,
 } from "./routes/einvoice";
 import { reconcileOrphanedImportJobs } from "./lib/shopifyImportJobs";
+import {
+  reconcileOrphanedWebhookJobs,
+  startWebhookWorker,
+  pruneOldWebhookJobs,
+} from "./lib/shopifyWebhookQueue";
+import { processWebhookTopic } from "./routes/shopifyWebhook";
 import { cleanupOrphanedArchivedStock } from "./lib/stockCleanup";
 
 const rawPort = process.env["PORT"];
@@ -59,6 +65,26 @@ const server = app.listen(port, (err) => {
   void reconcileOrphanedImportJobs().catch((err) => {
     logger.error({ err }, "shopify: import job recovery failed");
   });
+
+  // Reset any webhook queue jobs that were "processing" when the previous
+  // process exited (crash, deploy, restart) — they will be retried by the
+  // worker that starts immediately after.
+  void reconcileOrphanedWebhookJobs().catch((err) => {
+    logger.error({ err }, "shopify: webhook job recovery failed");
+  });
+
+  // Start the background worker that drains the shopify_webhook_jobs queue.
+  // Pass processWebhookTopic here (rather than importing it inside the queue
+  // module) so there is no circular dependency.
+  startWebhookWorker(processWebhookTopic);
+
+  // Prune done jobs older than 24 h every hour so the table stays small.
+  const pruneTimer = setInterval(() => {
+    void pruneOldWebhookJobs().catch((err) =>
+      logger.warn({ err }, "shopify: webhook job prune failed"),
+    );
+  }, 60 * 60 * 1000);
+  pruneTimer.unref?.();
 
   // Zero out item_warehouse_stock rows that still have a non-zero quantity
   // for archived (soft-deleted) items — orphans from deletes that happened

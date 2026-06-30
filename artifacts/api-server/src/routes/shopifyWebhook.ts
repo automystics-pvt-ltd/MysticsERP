@@ -32,6 +32,8 @@ import { pushStockToShopify } from "../lib/shopifyOutbound";
 import { nextOrderNumber } from "../lib/orderHelpers";
 import { deriveAndUpdateOrderStatus } from "./shipments";
 import { toNum, toStr } from "../lib/numeric";
+import { logger } from "../lib/logger";
+import { enqueueWebhookJob } from "../lib/shopifyWebhookQueue";
 
 const router: IRouter = Router();
 
@@ -75,7 +77,7 @@ router.post("/webhooks/shopify", async (req, res, next) => {
       : verifyWebhookSignature(raw, signature);
 
     if (!hmacOk) {
-      req.log?.warn(
+      logger.warn(
         { topic, shopDomain },
         "Shopify webhook signature verification failed",
       );
@@ -85,7 +87,7 @@ router.post("/webhooks/shopify", async (req, res, next) => {
 
     if (!org) {
       // Unknown shop — accept (so Shopify stops retrying) but no-op.
-      req.log?.info({ topic, shopDomain }, "Webhook for unknown shop; ignoring");
+      logger.info({ topic, shopDomain }, "Webhook for unknown shop; ignoring");
       res.json({ ok: true, ignored: "unknown_shop" });
       return;
     }
@@ -113,7 +115,43 @@ router.post("/webhooks/shopify", async (req, res, next) => {
 
     const body = req.body as Record<string, unknown>;
 
-    switch (topic) {
+    // Return HTTP 200 to Shopify immediately — never process synchronously
+    // inside the webhook handler. Synchronous processing was the root cause
+    // of ~63% webhook delivery failures (exceeded Shopify's 5-second timeout).
+    await enqueueWebhookJob(org.id, topic, body, webhookId || null);
+    res.json({ ok: true });
+    return;
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Process a single webhook topic payload. Called by the background queue
+ * worker (lib/shopifyWebhookQueue.ts) — never called synchronously from the
+ * route handler. Re-fetches org by id so credentials are always fresh
+ * regardless of how long the job waited in the queue.
+ *
+ * Exported so the worker can import it without a circular dependency:
+ *   shopifyWebhook → shopifyWebhookQueue → (no import back to webhook)
+ *   index.ts wires them: startWebhookWorker(processWebhookTopic)
+ */
+export async function processWebhookTopic(
+  orgId: number,
+  topic: string,
+  body: Record<string, unknown>,
+): Promise<void> {
+  const orgRows = await db
+    .select()
+    .from(organizationsTable)
+    .where(eq(organizationsTable.id, orgId))
+    .limit(1); // org-scope-allow: webhook processor — org re-fetched by PK for background job
+  const org = orgRows[0];
+  if (!org) return; // org deleted between enqueue and processing
+
+  const shopDomain = org.shopifyShopDomain ?? "unknown";
+
+  switch (topic) {
       case "orders/create":
       case "orders/updated": {
         const o = body as unknown as ShopifyOrder;
@@ -658,7 +696,7 @@ router.post("/webhooks/shopify", async (req, res, next) => {
           // dropped when the warehouse-location mapping hasn't been
           // configured yet (e.g. freshly connected orgs).
           warehouseId = await getDefaultWarehouseId(org.id);
-          req.log?.info(
+          logger.info(
             { topic, shopDomain, locationId, fallbackWarehouseId: warehouseId },
             "inventory_levels/update for unmapped Shopify location; routing to default warehouse",
           );
@@ -942,7 +980,7 @@ router.post("/webhooks/shopify", async (req, res, next) => {
             }
           }
         } catch (err) {
-          req.log?.warn(
+          logger.warn(
             { err: err instanceof Error ? err.message : String(err) },
             `${topic} refresh failed`,
           );
@@ -987,13 +1025,13 @@ router.post("/webhooks/shopify", async (req, res, next) => {
                   eq(itemsTable.id, itemId),
                 ),
               );
-            req.log?.info(
+            logger.info(
               { orgId: org.id, itemId, shopifyProductId: deletedProductId },
               "products/delete: archived local item",
             );
           }
         } catch (err) {
-          req.log?.warn(
+          logger.warn(
             { err: err instanceof Error ? err.message : String(err) },
             "products/delete handler failed",
           );
@@ -1073,7 +1111,7 @@ router.post("/webhooks/shopify", async (req, res, next) => {
         } catch (err) {
           syncStatus = "error";
           errMsg = err instanceof Error ? err.message : String(err);
-          req.log?.warn({ err: errMsg, shopifyCustomerId, orgId: org.id }, "Shopify customer webhook failed");
+          logger.warn({ err: errMsg, shopifyCustomerId, orgId: org.id }, "Shopify customer webhook failed");
         }
 
         await db.insert(shopifySyncLogsTable).values({
@@ -1698,13 +1736,8 @@ router.post("/webhooks/shopify", async (req, res, next) => {
       }
 
       default:
-        req.log?.info({ topic, shopDomain }, "Unhandled Shopify webhook topic");
+        logger.info({ topic, shopDomain }, "Unhandled Shopify webhook topic");
     }
-
-    res.json({ ok: true });
-  } catch (err) {
-    next(err);
-  }
-});
+}
 
 export default router;
