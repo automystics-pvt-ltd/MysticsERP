@@ -25,12 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { BarcodeScannerDialog } from "@/components/BarcodeScannerDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -286,86 +281,6 @@ function variantLabel(opts: Item["variantOptions"]): string {
 
 const WAREHOUSE_FILTER_KEY = "items.warehouseFilter";
 
-/**
- * Render the Warehouse cell for an item row. When a specific warehouse
- * is picked the cell just shows that warehouse's name; under the "all
- * warehouses" view it shows the warehouse holding the most stock plus
- * a "+N more" badge with a hover breakdown when stock is split. Items
- * with no warehouse assignment render as "—".
- */
-function WarehouseCell({
-  item,
-  scopedWarehouseName,
-  testId,
-}: {
-  item: Item;
-  scopedWarehouseName: string | null;
-  testId: string;
-}) {
-  if (scopedWarehouseName) {
-    return (
-      <span data-testid={testId} className="text-sm">
-        {scopedWarehouseName}
-      </span>
-    );
-  }
-  const breakdown = item.warehouseStock ?? [];
-  if (breakdown.length === 0) {
-    return (
-      <span data-testid={testId} className="text-muted-foreground">
-        —
-      </span>
-    );
-  }
-  // Sort by quantity desc (warehouses with stock first) then by name for
-  // a deterministic tie-break.
-  const sorted = [...breakdown].sort(
-    (a, b) =>
-      b.quantity - a.quantity ||
-      a.warehouseName.localeCompare(b.warehouseName),
-  );
-  const top = sorted[0];
-  const others = sorted.slice(1);
-  return (
-    <div className="flex items-center gap-1.5" data-testid={testId}>
-      <span className="text-sm">
-        {top.warehouseName}
-        <span className="ml-1 text-xs text-muted-foreground font-mono">
-          ({top.quantity} {item.unit})
-        </span>
-      </span>
-      {others.length > 0 && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Badge
-              variant="outline"
-              className="cursor-default font-normal"
-              data-testid={`${testId}-more`}
-            >
-              +{others.length} more
-            </Badge>
-          </TooltipTrigger>
-          <TooltipContent side="top" align="start">
-            <div className="space-y-1 text-xs">
-              {sorted.map((w) => (
-                <div
-                  key={w.warehouseId}
-                  className="flex items-center justify-between gap-3"
-                >
-                  <span>{w.warehouseName}</span>
-                  <span className="font-mono">
-                    {w.quantity} {item.unit}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </TooltipContent>
-        </Tooltip>
-      )}
-    </div>
-  );
-}
-
 export default function Items() {
   const { data: me } = useGetMe();
   const { data: org } = useGetCurrentOrganization();
@@ -521,6 +436,7 @@ export default function Items() {
       }),
     placeholderData: (prev) => prev,
     staleTime: STALE_LIST,
+    refetchOnWindowFocus: true,
   });
   const pagedTopLevel = itemsPage?.items ?? [];
   const scopedWarehouseName =
@@ -1398,8 +1314,9 @@ export default function Items() {
               <TableHead>Name</TableHead>
               <TableHead>Category</TableHead>
               <TableHead className="text-right">Price</TableHead>
-              <TableHead>Warehouse</TableHead>
-              <TableHead className="text-right">Stock</TableHead>
+              {visibleWarehouses.map((wh) => (
+                <TableHead key={wh.id} className="text-right">{wh.name}</TableHead>
+              ))}
               <TableHead className="w-[50px]"></TableHead>
             </TableRow>
           </TableHeader>
@@ -1407,7 +1324,7 @@ export default function Items() {
             {isLoading ? (
               Array.from({ length: 8 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 10 }).map((__, j) => (
+                  {Array.from({ length: 8 + visibleWarehouses.length }).map((__, j) => (
                     <TableCell key={j}>
                       <Skeleton className="h-4 w-full" />
                     </TableCell>
@@ -1416,7 +1333,7 @@ export default function Items() {
               ))
             ) : (itemsPage?.total ?? 0) === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
+                <TableCell colSpan={8 + visibleWarehouses.length} className="h-32 text-center text-muted-foreground">
                   {search || categoryFilter || brandFilter || stockFilter !== "all" || warehouseFilter !== "all" || priceMin || priceMax
                     ? "No items match the current filters."
                     : "No items yet. Click \"Add Item\" to create your first product."}
@@ -1512,60 +1429,31 @@ export default function Items() {
                         formatCurrency(parent.salePrice)
                       )}
                     </TableCell>
-                    <TableCell>
-                      <WarehouseCell
-                        item={isParent ? (() => {
-                          // Aggregate child variant warehouse data into a
-                          // synthetic breakdown so the parent row shows
-                          // the same warehouse info as its children.
-                          const variants = variantsByParent[parent.id] ?? [];
-                          const byWh = new Map<number, { warehouseId: number; warehouseName: string; quantity: number; isVirtual: boolean }>();
-                          for (const v of variants) {
-                            for (const w of v.warehouseStock ?? []) {
-                              const existing = byWh.get(w.warehouseId);
-                              if (existing) {
-                                existing.quantity += w.quantity;
-                              } else {
-                                byWh.set(w.warehouseId, { ...w });
-                              }
-                            }
-                          }
-                          return { ...parent, warehouseStock: Array.from(byWh.values()) };
-                        })() : parent}
-                        scopedWarehouseName={scopedWarehouseName}
-                        testId={`text-warehouse-${parent.id}`}
-                      />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {isParent ? (
-                        <span className="text-muted-foreground">—</span>
-                      ) : (
-                        (() => {
-                          const qty =
-                            warehouseFilter === "all"
-                              ? parent.totalStock
-                              : parent.stockAtWarehouse ?? 0;
-                          return (
+                    {visibleWarehouses.map((wh) => {
+                      const qty = isParent
+                        ? 0
+                        : (parent.warehouseStock ?? []).find((w) => w.warehouseId === wh.id)?.quantity ?? 0;
+                      return (
+                        <TableCell key={wh.id} className="text-right">
+                          {isParent ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : (
                             <Badge
                               variant={
                                 qty <= 0 || (parent.reorderLevel > 0 && qty <= parent.reorderLevel)
                                   ? "destructive"
                                   : "secondary"
                               }
-                              title={
-                                parent.isBundle
-                                  ? "Derived from component stock"
-                                  : undefined
-                              }
-                              data-testid={`text-stock-${parent.id}`}
+                              title={parent.isBundle ? "Derived from component stock" : undefined}
+                              data-testid={`text-wh-stock-${parent.id}-${wh.id}`}
                             >
                               {qty} {parent.unit}
                               {parent.isBundle ? " (derived)" : ""}
                             </Badge>
-                          );
-                        })()
-                      )}
-                    </TableCell>
+                          )}
+                        </TableCell>
+                      );
+                    })}
                     <TableCell>
                       <Can module="items" action="edit">
                         <DropdownMenu>
@@ -1660,33 +1548,23 @@ export default function Items() {
                         <TableCell className="text-right">
                           {formatCurrency(v.salePrice)}
                         </TableCell>
-                        <TableCell>
-                          <WarehouseCell
-                            item={v}
-                            scopedWarehouseName={scopedWarehouseName}
-                            testId={`text-warehouse-${v.id}`}
-                          />
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {(() => {
-                            const qty =
-                              warehouseFilter === "all"
-                                ? v.totalStock
-                                : v.stockAtWarehouse ?? 0;
-                            return (
+                        {visibleWarehouses.map((wh) => {
+                          const qty = (v.warehouseStock ?? []).find((w) => w.warehouseId === wh.id)?.quantity ?? 0;
+                          return (
+                            <TableCell key={wh.id} className="text-right">
                               <Badge
                                 variant={
                                   qty <= 0 || (v.reorderLevel > 0 && qty <= v.reorderLevel)
                                     ? "destructive"
                                     : "secondary"
                                 }
-                                data-testid={`text-stock-${v.id}`}
+                                data-testid={`text-wh-stock-${v.id}-${wh.id}`}
                               >
                                 {qty} {v.unit}
                               </Badge>
-                            );
-                          })()}
-                        </TableCell>
+                            </TableCell>
+                          );
+                        })}
                         <TableCell>
                           <Can module="items" action="edit">
                             <DropdownMenu>

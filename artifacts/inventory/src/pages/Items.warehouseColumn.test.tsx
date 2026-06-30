@@ -1,8 +1,9 @@
-// Coverage for the Warehouse picker + Warehouse column on the Items
-// page (added in Task #24). The picker defaults to "All warehouses",
-// switching to a specific warehouse renders that warehouse name in
-// every row's Warehouse cell, and the cross-warehouse "+N more" badge
-// shows up only when an item's stock is split across warehouses.
+// Coverage for the Warehouse picker + per-warehouse Stock columns on
+// the Items page. The picker defaults to "All warehouses" and each
+// non-virtual warehouse gets its own column. Every row shows stock qty
+// for that warehouse (0 when absent). Switching the picker to a
+// specific warehouse filters which items appear; the per-warehouse
+// columns themselves always show all-warehouse stock.
 
 import * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,7 +12,7 @@ import {
   render,
   screen,
   fireEvent,
-  within,
+  waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Router } from "wouter";
@@ -45,8 +46,6 @@ if (
   (globalThis as unknown as { PointerEvent: unknown }).PointerEvent =
     PointerEventStub;
 }
-// hasPointerCapture is also referenced by radix Select; jsdom hasn't
-// implemented it. A no-op shim keeps the open/close machinery happy.
 if (
   typeof (Element.prototype as unknown as { hasPointerCapture?: unknown })
     .hasPointerCapture === "undefined"
@@ -135,9 +134,8 @@ function makeItem(overrides: Partial<Item>): Item {
   };
 }
 
-// Two items: ITEM_SPLIT lives in two real warehouses (so the
-// "+1 more" badge should appear in the All-warehouses view), and
-// ITEM_SINGLE only lives in the main warehouse.
+// Two items: ITEM_SPLIT has stock in both real warehouses;
+// ITEM_SINGLE only has stock in Main Warehouse.
 const ITEM_SPLIT = makeItem({
   id: 101,
   sku: "SKU-SPLIT",
@@ -145,16 +143,8 @@ const ITEM_SPLIT = makeItem({
   totalStock: 12,
   stockAtWarehouse: 10,
   warehouseStock: [
-    {
-      warehouseId: WH_MAIN.id,
-      warehouseName: WH_MAIN.name,
-      quantity: 10,
-    },
-    {
-      warehouseId: WH_NORTH.id,
-      warehouseName: WH_NORTH.name,
-      quantity: 2,
-    },
+    { warehouseId: WH_MAIN.id, warehouseName: WH_MAIN.name, quantity: 10 },
+    { warehouseId: WH_NORTH.id, warehouseName: WH_NORTH.name, quantity: 2 },
   ],
 });
 const ITEM_SINGLE = makeItem({
@@ -164,48 +154,48 @@ const ITEM_SINGLE = makeItem({
   totalStock: 5,
   stockAtWarehouse: 5,
   warehouseStock: [
-    {
-      warehouseId: WH_MAIN.id,
-      warehouseName: WH_MAIN.name,
-      quantity: 5,
-    },
+    { warehouseId: WH_MAIN.id, warehouseName: WH_MAIN.name, quantity: 5 },
   ],
 });
 
-let lastListItemsParams: Record<string, unknown> | undefined;
+let lastFetchItemsParams: Record<string, unknown> | undefined;
 let warehouses: Warehouse[] = [WH_MAIN, WH_NORTH, WH_VIRTUAL];
 
-vi.mock("@/lib/queryKeys", () => {
+vi.mock(import("@/lib/queryKeys"), async (importOriginal) => {
+  const actual = await importOriginal();
   return {
-    useListItems: (params?: Record<string, unknown>) => {
-      // The page calls useListItems twice — once with options for the
-      // table, and a second {} call to seed category/unit dropdowns.
-      // We only care about the first (option-bearing) call.
-      if (params && Object.keys(params).length > 0) {
-        lastListItemsParams = params;
-      }
-      const data =
-        params?.warehouseId !== undefined
-          ? // Picker scoped to a specific warehouse: only items present
-            // there. Replace warehouseStock with the scoped slice.
-            [ITEM_SPLIT, ITEM_SINGLE].map((it) => {
-              const wid = params!.warehouseId as number;
-              const cell = (it.warehouseStock ?? []).find(
-                (w) => w.warehouseId === wid,
-              );
-              return {
-                ...it,
-                stockAtWarehouse: cell?.quantity ?? 0,
-                warehouseStock: cell ? [cell] : [],
-              };
-            })
-          : [ITEM_SPLIT, ITEM_SINGLE];
-      return { data, isLoading: false };
-    },
+    ...actual,
+    useGetMe: () => ({ data: { id: "user_1", name: "Test User" }, isLoading: false }),
+    useGetCurrentOrganization: () => ({
+      data: { id: 1, name: "Test Org", skuMode: "manual" },
+      isLoading: false,
+    }),
+    bulkMoveWarehouse: vi.fn().mockResolvedValue(undefined),
+    useListItems: () => ({ data: [ITEM_SPLIT, ITEM_SINGLE], isLoading: false }),
     useListWarehouses: () => ({ data: warehouses, isLoading: false }),
     useCreateItem: () => ({ mutate: vi.fn(), isPending: false }),
     useUpdateItem: () => ({ mutate: vi.fn(), isPending: false }),
     useDeleteItem: () => ({ mutate: vi.fn(), isPending: false }),
+    getListItemsQueryKey: () => ["items"],
+    getItem: vi.fn(),
+    lookupItemByCode: vi.fn(),
+    fetchItemsPaginated: (params?: Record<string, unknown>) => {
+      if (params && Object.keys(params).length > 0) {
+        lastFetchItemsParams = { ...params };
+      }
+      const items =
+        params?.warehouseId !== undefined
+          ? [ITEM_SPLIT, ITEM_SINGLE].filter((it) =>
+              (it.warehouseStock ?? []).some(
+                (w) => w.warehouseId === params!.warehouseId,
+              ),
+            )
+          : [ITEM_SPLIT, ITEM_SINGLE];
+      return Promise.resolve({ items, total: items.length, page: 1, pageSize: 15 });
+    },
+    fetchItemsFacets: () =>
+      Promise.resolve({ categories: [], brands: [], units: [] }),
+    fetchItemVariants: () => Promise.resolve([]),
   };
 });
 
@@ -218,19 +208,12 @@ vi.mock("@/hooks/use-focus-param", () => ({
   useNewParam: () => ({ shouldOpenNew: false, clear: () => {} }),
 }));
 
-// The bulk import / barcode scanner / debounce dialogs are not on the
-// happy path of the warehouse-picker behaviour we're testing; stub
-// them out to avoid pulling in their own heavy dep trees.
 vi.mock("@/components/BulkImportItemsDialog", () => ({
   BulkImportItemsDialog: () => null,
 }));
 vi.mock("@/components/BarcodeScannerDialog", () => ({
   BarcodeScannerDialog: () => null,
 }));
-// ImageUploader pulls in @workspace/object-storage-web → uppy → a
-// JSX runtime resolution that vitest can't satisfy in this monorepo
-// layout. Stub the component out — it's only reachable through the
-// edit sheet, which we don't open in these tests.
 vi.mock("@/components/ImageUploader", () => ({
   ImageUploader: () => null,
 }));
@@ -255,100 +238,110 @@ function renderItems() {
 
 beforeEach(() => {
   window.localStorage.clear();
-  lastListItemsParams = undefined;
+  lastFetchItemsParams = undefined;
   warehouses = [WH_MAIN, WH_NORTH, WH_VIRTUAL];
 });
 afterEach(() => cleanup());
 
-describe("Items page Warehouse column", () => {
-  it("defaults the picker to 'All warehouses' and shows the breakdown", () => {
+describe("Items page per-warehouse stock columns", () => {
+  it("shows one column header per non-virtual warehouse", async () => {
     renderItems();
 
-    // Picker shows the "All warehouses" placeholder by default.
+    await screen.findByText("Main Warehouse");
+    await screen.findByText("North Depot");
+
+    // Virtual warehouses must not appear as column headers
+    expect(screen.queryByText("Job Worker Co")).toBeNull();
+  });
+
+  it("default view shows per-warehouse stock quantities", async () => {
+    renderItems();
+
+    // Picker shows "All warehouses" by default
     const trigger = screen.getByTestId("select-items-warehouse");
     expect(trigger.textContent ?? "").toMatch(/all warehouses/i);
 
-    // The split item shows its top warehouse + a "+1 more" badge.
-    const splitCell = screen.getByTestId(`text-warehouse-${ITEM_SPLIT.id}`);
-    expect(splitCell.textContent ?? "").toContain("Main Warehouse");
-    const moreBadge = screen.getByTestId(`text-warehouse-${ITEM_SPLIT.id}-more`);
-    expect(moreBadge.textContent ?? "").toContain("+1 more");
+    // ITEM_SPLIT: Main Warehouse = 10, North Depot = 2
+    const splitMain = await screen.findByTestId(
+      `text-wh-stock-${ITEM_SPLIT.id}-${WH_MAIN.id}`,
+    );
+    expect(splitMain.textContent ?? "").toContain("10");
 
-    // The single-warehouse item shows just its warehouse with no
-    // "+N more" badge alongside it.
-    const singleCell = screen.getByTestId(`text-warehouse-${ITEM_SINGLE.id}`);
-    expect(singleCell.textContent ?? "").toContain("Main Warehouse");
-    expect(
-      screen.queryByTestId(`text-warehouse-${ITEM_SINGLE.id}-more`),
-    ).toBeNull();
+    const splitNorth = screen.getByTestId(
+      `text-wh-stock-${ITEM_SPLIT.id}-${WH_NORTH.id}`,
+    );
+    expect(splitNorth.textContent ?? "").toContain("2");
 
-    // Stock cells render the per-item totalStock under "all".
-    expect(
-      screen.getByTestId(`text-stock-${ITEM_SPLIT.id}`).textContent ?? "",
-    ).toContain("12");
-    expect(
-      screen.getByTestId(`text-stock-${ITEM_SINGLE.id}`).textContent ?? "",
-    ).toContain("5");
+    // ITEM_SINGLE: Main Warehouse = 5, North Depot = 0
+    const singleMain = screen.getByTestId(
+      `text-wh-stock-${ITEM_SINGLE.id}-${WH_MAIN.id}`,
+    );
+    expect(singleMain.textContent ?? "").toContain("5");
 
-    // Sanity: the request actually asked for the breakdown and did NOT
-    // pin a warehouseId.
-    expect(lastListItemsParams?.includeWarehouseBreakdown).toBe(true);
-    expect(lastListItemsParams?.warehouseId).toBeUndefined();
+    const singleNorth = screen.getByTestId(
+      `text-wh-stock-${ITEM_SINGLE.id}-${WH_NORTH.id}`,
+    );
+    expect(singleNorth.textContent ?? "").toContain("0");
+
+    // The query was called without a warehouseId pin
+    expect(lastFetchItemsParams?.warehouseId).toBeUndefined();
+    expect(lastFetchItemsParams?.includeWarehouseBreakdown).toBe(true);
   });
 
-  it("switching to a specific warehouse renders that warehouse name in each cell and scopes the stock cell", () => {
+  it("zero stock for a warehouse renders as '0 ea'", async () => {
     renderItems();
 
-    // Open the picker and pick "North Depot".
+    const singleNorth = await screen.findByTestId(
+      `text-wh-stock-${ITEM_SINGLE.id}-${WH_NORTH.id}`,
+    );
+    expect(singleNorth.textContent ?? "").toBe("0 ea");
+  });
+
+  it("switching warehouse picker filters items and the list query carries the warehouseId", async () => {
+    renderItems();
+
+    // Wait for rows to appear before interacting
+    await screen.findByTestId(`text-wh-stock-${ITEM_SPLIT.id}-${WH_MAIN.id}`);
+
+    // Open the picker and pick "North Depot"
     fireEvent.click(screen.getByTestId("select-items-warehouse"));
     const option = screen.getByRole("option", { name: "North Depot" });
     fireEvent.click(option);
 
-    // Picker now reflects the chosen warehouse.
-    expect(
-      screen.getByTestId("select-items-warehouse").textContent ?? "",
-    ).toContain("North Depot");
+    // Picker now reflects the chosen warehouse
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("select-items-warehouse").textContent ?? "",
+      ).toContain("North Depot"),
+    );
 
-    // Both items now show "North Depot" in the Warehouse cell. Even
-    // for the single-warehouse item (which has no stock there in the
-    // fixture), the picker has scoped the column so the warehouse
-    // name is what gets rendered.
-    expect(
-      screen.getByTestId(`text-warehouse-${ITEM_SPLIT.id}`).textContent ?? "",
-    ).toContain("North Depot");
-    expect(
-      screen.getByTestId(`text-warehouse-${ITEM_SINGLE.id}`).textContent ?? "",
-    ).toContain("North Depot");
-
-    // No "+N more" badge in the scoped view — we're already pinned
-    // to a single warehouse.
-    expect(
-      screen.queryByTestId(`text-warehouse-${ITEM_SPLIT.id}-more`),
-    ).toBeNull();
-
-    // Stock cell now shows the per-warehouse stock, not the total.
-    // ITEM_SPLIT has 2 in North Depot; ITEM_SINGLE has 0 there.
-    expect(
-      screen.getByTestId(`text-stock-${ITEM_SPLIT.id}`).textContent ?? "",
-    ).toContain("2 ea");
-    expect(
-      screen.getByTestId(`text-stock-${ITEM_SINGLE.id}`).textContent ?? "",
-    ).toContain("0 ea");
-
-    // The list query was actually asked for the picked warehouse.
-    expect(lastListItemsParams?.warehouseId).toBe(WH_NORTH.id);
-    expect(lastListItemsParams?.includeWarehouseBreakdown).toBe(true);
+    // The list query was called with the picked warehouse id
+    await waitFor(() =>
+      expect(lastFetchItemsParams?.warehouseId).toBe(WH_NORTH.id),
+    );
+    expect(lastFetchItemsParams?.includeWarehouseBreakdown).toBe(true);
   });
 
   it("the picker hides virtual job-worker warehouses from its options", () => {
     renderItems();
 
     fireEvent.click(screen.getByTestId("select-items-warehouse"));
-    // Real warehouses appear; the virtual one does not.
     expect(screen.getByRole("option", { name: "Main Warehouse" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "North Depot" })).toBeTruthy();
     expect(
       screen.queryByRole("option", { name: "Job Worker Co" }),
+    ).toBeNull();
+  });
+
+  it("hides the warehouse picker when there is only one warehouse", async () => {
+    warehouses = [WH_MAIN];
+    renderItems();
+
+    await screen.findByTestId(
+      `text-wh-stock-${ITEM_SPLIT.id}-${WH_MAIN.id}`,
+    );
+    expect(
+      screen.queryByTestId("select-items-warehouse"),
     ).toBeNull();
   });
 });
