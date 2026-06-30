@@ -165,7 +165,7 @@ export const MODULE_APPLICABLE_ACTIONS: Record<Module, readonly Action[]> = {
   write_offs:        ["view", "create"],
   sales_orders:      ["view", "create", "edit", "delete", "approve", "export", "print"],
   customers:         ["view", "create", "edit", "delete", "import", "export"],
-  pos:               ["view", "create", "edit", "settings"],
+  pos:               ["view", "create", "edit", "approve", "settings"],
   payments:          ["view", "create", "edit", "delete", "export", "print"],
   purchase_orders:   ["view", "create", "edit", "delete", "approve", "export", "print"],
   suppliers:         ["view", "create", "edit", "delete", "import", "export"],
@@ -209,7 +209,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, Set<PermissionKey>> = {
     // Sales
     ...perms("sales_orders", ["view", "create", "edit", "delete", "approve", "export", "print"]),
     ...perms("customers", ["view", "create", "edit", "delete", "import", "export"]),
-    ...perms("pos", ["view", "create", "edit", "settings"]),
+    ...perms("pos", ["view", "create", "edit", "approve", "settings"]),
     ...perms("payments", ["view", "create", "edit", "print"]),
     // Purchasing
     ...perms("purchase_orders", ["view", "create", "edit", "delete", "approve", "export", "print"]),
@@ -250,7 +250,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, Set<PermissionKey>> = {
     ...perms("barcodes", ["view"]),
     ...perms("sales_orders", ["view", "create", "edit", "export", "print"]),
     ...perms("customers", ["view", "create", "edit", "export"]),
-    ...perms("pos", ["view", "create", "edit"]),
+    ...perms("pos", ["view", "create", "edit", "approve"]),
     ...perms("approvals", ["view"]),
     ...perms("reports", ["view"]),
   ]),
@@ -390,7 +390,11 @@ export const ROUTE_POLICIES: readonly RoutePolicy[] = [
   { methods: WRITE_METHODS, pattern: /^\/role-permissions(\/|$)/, module: "roles", action: "settings" },
   { methods: ANY_METHOD,    pattern: /^\/role-permissions(\/|$)/, module: "roles", action: "view" },
 
-  // POS — writes need create, reads need view
+  // POS session day-closing actions — approve/reject/reopen need pos.approve (manager+).
+  // These must appear BEFORE the general /pos/ catch-all so they match first.
+  { methods: WRITE_METHODS, pattern: /^\/pos\/sessions\/[^/]+\/(approve|reject|reopen)(\/|$)/, module: "pos", action: "approve" },
+
+  // POS — other writes need create, reads need view
   { methods: WRITE_METHODS, pattern: /^\/pos(\/|$)/, module: "pos", action: "create" },
   { methods: ANY_METHOD,    pattern: /^\/pos(\/|$)/, module: "pos", action: "view" },
 

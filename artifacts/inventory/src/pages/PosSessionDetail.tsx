@@ -405,7 +405,7 @@ export default function PosSessionDetail() {
   const { data: me } = useGetMe();
 
   const isManager = ["owner", "admin", "manager"].includes(me?.role ?? "");
-  const isApprover = ["owner", "admin"].includes(me?.role ?? "");
+  const isApprover = isManager;
 
   const { data: session, isLoading } = useQuery({
     queryKey: ["pos-session", sessionId],

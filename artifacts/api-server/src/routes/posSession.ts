@@ -738,11 +738,11 @@ router.post("/pos/sessions/:id/submit", async (req, res, next) => {
   }
 });
 
-// Approve session (owner/admin only) — accepts optional remarks
+// Approve session (manager+) — accepts optional remarks
 router.post("/pos/sessions/:id/approve", async (req, res, next) => {
   try {
     const t = req.tenant!;
-    if (!requireOwnerOrAdmin(req, res)) return;
+    if (!requireManagerOrUp(req, res)) return;
     const sessionId = Number(req.params.id);
 
     const [session] = await db
@@ -795,11 +795,11 @@ router.post("/pos/sessions/:id/approve", async (req, res, next) => {
   }
 });
 
-// Reject session (owner/admin only) — pending_approval → rejected (stays rejected until cashier resubmits)
+// Reject session (manager+) — pending_approval → rejected (stays rejected until cashier resubmits)
 router.post("/pos/sessions/:id/reject", async (req, res, next) => {
   try {
     const t = req.tenant!;
-    if (!requireOwnerOrAdmin(req, res)) return;
+    if (!requireManagerOrUp(req, res)) return;
     const sessionId = Number(req.params.id);
 
     const [session] = await db
@@ -902,11 +902,11 @@ router.post("/pos/sessions/:id/resubmit", async (req, res, next) => {
   }
 });
 
-// Reopen approved session (manager+) — reverses approval for correction
+// Reopen approved/rejected session (manager+) — reverses approval for correction
 router.post("/pos/sessions/:id/reopen", async (req, res, next) => {
   try {
     const t = req.tenant!;
-    if (!requireOwnerOrAdmin(req, res)) return;
+    if (!requireManagerOrUp(req, res)) return;
     const sessionId = Number(req.params.id);
 
     const [session] = await db
