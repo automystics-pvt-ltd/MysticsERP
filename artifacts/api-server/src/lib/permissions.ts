@@ -106,7 +106,7 @@ export const MODULE_LABELS: Record<Module, string> = {
   write_offs: "Write-offs",
   sales_orders: "Sales Orders",
   customers: "Customers",
-  pos: "Point of Sale",
+  pos: "POS & Day Closing",
   payments: "Customer Payments",
   purchase_orders: "Purchase Orders",
   suppliers: "Suppliers",
