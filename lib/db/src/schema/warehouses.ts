@@ -38,6 +38,7 @@ export const warehousesTable = pgTable(
       .$onUpdate(() => new Date()),
   },
   (t) => ({
+    orgName: uniqueIndex("warehouses_org_name_idx").on(t.organizationId, t.name),
     orgCode: uniqueIndex("warehouses_org_code_idx").on(t.organizationId, t.code),
     orgShopifyLoc: uniqueIndex("warehouses_org_shopify_location_idx")
       .on(t.organizationId, t.shopifyLocationId)

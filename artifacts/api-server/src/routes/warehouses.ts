@@ -71,7 +71,25 @@ router.post("/warehouses", async (req, res, next) => {
         .returning();
     });
     res.status(201).json(serializeWarehouse(inserted[0]!));
-  } catch (err) {
+  } catch (err: unknown) {
+    const code =
+      typeof err === "object" && err !== null && "code" in err
+        ? (err as { code?: unknown }).code
+        : undefined;
+    const constraint =
+      typeof err === "object" && err !== null && "constraint" in err
+        ? (err as { constraint?: unknown }).constraint
+        : undefined;
+    if (code === "23505") {
+      if (constraint === "warehouses_org_name_idx") {
+        res.status(400).json({ error: "A warehouse with that name already exists" });
+        return;
+      }
+      if (constraint === "warehouses_org_code_idx") {
+        res.status(400).json({ error: "A warehouse with that code already exists" });
+        return;
+      }
+    }
     next(err);
   }
 });
@@ -428,14 +446,25 @@ router.patch("/warehouses/:id", async (req, res, next) => {
         )
         .returning();
     } catch (err: unknown) {
-      // Postgres unique_violation (23505) on warehouses_org_shopify_location_idx:
-      // a concurrent request claimed this Shopify location first. Translate
-      // to a deterministic 400 instead of leaking a 500.
+      // Translate Postgres unique_violation (23505) into deterministic 400s.
       const code =
         typeof err === "object" && err !== null && "code" in err
           ? (err as { code?: unknown }).code
           : undefined;
+      const constraint =
+        typeof err === "object" && err !== null && "constraint" in err
+          ? (err as { constraint?: unknown }).constraint
+          : undefined;
       if (code === "23505") {
+        if (constraint === "warehouses_org_name_idx") {
+          res.status(400).json({ error: "A warehouse with that name already exists" });
+          return;
+        }
+        if (constraint === "warehouses_org_code_idx") {
+          res.status(400).json({ error: "A warehouse with that code already exists" });
+          return;
+        }
+        // warehouses_org_shopify_location_idx or any future index
         res.status(400).json({
           error: "Another warehouse is already mapped to that Shopify location",
         });
