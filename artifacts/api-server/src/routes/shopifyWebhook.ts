@@ -861,11 +861,18 @@ router.post("/webhooks/shopify", async (req, res, next) => {
                 ? `${baseTitle} — ${variantLabel}`
                 : fresh.title;
 
-              const commonFields = {
+              // Fields applied when UPDATING an existing ERP item from Shopify.
+              // salePrice is intentionally excluded: the ERP is the system of
+              // record for pricing. Overwriting it here creates a race condition
+              // where a products/update webhook that arrives while an outbound
+              // price push is in-flight reverts the user's ERP price back to the
+              // old Shopify value (ERP writes ₹150 → push lands on Shopify →
+              // webhook fires with ₹100 still cached → ERP reverts to ₹100 →
+              // mismatch). Price changes always flow ERP → Shopify, never back.
+              const updateFields = {
                 name: variantName,
                 description: fresh.body_html,
                 category: fresh.product_type,
-                salePrice: variant.price ?? "0",
                 // Only overwrite barcode if Shopify has a non-empty value —
                 // never wipe an ERP barcode when Shopify has none. Also track
                 // the source so the UI knows this barcode is Shopify-managed.
@@ -883,10 +890,10 @@ router.post("/webhooks/shopify", async (req, res, next) => {
 
               const existingId = matchRows[0]?.id;
               if (existingId) {
-                // Update the existing ERP item.
+                // Update the existing ERP item — price excluded (see above).
                 await db
                   .update(itemsTable)
-                  .set(commonFields)
+                  .set(updateFields)
                   .where(
                     and(
                       eq(itemsTable.organizationId, org.id),
