@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation, Redirect } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useCanI } from "@/hooks/usePermissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,6 +24,7 @@ export default function PosSessionNew() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const qc = useQueryClient();
+  const canCreate = useCanI("pos", "create");
 
   const [warehouseId, setWarehouseId] = useState("");
   const [counterId, setCounterId] = useState("");
@@ -51,6 +53,8 @@ export default function PosSessionNew() {
     onError: (e: { data?: { error?: string } }) =>
       toast({ title: "Error", description: e.data?.error ?? "Please try again.", variant: "destructive" }),
   });
+
+  if (canCreate === false) return <Redirect to="/pos/sessions" />;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

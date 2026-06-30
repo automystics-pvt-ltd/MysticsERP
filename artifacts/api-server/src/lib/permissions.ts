@@ -250,7 +250,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, Set<PermissionKey>> = {
     ...perms("barcodes", ["view"]),
     ...perms("sales_orders", ["view", "create", "edit", "export", "print"]),
     ...perms("customers", ["view", "create", "edit", "export"]),
-    ...perms("pos", ["view", "create", "edit", "approve"]),
+    ...perms("pos", ["view", "create", "edit"]),
     ...perms("approvals", ["view"]),
     ...perms("reports", ["view"]),
   ]),

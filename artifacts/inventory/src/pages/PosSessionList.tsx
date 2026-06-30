@@ -25,6 +25,7 @@ import { useListWarehouses } from "@/lib/queryKeys";
 import { listSessions, listCounters, type PosSession } from "@/lib/posSessionApi";
 import { useListFilters } from "@/hooks/use-list-filters";
 import { FilterBar } from "@/components/FilterBar";
+import { useCanI } from "@/hooks/usePermissions";
 
 const STATUS_LABELS: Record<string, string> = {
   open: "Open",
@@ -91,6 +92,8 @@ function StatCard({
 const PAGE_SIZE_OPTIONS = [15, 25, 50, 100];
 
 export default function PosSessionList() {
+  const canCreate = useCanI("pos", "create");
+
   const { values, set, reset, debouncedSearch } = useListFilters({
     search: "",
     status: "all",
@@ -144,12 +147,14 @@ export default function PosSessionList() {
             Manage cashier sessions and end-of-day cash reconciliation
           </p>
         </div>
-        <Link href="/pos/sessions/new">
-          <Button>
-            <Plus className="h-4 w-4 mr-2" />
-            Open Session
-          </Button>
-        </Link>
+        {canCreate && (
+          <Link href="/pos/sessions/new">
+            <Button>
+              <Plus className="h-4 w-4 mr-2" />
+              Open Session
+            </Button>
+          </Link>
+        )}
       </div>
 
       {/* Summary stats */}

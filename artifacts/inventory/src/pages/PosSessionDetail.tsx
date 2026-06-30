@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useGetMe } from "@/lib/queryKeys";
+import { useCanI } from "@/hooks/usePermissions";
 import {
   getSession,
   getSessionReport,
@@ -406,6 +407,8 @@ export default function PosSessionDetail() {
 
   const isManager = ["owner", "admin", "manager"].includes(me?.role ?? "");
   const isApprover = isManager;
+  const canCreate = useCanI("pos", "create");
+  const canApprove = useCanI("pos", "approve");
 
   const { data: session, isLoading } = useQuery({
     queryKey: ["pos-session", sessionId],
@@ -563,6 +566,8 @@ export default function PosSessionDetail() {
   const isPendingApproval = session.status === "pending_approval";
   const isApproved = session.status === "approved";
   const isRejected = session.status === "rejected";
+  const isCashier = session.cashierId === me?.user.id;
+  const canActOnSession = canCreate && (isCashier || isManager);
 
   const durationMs = session.closedAt
     ? new Date(session.closedAt).getTime() - new Date(session.openedAt).getTime()
@@ -599,19 +604,19 @@ export default function PosSessionDetail() {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {isOpen && (
+          {isOpen && canActOnSession && (
             <Button variant="outline" onClick={() => setShowExpense(true)}>
               <Plus className="h-4 w-4 mr-2" />
               Add Expense
             </Button>
           )}
-          {isOpen && (
+          {isOpen && canActOnSession && (
             <Button onClick={() => setShowClose(true)}>
               <Lock className="h-4 w-4 mr-2" />
               Close Session
             </Button>
           )}
-          {isClosed && (
+          {isClosed && canActOnSession && (
             <Button
               onClick={() => submitMut.mutate()}
               disabled={submitMut.isPending}
@@ -620,7 +625,7 @@ export default function PosSessionDetail() {
               {submitMut.isPending ? "Submitting…" : "Submit for Approval"}
             </Button>
           )}
-          {isPendingApproval && isApprover && (
+          {isPendingApproval && isApprover && canApprove && (
             <>
               <Button
                 variant="outline"
@@ -636,7 +641,7 @@ export default function PosSessionDetail() {
               </Button>
             </>
           )}
-          {isRejected && (
+          {isRejected && canActOnSession && (
             <Button
               variant="outline"
               onClick={() => resubmitMut.mutate()}
@@ -646,7 +651,7 @@ export default function PosSessionDetail() {
               {resubmitMut.isPending ? "Resubmitting…" : "Resubmit for Approval"}
             </Button>
           )}
-          {isRejected && isApprover && (
+          {isRejected && isApprover && canApprove && (
             <Button
               variant="outline"
               className="text-muted-foreground"
@@ -656,7 +661,7 @@ export default function PosSessionDetail() {
               Reopen
             </Button>
           )}
-          {isApproved && isApprover && (
+          {isApproved && isApprover && canApprove && (
             <Button
               variant="outline"
               className="text-muted-foreground"
