@@ -99,6 +99,7 @@ import {
   Download,
   Eye,
   ChevronRight,
+  ChevronLeft,
   Bell,
   AlertTriangle,
   Plus,
@@ -1328,6 +1329,8 @@ function PreSyncDialog({
 
 // ─── Drill-down Sheet ─────────────────────────────────────────────────────────
 
+const DRILLDOWN_PAGE_SIZE = 50;
+
 function DrilldownSheet({
   jobId,
   status,
@@ -1337,87 +1340,255 @@ function DrilldownSheet({
   status: string | null;
   onClose: () => void;
 }) {
-  const { data, isLoading } = useQuery<{ items: SyncLog[]; total: number }>({
-    queryKey: ["shopify-drilldown", jobId, status],
+  const [page, setPage] = useState(0);
+  const [reasonFilter, setReasonFilter] = useState("all");
+  const [search, setSearch] = useState("");
+
+  // Reset page & filters when the drilldown target changes
+  useEffect(() => {
+    setPage(0);
+    setReasonFilter("all");
+    setSearch("");
+  }, [jobId, status]);
+
+  const params = useMemo(() => {
+    const p = new URLSearchParams({
+      limit: String(DRILLDOWN_PAGE_SIZE),
+      offset: String(page * DRILLDOWN_PAGE_SIZE),
+    });
+    if (status) p.set("status", status);
+    if (reasonFilter !== "all") p.set("failureReason", reasonFilter);
+    if (search.trim()) p.set("search", search.trim());
+    return p.toString();
+  }, [status, page, reasonFilter, search]);
+
+  const { data, isLoading, isFetching } = useQuery<{ items: SyncLog[]; total: number }>({
+    queryKey: ["shopify-drilldown", jobId, params],
     queryFn: async () => {
       if (!jobId || !status) return { items: [], total: 0 };
-      const r = await fetch(`/api/shopify/product-sync-job/${jobId}/items?status=${status}&limit=100`);
+      const r = await fetch(`/api/shopify/product-sync-job/${jobId}/items?${params}`);
       if (!r.ok) throw new Error("Failed to load items");
       return r.json();
     },
     enabled: !!jobId && !!status,
+    placeholderData: (prev) => prev,
   });
 
-  const title = status ? ({
-    failed: "Failed Items",
-    skipped: "Skipped Items",
-    created: "Created Items",
-    updated: "Updated Items",
-    missing: "Missing Items",
-  }[status] ?? status) : "";
+  const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / DRILLDOWN_PAGE_SIZE));
+  const from = total === 0 ? 0 : page * DRILLDOWN_PAGE_SIZE + 1;
+  const to = Math.min((page + 1) * DRILLDOWN_PAGE_SIZE, total);
 
-  const titleColor = status === "failed" ? "text-destructive" : status === "skipped" ? "text-amber-600" : status === "created" ? "text-green-600" : status === "updated" ? "text-blue-600" : "";
+  const STATUS_META: Record<string, { label: string; icon: React.ReactNode; color: string; badgeCls: string }> = {
+    failed:  { label: "Failed Items",  icon: <XCircle className="h-4 w-4" />,       color: "text-destructive",                    badgeCls: "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400" },
+    skipped: { label: "Skipped Items", icon: <SkipForward className="h-4 w-4" />,   color: "text-amber-600 dark:text-amber-400",  badgeCls: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400" },
+    created: { label: "Created Items", icon: <CheckCircle2 className="h-4 w-4" />,  color: "text-green-600 dark:text-green-400",  badgeCls: "bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400" },
+    updated: { label: "Updated Items", icon: <RefreshCw className="h-4 w-4" />,     color: "text-blue-600 dark:text-blue-400",    badgeCls: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400" },
+    missing: { label: "Missing Items", icon: <AlertCircle className="h-4 w-4" />,   color: "text-orange-600 dark:text-orange-400", badgeCls: "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/20 dark:text-orange-400" },
+  };
+  const meta = status ? (STATUS_META[status] ?? { label: status, icon: <AlertCircle className="h-4 w-4" />, color: "", badgeCls: "" }) : STATUS_META.failed;
+
+  const showReasonFilter = status === "failed" || status === "skipped";
+  const hasFilters = reasonFilter !== "all" || search.trim() !== "";
+  const resetFilters = () => { setReasonFilter("all"); setSearch(""); setPage(0); };
 
   return (
     <Sheet open={!!status} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent side="right" className="w-full sm:max-w-2xl flex flex-col">
-        <SheetHeader className="mb-4 flex-shrink-0">
-          <SheetTitle className={cn("flex items-center gap-2 text-base", titleColor)}>
-            <AlertCircle className="h-4 w-4" />
-            {title}
-          </SheetTitle>
-          <SheetDescription>
-            {isLoading ? "Loading…" : `${data?.total ?? 0} item${(data?.total ?? 0) !== 1 ? "s" : ""} — most recent 100 shown`}
-          </SheetDescription>
-        </SheetHeader>
+      <SheetContent
+        side="right"
+        className="w-full sm:max-w-3xl flex flex-col bg-white p-0 gap-0"
+      >
+        {/* ── Header ───────────────────────────────────────────────── */}
+        <div className="flex-shrink-0 border-b bg-white px-6 pt-6 pb-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className={cn("flex items-center gap-2 font-semibold text-base", meta.color)}>
+                {meta.icon}
+                {meta.label}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {isLoading
+                  ? "Loading…"
+                  : total === 0
+                    ? "No items found"
+                    : `${total.toLocaleString()} item${total !== 1 ? "s" : ""} total`
+                }
+              </p>
+            </div>
+            <Badge variant="outline" className={cn("text-xs px-2.5 py-1 flex-shrink-0 mt-0.5", meta.badgeCls)}>
+              {total.toLocaleString()} {meta.label}
+            </Badge>
+          </div>
 
-        {isLoading ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="flex items-center gap-3 text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin" />
-              <span className="text-sm">Loading items…</span>
+          {/* Filters */}
+          <div className="flex gap-2 mt-4 flex-wrap items-center">
+            <div className="relative flex-1 min-w-[180px]">
+              <Package className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Search product name or SKU…"
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+                className="h-8 pl-8 text-xs bg-white"
+              />
             </div>
+            {showReasonFilter && (
+              <Select value={reasonFilter} onValueChange={(v) => { setReasonFilter(v); setPage(0); }}>
+                <SelectTrigger className="h-8 w-44 text-xs bg-white">
+                  <SelectValue placeholder="All reasons" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All reasons</SelectItem>
+                  {Object.entries(FAILURE_REASON_LABELS).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {hasFilters && (
+              <button
+                onClick={resetFilters}
+                className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors whitespace-nowrap"
+              >
+                Clear filters
+              </button>
+            )}
           </div>
-        ) : !data?.items.length ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <PackageX className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground">No items found.</p>
+        </div>
+
+        {/* ── Table body ───────────────────────────────────────────── */}
+        <div className="flex-1 overflow-auto bg-white">
+          {isLoading && !data ? (
+            <div className="flex flex-col gap-2 p-6">
+              {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-10 w-full rounded-lg" />)}
             </div>
-          </div>
-        ) : (
-          <ScrollArea className="flex-1 -mx-6">
-            <div className="px-6">
+          ) : !data?.items.length ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center px-6">
+              <PackageX className="h-12 w-12 text-muted-foreground/25 mb-4" />
+              <p className="text-sm font-medium text-muted-foreground">No items match the current filters</p>
+              {hasFilters && (
+                <button onClick={resetFilters} className="mt-2 text-xs text-primary underline underline-offset-2">
+                  Clear filters
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className={cn("transition-opacity", isFetching ? "opacity-60" : "opacity-100")}>
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-muted/40">
-                    <TableHead className="text-xs font-semibold">Product / SKU</TableHead>
-                    <TableHead className="text-xs font-semibold w-24">Status</TableHead>
-                    <TableHead className="text-xs font-semibold">Reason</TableHead>
-                    <TableHead className="text-xs font-semibold font-mono">Shopify ID</TableHead>
+                  <TableRow className="bg-slate-50 hover:bg-slate-50 border-b">
+                    <TableHead className="text-xs font-semibold text-slate-600 py-3 pl-6 w-[40%]">Product / SKU</TableHead>
+                    <TableHead className="text-xs font-semibold text-slate-600 py-3 w-24">Status</TableHead>
+                    <TableHead className="text-xs font-semibold text-slate-600 py-3">Reason / Error</TableHead>
+                    <TableHead className="text-xs font-semibold text-slate-600 py-3 pr-6 font-mono">Shopify ID</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data.items.map((row) => (
-                    <TableRow key={row.id} className={row.status === "error" ? "bg-destructive/5 hover:bg-destructive/8" : undefined}>
-                      <TableCell className="text-xs py-2.5">
-                        <div className="truncate font-medium max-w-[200px]">{row.name ?? "—"}</div>
-                        {row.sku && <div className="text-muted-foreground font-mono text-[10px] mt-0.5">{row.sku}</div>}
+                  {data.items.map((row, idx) => (
+                    <TableRow
+                      key={row.id}
+                      className={cn(
+                        "border-b last:border-0",
+                        row.status === "error"
+                          ? "bg-red-50/40 hover:bg-red-50/70"
+                          : idx % 2 === 0
+                            ? "bg-white hover:bg-slate-50/70"
+                            : "bg-slate-50/40 hover:bg-slate-50/80",
+                      )}
+                    >
+                      <TableCell className="text-xs py-3 pl-6 align-top">
+                        <div className="font-semibold text-slate-800 leading-tight">{row.name ?? "—"}</div>
+                        {row.sku && (
+                          <div className="font-mono text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
+                            <Hash className="h-2.5 w-2.5" />{row.sku}
+                          </div>
+                        )}
+                        {row.parentItemId && (
+                          <span className="text-[10px] text-muted-foreground mt-0.5 block">variant</span>
+                        )}
                       </TableCell>
-                      <TableCell className="py-2.5">{statusBadge(row.status)}</TableCell>
-                      <TableCell className="text-xs py-2.5 text-muted-foreground max-w-[180px]">
-                        {row.failureReason ? FAILURE_REASON_LABELS[row.failureReason] ?? row.failureReason : "—"}
-                        {row.errorMessage && <div className="text-[10px] truncate mt-0.5 text-destructive/70">{row.errorMessage}</div>}
+                      <TableCell className="py-3 align-top">
+                        {statusBadge(row.status)}
                       </TableCell>
-                      <TableCell className="text-[11px] font-mono py-2.5 text-muted-foreground truncate max-w-[100px]">
-                        {row.shopifyId ?? "—"}
+                      <TableCell className="text-xs py-3 align-top max-w-[220px]">
+                        {row.failureReason ? (
+                          <div>
+                            <Badge variant="outline" className="text-[10px] py-0 h-5 mb-1 font-medium">
+                              {FAILURE_REASON_LABELS[row.failureReason] ?? row.failureReason}
+                            </Badge>
+                            {row.errorMessage && (
+                              <p className="text-[10px] text-destructive/80 leading-snug mt-0.5 break-words">
+                                {row.errorMessage}
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-[11px] font-mono py-3 pr-6 align-top text-slate-400 max-w-[120px]">
+                        <span className="truncate block">{row.shopifyId ?? "—"}</span>
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             </div>
-          </ScrollArea>
+          )}
+        </div>
+
+        {/* ── Pagination footer ────────────────────────────────────── */}
+        {total > 0 && (
+          <div className="flex-shrink-0 border-t bg-white px-6 py-3 flex items-center justify-between gap-4">
+            <p className="text-xs text-muted-foreground">
+              {isFetching
+                ? <span className="flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" />Loading…</span>
+                : `Showing ${from.toLocaleString()}–${to.toLocaleString()} of ${total.toLocaleString()} items`
+              }
+            </p>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 w-8 p-0 bg-white"
+                disabled={page === 0 || isFetching}
+                onClick={() => setPage(0)}
+              >
+                <ChevronLeft className="h-3.5 w-3.5 mr-[-4px]" />
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 w-8 p-0 bg-white"
+                disabled={page === 0 || isFetching}
+                onClick={() => setPage((p) => p - 1)}
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </Button>
+              <span className="text-xs font-medium px-3 py-1 rounded border bg-white min-w-[80px] text-center">
+                {page + 1} / {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 w-8 p-0 bg-white"
+                disabled={page >= totalPages - 1 || isFetching}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 w-8 p-0 bg-white"
+                disabled={page >= totalPages - 1 || isFetching}
+                onClick={() => setPage(totalPages - 1)}
+              >
+                <ChevronRight className="h-3.5 w-3.5 ml-[-4px]" />
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
         )}
       </SheetContent>
     </Sheet>
