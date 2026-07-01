@@ -335,13 +335,14 @@ export default function Items() {
     cat: "all",
     brand: "all",
     stock: "all",
+    status: "active",
   });
   const search = filterValues.search;
   const categoryFilter = filterValues.cat === "all" ? "" : filterValues.cat;
   const brandFilter = filterValues.brand === "all" ? "" : filterValues.brand;
   const stockFilter = filterValues.stock as "all" | "in-stock" | "low-stock" | "out-of-stock";
+  const statusFilter = filterValues.status as "active" | "archived" | "all";
   // Warehouse filter — last selection remembered in localStorage.
-  const [statusFilter, setStatusFilter] = useState<"active" | "archived" | "all">("active");
   const [warehouseFilter, setWarehouseFilterState] = useState<number | "all">(
     () => {
       if (typeof window === "undefined") return "all";
@@ -523,7 +524,7 @@ export default function Items() {
     setWarehouseFilterState("all");
     setPriceMin("");
     setPriceMax("");
-    setStatusFilter("active");
+    setFilter("status", "active");
     setPage(1);
   }
 
@@ -536,6 +537,8 @@ export default function Items() {
     ...(warehouseFilter !== "all" && scopedWarehouseName ? [{ key: "wh", label: `Warehouse: ${scopedWarehouseName}`, onRemove: () => setWarehouseFilterState("all") }] : []),
     ...((priceMin || priceMax) ? [{ key: "price", label: `Price: ${priceMin ? `₹${priceMin}` : "any"} – ${priceMax ? `₹${priceMax}` : "any"}`, onRemove: () => { setPriceMin(""); setPriceMax(""); } }] : []),
   ];
+  // "status" = "active" is the silent default; show a chip only when non-default.
+  // FilterBar filterDefs already renders it as a dropdown chip automatically.
 
   const parentInfoMap = useMemo(() => {
     const map = new Map<number, { sku: string; axes: string[] }>();
@@ -1161,7 +1164,7 @@ export default function Items() {
         {(["active", "all", "archived"] as const).map((tab) => (
           <button
             key={tab}
-            onClick={() => { setStatusFilter(tab); setPage(1); setSelectedIds(new Set()); }}
+            onClick={() => { setFilter("status", tab); setPage(1); setSelectedIds(new Set()); }}
             className={cn(
               "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
               statusFilter === tab
@@ -1180,11 +1183,19 @@ export default function Items() {
         searchPlaceholder="Search items by name or SKU..."
         filterDefs={[
           {
-            key: "cat", label: "Category", type: "select",
+            key: "status", label: "Status", type: "select",
+            options: [
+              { value: "active", label: "Active" },
+              { value: "archived", label: "Archived" },
+              { value: "all", label: "All" },
+            ],
+          },
+          {
+            key: "cat", label: "Type", type: "select",
             options: categoryOptions.map((c) => ({ value: c, label: c })),
           },
           {
-            key: "brand", label: "Brand", type: "select",
+            key: "brand", label: "Vendor", type: "select",
             options: brandOptions.map((b) => ({ value: b, label: b })),
           },
           {
@@ -1551,7 +1562,7 @@ export default function Items() {
                         {/* Product: thumb + indent + name + variant label + SKU */}
                         <TableCell>
                           <div className="flex items-center gap-3 min-w-0 pl-6">
-                            <ItemThumb url={v.imageUrl} alt={v.name} />
+                            <ItemThumb url={v.imageUrl || parent.imageUrl} alt={v.name} />
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <Link
