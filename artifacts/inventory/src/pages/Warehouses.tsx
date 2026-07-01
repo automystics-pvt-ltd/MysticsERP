@@ -315,14 +315,6 @@ function WarehouseCard({ warehouse, summary, summaryLoading, shopifyConnected, o
               </div>
             </div>
             <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-150" onClick={(e) => e.stopPropagation()}>
-              <Can module="warehouses" action="edit">
-                <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-background/70" title="Edit" onClick={() => onEdit(warehouse)} data-testid={`btn-edit-warehouse-${warehouse.id}`}><Edit className="h-3.5 w-3.5" /></Button>
-              </Can>
-              {!warehouse.isDefault && !isSystemWarehouse(warehouse) && (
-                <Can module="warehouses" action="delete">
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10" title="Delete" onClick={() => onDelete(warehouse)} data-testid={`btn-delete-warehouse-${warehouse.id}`}><Trash2 className="h-3.5 w-3.5" /></Button>
-                </Can>
-              )}
             </div>
           </div>
           <div className="flex items-center gap-1.5 mt-2.5 text-muted-foreground min-h-[1.1rem]">
@@ -1368,11 +1360,6 @@ export default function Warehouses() {
                 <p className="text-sm font-semibold text-foreground">{search ? "No warehouses match your filters" : "No warehouses yet"}</p>
                 <p className="text-xs text-muted-foreground">{search ? "Try clearing your filters" : "Add your first location to start tracking inventory"}</p>
               </div>
-              {!search && (
-                <Can module="warehouses" action="create">
-                  <Button variant="outline" size="sm" onClick={handleCreate} className="mt-1"><Plus className="mr-2 h-4 w-4" />Add your first warehouse</Button>
-                </Can>
-              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1445,14 +1432,6 @@ export default function Warehouses() {
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-1 justify-end">
                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleView(w)} title="View Details"><Eye className="h-4 w-4" /></Button>
-                            <Can module="warehouses" action="edit">
-                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEdit(w)} data-testid={`btn-edit-warehouse-${w.id}`} title="Edit"><Edit className="h-4 w-4" /></Button>
-                            </Can>
-                            {!w.isDefault && !isSystemWarehouse(w) && (
-                              <Can module="warehouses" action="delete">
-                                <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setDeleteDialogWarehouse(w)} data-testid={`btn-delete-warehouse-${w.id}`} title="Delete"><Trash2 className="h-4 w-4" /></Button>
-                              </Can>
-                            )}
                           </div>
                         </TableCell>
                       </TableRow>

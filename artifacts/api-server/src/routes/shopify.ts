@@ -1,13 +1,15 @@
 import crypto from "node:crypto";
 import { Router, type IRouter } from "express";
-import { and, eq, lt, isNotNull, inArray, sql } from "drizzle-orm";
+import { and, eq, lt, isNotNull, isNull, inArray, sql, count, sum, gte, lte } from "drizzle-orm";
 import {
   db,
   organizationsTable,
   itemsTable,
+  itemWarehouseStockTable,
   salesOrdersTable,
   shopifyOauthStatesTable,
   shopifySyncLogsTable,
+  shopifyProductSyncJobsTable,
   warehousesTable,
 } from "@workspace/db";
 import { tenantMiddleware, getDefaultWarehouseId } from "../lib/tenant";
@@ -940,6 +942,252 @@ router.post("/shopify/sync-logs/retry-failed", async (req, res, next) => {
     const { retryFailedProductSyncs } = await import("../lib/shopifyOutbound");
     const queued = await retryFailedProductSyncs(t.organizationId);
     res.json({ queued });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── GET /shopify/dashboard ───────────────────────────────────────────────────
+// Returns ERP + connection stats for the enterprise dashboard metrics grid.
+
+router.get("/shopify/dashboard", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+
+    const [orgRows, erpStats, stockValue, warehouseCount] = await Promise.all([
+      db
+        .select({
+          shopifyProductCount: organizationsTable.shopifyProductCount,
+          shopifyLastSyncedAt: organizationsTable.shopifyLastSyncedAt,
+          shopifyShopDomain: organizationsTable.shopifyShopDomain,
+        })
+        .from(organizationsTable)
+        .where(eq(organizationsTable.id, t.organizationId))
+        .limit(1),
+
+      // ERP item breakdown (non-archived, non-bundle)
+      db
+        .select({
+          totalItems: sql<number>`COUNT(*)::int`,
+          mappedItems: sql<number>`COUNT(*) FILTER (WHERE ${itemsTable.shopifyProductId} IS NOT NULL)::int`,
+          simpleItems: sql<number>`COUNT(*) FILTER (
+            WHERE ${itemsTable.shopifyProductId} IS NOT NULL
+              AND ${itemsTable.hasVariants} = false
+              AND ${itemsTable.parentItemId} IS NULL
+          )::int`,
+          variantProducts: sql<number>`COUNT(*) FILTER (
+            WHERE ${itemsTable.shopifyProductId} IS NOT NULL
+              AND ${itemsTable.hasVariants} = true
+              AND ${itemsTable.parentItemId} IS NULL
+          )::int`,
+          totalVariants: sql<number>`COUNT(*) FILTER (
+            WHERE ${itemsTable.parentItemId} IS NOT NULL
+              AND ${itemsTable.archivedAt} IS NULL
+          )::int`,
+        })
+        .from(itemsTable)
+        .where(
+          and(
+            eq(itemsTable.organizationId, t.organizationId),
+            isNull(itemsTable.archivedAt),
+          ),
+        ),
+
+      // Inventory value
+      db
+        .select({
+          totalValue: sql<string>`COALESCE(SUM(
+            ${itemWarehouseStockTable.quantity} * ${itemsTable.salePrice}
+          ), 0)`,
+        })
+        .from(itemWarehouseStockTable)
+        .innerJoin(
+          itemsTable,
+          and(
+            eq(itemsTable.id, itemWarehouseStockTable.itemId),
+            isNull(itemsTable.archivedAt),
+          ),
+        )
+        .where(eq(itemWarehouseStockTable.organizationId, t.organizationId)),
+
+      // Physical warehouse count
+      db
+        .select({ n: sql<number>`COUNT(*)::int` })
+        .from(warehousesTable)
+        .where(
+          and(
+            eq(warehousesTable.organizationId, t.organizationId),
+            eq(warehousesTable.isVirtual, false),
+          ),
+        ),
+    ]);
+
+    const org = orgRows[0]!;
+    const erp = erpStats[0]!;
+
+    res.json({
+      shopifyTotal: org.shopifyProductCount ? Number(org.shopifyProductCount) : null,
+      lastSyncedAt: org.shopifyLastSyncedAt ? org.shopifyLastSyncedAt.toISOString() : null,
+      erpTotal: erp.totalItems,
+      mappedItems: erp.mappedItems,
+      simpleItems: erp.simpleItems,
+      variantProducts: erp.variantProducts,
+      totalVariants: erp.totalVariants,
+      inventoryValue: stockValue[0]?.totalValue ?? "0",
+      warehouseCount: Number(warehouseCount[0]?.n ?? 0),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── GET /shopify/product-sync-job/:id/items ──────────────────────────────────
+// Drill-down: sync log rows for a specific job, filtered by status.
+// status param: "created" | "updated" | "failed" | "skipped" | "missing"
+
+router.get("/shopify/product-sync-job/:id/items", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const jobId = req.params.id;
+    const statusParam = typeof req.query.status === "string" ? req.query.status : null;
+    const limit = Math.min(Number(req.query.limit ?? 200), 500);
+    const offset = Number(req.query.offset ?? 0);
+
+    // Fetch the job to get its time window.
+    const jobRows = await db
+      .select()
+      .from(shopifyProductSyncJobsTable)
+      .where(
+        and(
+          eq(shopifyProductSyncJobsTable.id, jobId),
+          eq(shopifyProductSyncJobsTable.organizationId, t.organizationId),
+        ),
+      )
+      .limit(1);
+
+    if (!jobRows[0]) {
+      res.status(404).json({ error: "Job not found" });
+      return;
+    }
+    const job = jobRows[0];
+
+    // Build filter conditions
+    const conds = [
+      eq(shopifySyncLogsTable.organizationId, t.organizationId),
+      eq(shopifySyncLogsTable.entity, "product"),
+      gte(shopifySyncLogsTable.createdAt, job.startedAt),
+    ];
+    if (job.finishedAt) {
+      conds.push(lte(shopifySyncLogsTable.createdAt, job.finishedAt));
+    }
+    if (statusParam === "failed") {
+      conds.push(eq(shopifySyncLogsTable.status, "error"));
+    } else if (statusParam === "skipped") {
+      conds.push(eq(shopifySyncLogsTable.status, "skipped"));
+    } else if (statusParam === "created") {
+      conds.push(eq(shopifySyncLogsTable.status, "success"));
+      conds.push(eq(shopifySyncLogsTable.action, "create"));
+    } else if (statusParam === "updated") {
+      conds.push(eq(shopifySyncLogsTable.status, "success"));
+      conds.push(eq(shopifySyncLogsTable.action, "update"));
+    }
+
+    const [rows, totalCount] = await Promise.all([
+      db
+        .select()
+        .from(shopifySyncLogsTable)
+        .where(and(...conds))
+        .orderBy(sql`${shopifySyncLogsTable.createdAt} DESC`)
+        .limit(limit)
+        .offset(offset),
+      db
+        .select({ n: sql<number>`COUNT(*)::int` })
+        .from(shopifySyncLogsTable)
+        .where(and(...conds)),
+    ]);
+
+    res.json({ items: rows, total: Number(totalCount[0]?.n ?? 0) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── POST /shopify/product-sync-job/:id/retry-skipped ────────────────────────
+// Re-queue all products that were skipped in the given job for a fresh sync.
+
+router.post("/shopify/product-sync-job/:id/retry-skipped", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const jobId = req.params.id;
+
+    // Validate job ownership
+    const jobRows = await db
+      .select({ id: shopifyProductSyncJobsTable.id, startedAt: shopifyProductSyncJobsTable.startedAt, finishedAt: shopifyProductSyncJobsTable.finishedAt })
+      .from(shopifyProductSyncJobsTable)
+      .where(
+        and(
+          eq(shopifyProductSyncJobsTable.id, jobId),
+          eq(shopifyProductSyncJobsTable.organizationId, t.organizationId),
+        ),
+      )
+      .limit(1);
+
+    if (!jobRows[0]) {
+      res.status(404).json({ error: "Job not found" });
+      return;
+    }
+
+    // Start a new full sync — retry-skipped re-runs the entire import,
+    // which will naturally pick up previously-skipped items.
+    const { startProductSync } = await import("../lib/shopifyProductSync");
+    const newJobId = await startProductSync(t.organizationId);
+    res.json({ jobId: newJobId, message: "New sync started — skipped items will be retried" });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── GET /shopify/export-report.csv ──────────────────────────────────────────
+// Export the most recent sync logs as CSV.
+
+router.get("/shopify/export-report.csv", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const days = req.query.days ? Number(req.query.days) : 30;
+    const statusFilter = typeof req.query.status === "string" ? req.query.status : null;
+
+    const conds = [eq(shopifySyncLogsTable.organizationId, t.organizationId)];
+    if (statusFilter) conds.push(eq(shopifySyncLogsTable.status, statusFilter));
+    if (days > 0) {
+      conds.push(
+        sql`${shopifySyncLogsTable.createdAt} >= NOW() - INTERVAL '${sql.raw(String(Math.floor(days)))} days'`,
+      );
+    }
+
+    const rows = await db
+      .select()
+      .from(shopifySyncLogsTable)
+      .where(and(...conds))
+      .orderBy(sql`${shopifySyncLogsTable.createdAt} DESC`)
+      .limit(5000);
+
+    const headers = ["ID", "Direction", "Entity", "Action", "Status", "Shopify ID", "ERP ID", "SKU", "Name", "Failure Reason", "Error Message", "Date/Time"];
+    const escape = (v: unknown) => {
+      const s = v == null ? "" : String(v);
+      return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const csvLines = [
+      headers.join(","),
+      ...rows.map((r) =>
+        [r.id, r.direction, r.entity, r.action, r.status, r.shopifyId, r.erpId, r.sku, r.name, r.failureReason, r.errorMessage, r.createdAt.toISOString()]
+          .map(escape)
+          .join(","),
+      ),
+    ];
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename="shopify-sync-report-${new Date().toISOString().slice(0, 10)}.csv"`);
+    res.send(csvLines.join("\n"));
   } catch (err) {
     next(err);
   }
