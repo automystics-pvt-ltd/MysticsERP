@@ -77,6 +77,17 @@ vi.mock("../../src/lib/shopifyOrderImport", () => ({
     importShopifyOrderMock(...(args as [])),
 }));
 
+const startProductSyncMock = vi.fn(async () => "test-job-id-1234");
+vi.mock("../../src/lib/shopifyProductSync", () => ({
+  startProductSync: (...args: unknown[]) => startProductSyncMock(...(args as [])),
+  getLatestProductSyncJob: vi.fn(async () => null),
+  getProductSyncJob: vi.fn(async () => null),
+  cancelProductSync: vi.fn(async () => false),
+  pauseProductSync: vi.fn(async () => false),
+  resumeProductSync: vi.fn(async () => false),
+  reconcileOrphanedProductSyncJobs: vi.fn(async () => undefined),
+}));
+
 import shopifyRouter from "../../src/routes/shopify";
 
 const ORG_A = 1001;
@@ -244,19 +255,13 @@ describe("shopify cross-tenant isolation", () => {
       expect(res.status).toBe(400);
     });
 
-    it("ORG_B can sync; ORG_A's lastSyncedAt is unchanged", async () => {
-      const beforeA = (await memDb
-        .rowsOf(tables.organizationsTable.__table))
-        .find((r) => r.id === ORG_A);
+    it("ORG_B can start a sync job; returns 202 with jobId", async () => {
       const res = await request(app)
         .post("/shopify/sync")
         .set("x-test-org-id", String(ORG_B))
         .send({});
-      expect(res.status).toBe(200);
-      const afterA = (await memDb
-        .rowsOf(tables.organizationsTable.__table))
-        .find((r) => r.id === ORG_A);
-      expect(afterA?.shopifyLastSyncedAt).toEqual(beforeA?.shopifyLastSyncedAt);
+      expect(res.status).toBe(202);
+      expect(typeof res.body.jobId).toBe("string");
     });
   });
 

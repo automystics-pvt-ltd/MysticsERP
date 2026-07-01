@@ -7,6 +7,7 @@ import {
   startBulkBatchPruneScheduler,
 } from "./routes/einvoice";
 import { reconcileOrphanedImportJobs } from "./lib/shopifyImportJobs";
+import { reconcileOrphanedProductSyncJobs } from "./lib/shopifyProductSync";
 import {
   reconcileOrphanedWebhookJobs,
   startWebhookWorker,
@@ -64,6 +65,11 @@ const server = app.listen(port, (err) => {
   // polling and the merchant can retry the orders that failed.
   void reconcileOrphanedImportJobs().catch((err) => {
     logger.error({ err }, "shopify: import job recovery failed");
+  });
+
+  // Same for product sync jobs — mark orphaned "running" jobs failed.
+  void reconcileOrphanedProductSyncJobs().catch((err) => {
+    logger.error({ err }, "shopify: product sync job recovery failed");
   });
 
   // Reset any webhook queue jobs that were "processing" when the previous

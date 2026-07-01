@@ -1,13 +1,11 @@
 import crypto from "node:crypto";
 import { Router, type IRouter } from "express";
-import { and, eq, lt, isNotNull, inArray, ne, sql } from "drizzle-orm";
+import { and, eq, lt, isNotNull, inArray, sql } from "drizzle-orm";
 import {
   db,
   organizationsTable,
   itemsTable,
-  itemWarehouseStockTable,
   salesOrdersTable,
-  stockMovementsTable,
   shopifyOauthStatesTable,
   shopifySyncLogsTable,
   warehousesTable,
@@ -15,7 +13,6 @@ import {
 import { tenantMiddleware, getDefaultWarehouseId } from "../lib/tenant";
 import {
   buildInstallUrl,
-  fetchShopifyProducts,
   fetchShopifyOrders,
   fetchShopifyOrdersPage,
   fetchShopifyOrdersCount,
@@ -33,9 +30,16 @@ import {
   incrementImportJob,
   finishImportJob,
 } from "../lib/shopifyImportJobs";
-import { generateUniqueBarcode } from "../lib/barcodeGen";
 import { toNum, toStr } from "../lib/numeric";
 import { pushProductFieldsToShopify, pushStockToShopify } from "../lib/shopifyOutbound";
+import {
+  startProductSync,
+  getLatestProductSyncJob,
+  getProductSyncJob,
+  cancelProductSync,
+  pauseProductSync,
+  resumeProductSync,
+} from "../lib/shopifyProductSync";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -390,349 +394,105 @@ router.post("/shopify/webhooks/sync", async (req, res, next) => {
   }
 });
 
+/**
+ * POST /shopify/sync — start an async product sync job.
+ *
+ * Returns { jobId } immediately; the frontend polls
+ * GET /shopify/product-sync-job/latest (or /:id) for live progress.
+ */
 router.post("/shopify/sync", async (req, res, next) => {
   try {
     const t = req.tenant!;
     const orgRows = await db
-      .select()
+      .select({
+        shopDomain: organizationsTable.shopifyShopDomain,
+        accessToken: organizationsTable.shopifyAccessToken,
+      })
       .from(organizationsTable)
       .where(eq(organizationsTable.id, t.organizationId))
       .limit(1);
-    const org = orgRows[0]!;
-    if (!org.shopifyShopDomain || !org.shopifyAccessToken) {
+    const org = orgRows[0];
+    if (!org?.shopDomain || !org.accessToken) {
       res.status(400).json({ error: "Shopify not connected" });
       return;
     }
+    const jobId = await startProductSync(t.organizationId);
+    res.status(202).json({ jobId });
+  } catch (err) {
+    next(err);
+  }
+});
 
-    // Use the default physical (non-virtual) warehouse for all imported stock.
-    // Explicitly exclude virtual warehouses (job-work) so they can never become
-    // the stock target for Shopify imports even if somehow marked as default.
-    const physicalDefaultRows = await db
-      .select({ id: warehousesTable.id, shopifyLocationId: warehousesTable.shopifyLocationId })
-      .from(warehousesTable)
-      .where(
-        and(
-          eq(warehousesTable.organizationId, t.organizationId),
-          eq(warehousesTable.isDefault, true),
-          eq(warehousesTable.isVirtual, false),
-        ),
-      )
-      .limit(1);
-    const warehouseId =
-      physicalDefaultRows[0]?.id ?? (await getDefaultWarehouseId(t.organizationId));
-
-    // Consolidate the primary Shopify location mapping onto the Main Warehouse.
-    // If a separate "Shopify Warehouse" is currently mapped to the org's primary
-    // Shopify location, move the mapping here so that inventory_levels/update
-    // webhooks route stock to Main Warehouse instead of that other warehouse.
-    if (org.shopifyLocationId && warehouseId) {
-      await db
-        .update(warehousesTable)
-        .set({ shopifyLocationId: null, shopifyLocationName: null })
-        .where(
-          and(
-            eq(warehousesTable.organizationId, t.organizationId),
-            eq(warehousesTable.shopifyLocationId, org.shopifyLocationId),
-            ne(warehousesTable.id, warehouseId),
-          ),
-        );
-      if (!physicalDefaultRows[0]?.shopifyLocationId) {
-        await db
-          .update(warehousesTable)
-          .set({ shopifyLocationId: org.shopifyLocationId })
-          .where(
-            and(
-              eq(warehousesTable.id, warehouseId),
-              eq(warehousesTable.organizationId, t.organizationId),
-            ),
-          );
-      }
+/** GET /shopify/product-sync-job/latest — latest job for this org. */
+router.get("/shopify/product-sync-job/latest", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const job = await getLatestProductSyncJob(t.organizationId);
+    if (!job) {
+      res.status(404).json({ error: "No sync job found" });
+      return;
     }
+    res.json(job);
+  } catch (err) {
+    next(err);
+  }
+});
 
-    const products = await fetchShopifyProducts(
-      org.shopifyShopDomain,
-      org.shopifyAccessToken,
-    );
-
-    let imported = 0;
-    let updated = 0;
-
-    // Upsert one Shopify variant as a (leaf) inventory row and sync its
-    // on-hand stock at the configured warehouse. Used for both flat
-    // single-variant products and as the per-variant pass for multi-
-    // variant products (with `parentItemId` set in the latter case).
-    async function upsertVariantRow(
-      p: typeof products[number],
-      v: typeof products[number]["variants"][number],
-      sku: string,
-      parentItemId: number | null,
-      variantOptions: Record<string, string> | null,
-    ): Promise<void> {
-      const salePrice = v.price ?? "0";
-      const qty = v.inventory_quantity ?? 0;
-      // Match by Shopify variant id first (stable across SKU renames),
-      // then fall back to SKU for the first sync.
-      let existing = await db
-        .select()
-        .from(itemsTable)
-        .where(
-          and(
-            eq(itemsTable.organizationId, t.organizationId),
-            eq(itemsTable.shopifyVariantId, String(v.id)),
-          ),
-        )
-        .limit(1);
-      if (!existing[0]) {
-        existing = await db
-          .select()
-          .from(itemsTable)
-          .where(
-            and(
-              eq(itemsTable.organizationId, t.organizationId),
-              eq(itemsTable.sku, sku),
-            ),
-          )
-          .limit(1);
-      }
-
-      let itemId: number;
-      if (existing[0]) {
-        await db
-          .update(itemsTable)
-          .set({
-            // For variant rows we keep the parent's title as a prefix.
-            name: parentItemId
-              ? `${p.title} — ${v.title ?? Object.values(variantOptions ?? {}).join(" / ")}`
-              : p.title,
-            description: p.body_html,
-            category: p.product_type,
-            salePrice,
-            shopifyProductId: String(p.id),
-            shopifyVariantId: String(v.id),
-            shopifyInventoryItemId: v.inventory_item_id
-              ? String(v.inventory_item_id)
-              : null,
-            imageUrl: p.image?.src ?? existing[0].imageUrl,
-            parentItemId: parentItemId ?? existing[0].parentItemId,
-            variantOptions: variantOptions ?? existing[0].variantOptions,
-          })
-          .where(
-            and(
-              eq(itemsTable.organizationId, t.organizationId),
-              eq(itemsTable.id, existing[0].id),
-            ),
-          );
-        itemId = existing[0].id;
-        updated += 1;
-      } else {
-        // Shopify-imported items participate in the same per-org
-        // auto-barcode scheme as locally-created items so the
-        // Barcodes management screen shows them with a real value.
-        const autoBarcode = await generateUniqueBarcode(t.organizationId);
-        const created = await db
-          .insert(itemsTable)
-          .values({
-            organizationId: t.organizationId,
-            sku,
-            name: parentItemId
-              ? `${p.title} — ${v.title ?? Object.values(variantOptions ?? {}).join(" / ")}`
-              : p.title,
-            description: p.body_html,
-            category: p.product_type,
-            unit: "pcs",
-            barcode: autoBarcode,
-            barcodeSource: "auto",
-            salePrice,
-            purchasePrice: "0",
-            taxRate: "0",
-            reorderLevel: "0",
-            shopifyProductId: String(p.id),
-            shopifyVariantId: String(v.id),
-            shopifyInventoryItemId: v.inventory_item_id
-              ? String(v.inventory_item_id)
-              : null,
-            imageUrl: p.image?.src ?? null,
-            parentItemId: parentItemId ?? null,
-            variantOptions: variantOptions ?? null,
-            hasVariants: false,
-          })
-          .returning();
-        itemId = created[0]!.id;
-        imported += 1;
-      }
-
-      const stockRows = await db
-        .select()
-        .from(itemWarehouseStockTable)
-        .where(
-          and(
-            eq(itemWarehouseStockTable.organizationId, t.organizationId),
-            eq(itemWarehouseStockTable.itemId, itemId),
-            eq(itemWarehouseStockTable.warehouseId, warehouseId),
-          ),
-        )
-        .limit(1);
-      const newQty = toStr(qty);
-      if (stockRows[0]) {
-        const delta = qty - toNum(stockRows[0].quantity);
-        await db
-          .update(itemWarehouseStockTable)
-          .set({ quantity: newQty })
-          .where(
-            and(
-              eq(itemWarehouseStockTable.id, stockRows[0].id),
-              eq(itemWarehouseStockTable.organizationId, t.organizationId),
-            ),
-          );
-        if (delta !== 0) {
-          await db.insert(stockMovementsTable).values({
-            organizationId: t.organizationId,
-            itemId,
-            warehouseId,
-            movementType: "shopify_sync",
-            quantity: toStr(delta),
-            referenceType: "shopify",
-            notes: "Shopify inventory sync",
-          });
-        }
-      } else {
-        await db.insert(itemWarehouseStockTable).values({
-          organizationId: t.organizationId,
-          itemId,
-          warehouseId,
-          quantity: newQty,
-        });
-        if (qty !== 0) {
-          await db.insert(stockMovementsTable).values({
-            organizationId: t.organizationId,
-            itemId,
-            warehouseId,
-            movementType: "shopify_sync",
-            quantity: newQty,
-            referenceType: "shopify",
-            notes: "Initial Shopify import",
-          });
-        }
-      }
+/** GET /shopify/product-sync-job/:id — specific job (org-scoped). */
+router.get("/shopify/product-sync-job/:id", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const job = await getProductSyncJob(t.organizationId, req.params.id);
+    if (!job) {
+      res.status(404).json({ error: "Sync job not found" });
+      return;
     }
+    res.json(job);
+  } catch (err) {
+    next(err);
+  }
+});
 
-    for (const p of products) {
-      if (!p.variants.length) continue;
-
-      // Multi-variant Shopify products → create a parent item with
-      // `hasVariants = true` and one child per variant. We key the
-      // parent on a synthetic `SHOPIFY-PRODUCT-{id}` SKU so the parent
-      // is stable across syncs even if Shopify variant ids change.
-      if (p.variants.length > 1) {
-        const axes = (p.options ?? [])
-          .map((o) => (typeof o.name === "string" ? o.name.trim() : ""))
-          .filter((n) => n.length > 0)
-          .slice(0, 3);
-        if (axes.length === 0) {
-          // Shopify always returns at least one option ("Title"); guard
-          // against malformed payloads by falling back to the variant
-          // title as a single axis label.
-          axes.push("Title");
-        }
-        const parentSku = `SHOPIFY-PRODUCT-${p.id}`;
-        const parentExisting = await db
-          .select()
-          .from(itemsTable)
-          .where(
-            and(
-              eq(itemsTable.organizationId, t.organizationId),
-              eq(itemsTable.sku, parentSku),
-            ),
-          )
-          .limit(1);
-        let parentId: number;
-        if (parentExisting[0]) {
-          await db
-            .update(itemsTable)
-            .set({
-              name: p.title,
-              description: p.body_html,
-              category: p.product_type,
-              imageUrl: p.image?.src ?? parentExisting[0].imageUrl,
-              shopifyProductId: String(p.id),
-              hasVariants: true,
-              variantOptions: { axes },
-            })
-            .where(
-              and(
-                eq(itemsTable.organizationId, t.organizationId),
-                eq(itemsTable.id, parentExisting[0].id),
-              ),
-            );
-          parentId = parentExisting[0].id;
-          updated += 1;
-        } else {
-          // Variant parents get an auto-barcode too so labels can be
-          // printed for the parent row in the catalog (matches POST /items).
-          const autoBarcode = await generateUniqueBarcode(t.organizationId);
-          const created = await db
-            .insert(itemsTable)
-            .values({
-              organizationId: t.organizationId,
-              sku: parentSku,
-              name: p.title,
-              description: p.body_html,
-              category: p.product_type,
-              unit: "pcs",
-              barcode: autoBarcode,
-              barcodeSource: "auto",
-              salePrice: "0",
-              purchasePrice: "0",
-              taxRate: "0",
-              reorderLevel: "0",
-              imageUrl: p.image?.src ?? null,
-              shopifyProductId: String(p.id),
-              hasVariants: true,
-              variantOptions: { axes },
-            })
-            .returning();
-          parentId = created[0]!.id;
-          imported += 1;
-        }
-
-        for (const v of p.variants) {
-          const variantSku =
-            (v.sku && v.sku.trim()) || `SHOPIFY-${p.id}-${v.id}`;
-          const opts: Record<string, string> = {};
-          const optionVals = [v.option1, v.option2, v.option3];
-          axes.forEach((axisName, idx) => {
-            const val = optionVals[idx];
-            if (typeof val === "string" && val.trim()) {
-              opts[axisName] = val.trim();
-            } else {
-              opts[axisName] = v.title ?? "Default";
-            }
-          });
-          await upsertVariantRow(p, v, variantSku, parentId, opts);
-        }
-      } else {
-        // Single-variant Shopify product → flat row, current behaviour.
-        const v = p.variants[0]!;
-        const sku = (v.sku && v.sku.trim()) || `SHOPIFY-${p.id}`;
-        await upsertVariantRow(p, v, sku, null, null);
-      }
+/** POST /shopify/product-sync-job/:id/cancel */
+router.post("/shopify/product-sync-job/:id/cancel", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const ok = await cancelProductSync(t.organizationId, req.params.id);
+    if (!ok) {
+      res.status(400).json({ error: "Job is not cancellable (already finished?)" });
+      return;
     }
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
 
-    const syncedAt = new Date();
-    await db
-      .update(organizationsTable)
-      .set({
-        shopifyLastSyncedAt: syncedAt,
-        shopifyProductCount: String(imported + updated),
-      })
-      .where(eq(organizationsTable.id, t.organizationId));
+/** POST /shopify/product-sync-job/:id/pause */
+router.post("/shopify/product-sync-job/:id/pause", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const ok = await pauseProductSync(t.organizationId, req.params.id);
+    if (!ok) {
+      res.status(400).json({ error: "Job is not pausable" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
 
-    res.json({
-      productsImported: imported,
-      productsUpdated: updated,
-      warehouseId,
-      syncedAt: syncedAt.toISOString(),
-    });
+/** POST /shopify/product-sync-job/:id/resume */
+router.post("/shopify/product-sync-job/:id/resume", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const ok = await resumeProductSync(t.organizationId, req.params.id);
+    if (!ok) {
+      res.status(400).json({ error: "Job is not resumable" });
+      return;
+    }
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }

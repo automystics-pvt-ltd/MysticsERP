@@ -261,13 +261,8 @@ describe("shopify webhook cross-tenant isolation", () => {
       // The webhook now enqueues async — verify the enqueued org id is
       // ORG_B (shop domain determines org, not any id in the body).
       expect(enqueueWebhookJobMock).toHaveBeenCalledTimes(1);
-      const [enqueuedOrgId, enqueuedTopic, enqueuedPayload] =
-        enqueueWebhookJobMock.mock.calls[0] as [
-          number,
-          string,
-          Record<string, unknown>,
-          string | null,
-        ];
+      const call0 = enqueueWebhookJobMock.mock.calls[0] as unknown as [number, string, Record<string, unknown>, string | null];
+      const [enqueuedOrgId, enqueuedTopic, enqueuedPayload] = call0;
       expect(enqueuedOrgId).toBe(ORG_B);
       expect(enqueuedTopic).toBe("orders/create");
 
@@ -336,13 +331,8 @@ describe("shopify webhook cross-tenant isolation", () => {
 
       // Enqueued with ORG_B — simulate the worker processing it.
       expect(enqueueWebhookJobMock).toHaveBeenCalledTimes(1);
-      const [enqueuedOrgId, enqueuedTopic, enqueuedPayload] =
-        enqueueWebhookJobMock.mock.calls[0] as [
-          number,
-          string,
-          Record<string, unknown>,
-          string | null,
-        ];
+      const call0b = enqueueWebhookJobMock.mock.calls[0] as unknown as [number, string, Record<string, unknown>, string | null];
+      const [enqueuedOrgId, enqueuedTopic, enqueuedPayload] = call0b;
       expect(enqueuedOrgId).toBe(ORG_B);
       await processWebhookTopic(enqueuedOrgId, enqueuedTopic, enqueuedPayload);
 
