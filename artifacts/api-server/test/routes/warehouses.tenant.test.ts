@@ -178,39 +178,91 @@ describe("warehouses cross-tenant isolation", () => {
   });
 
   describe("PATCH /warehouses/:id", () => {
-    it("returns 403 (warehouse mutations are locked)", async () => {
+    it("returns 404 for another org's warehouse (cross-tenant isolation)", async () => {
       const res = await request(app)
         .patch(`/warehouses/${b.realWarehouseId}`)
         .set("x-test-org-id", String(ORG_A))
         .send({ name: "Pwned" });
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(404);
     });
 
-    it("returns 403 even for own org's warehouse", async () => {
+    it("updates own org's warehouse and returns 200", async () => {
       const res = await request(app)
         .patch(`/warehouses/${a.realWarehouseId}`)
         .set("x-test-org-id", String(ORG_A))
+        .send({ name: "Renamed Aux A" });
+      expect(res.status).toBe(200);
+      expect(res.body.name).toBe("Renamed Aux A");
+    });
+
+    it("promoting to default does not touch the other org's warehouses", async () => {
+      await request(app)
+        .patch(`/warehouses/${a.realWarehouseId}`)
+        .set("x-test-org-id", String(ORG_A))
         .send({ isDefault: true });
-      expect(res.status).toBe(403);
+
+      const bRes = await request(app)
+        .get("/warehouses")
+        .set("x-test-org-id", String(ORG_B));
+      const bWarehouses = bRes.body as { id: number; isDefault: boolean }[];
+      const bDefault = bWarehouses.find((w) => w.id === b.defaultWarehouseId);
+      expect(bDefault?.isDefault).toBe(true);
     });
   });
 
   describe("DELETE /warehouses/:id", () => {
-    it("returns 403 (warehouse mutations are locked)", async () => {
+    it("returns 404 for another org's warehouse (cross-tenant isolation)", async () => {
       const res = await request(app)
         .delete(`/warehouses/${b.realWarehouseId}`)
         .set("x-test-org-id", String(ORG_A));
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(404);
+    });
+
+    it("deletes own non-system, non-default warehouse and returns 204", async () => {
+      const res = await request(app)
+        .delete(`/warehouses/${a.realWarehouseId}`)
+        .set("x-test-org-id", String(ORG_A));
+      expect(res.status).toBe(204);
+    });
+
+    it("returns 400 when trying to delete the default warehouse", async () => {
+      const res = await request(app)
+        .delete(`/warehouses/${a.defaultWarehouseId}`)
+        .set("x-test-org-id", String(ORG_A));
+      expect(res.status).toBe(400);
     });
   });
 
   describe("POST /warehouses", () => {
-    it("returns 403 (warehouse mutations are locked)", async () => {
+    it("creates a warehouse for the caller's org and returns 201", async () => {
       const res = await request(app)
         .post("/warehouses")
         .set("x-test-org-id", String(ORG_A))
-        .send({ name: "Brand new", code: "NEW-A", isDefault: true });
-      expect(res.status).toBe(403);
+        .send({ name: "Brand new", code: "NEW-A" });
+      expect(res.status).toBe(201);
+      expect(res.body.name).toBe("Brand new");
+      expect(res.body.code).toBe("NEW-A");
+    });
+
+    it("new warehouse is only visible to the creating org", async () => {
+      await request(app)
+        .post("/warehouses")
+        .set("x-test-org-id", String(ORG_A))
+        .send({ name: "Org A Only", code: "ONLY-A" });
+
+      const bRes = await request(app)
+        .get("/warehouses")
+        .set("x-test-org-id", String(ORG_B));
+      const bNames = (bRes.body as { name: string }[]).map((w) => w.name);
+      expect(bNames).not.toContain("Org A Only");
+    });
+
+    it("returns 400 when name is missing", async () => {
+      const res = await request(app)
+        .post("/warehouses")
+        .set("x-test-org-id", String(ORG_A))
+        .send({ code: "NO-NAME" });
+      expect(res.status).toBe(400);
     });
   });
 });
