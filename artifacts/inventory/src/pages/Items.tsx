@@ -1375,6 +1375,7 @@ export default function Items() {
                 />
               </TableHead>
               <TableHead>Product</TableHead>
+              <TableHead className="w-[200px]">Barcode</TableHead>
               <TableHead className="w-[110px]">Status</TableHead>
               <TableHead className="w-[150px]">Price</TableHead>
               <TableHead className="w-[90px] text-center">Main</TableHead>
@@ -1398,7 +1399,7 @@ export default function Items() {
               ))
             ) : (itemsPage?.total ?? 0) === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
+                <TableCell colSpan={11} className="h-32 text-center text-muted-foreground">
                   {search || categoryFilter || brandFilter || stockFilter !== "all" || warehouseFilter !== "all" || priceMin || priceMax || statusFilter !== "all"
                     ? "No items match the current filters."
                     : "No items yet. Click \"Add Item\" to create your first product."}
@@ -1477,6 +1478,14 @@ export default function Items() {
                           </div>
                         </div>
                       </div>
+                    </TableCell>
+                    {/* Barcode */}
+                    <TableCell className="text-xs font-mono text-muted-foreground max-w-[200px]">
+                      {parent.barcode ? (
+                        <span className="truncate block">{parent.barcode} | {parent.name} | {parent.sku}</span>
+                      ) : (
+                        <span className="text-muted-foreground/50">—</span>
+                      )}
                     </TableCell>
                     {/* Status */}
                     <TableCell>
@@ -1610,6 +1619,14 @@ export default function Items() {
                               )}
                             </div>
                           </div>
+                        </TableCell>
+                        {/* Barcode */}
+                        <TableCell className="text-xs font-mono text-muted-foreground max-w-[200px]">
+                          {v.barcode ? (
+                            <span className="truncate block">{v.barcode} | {v.name} | {v.sku}</span>
+                          ) : (
+                            <span className="text-muted-foreground/50">—</span>
+                          )}
                         </TableCell>
                         {/* Status */}
                         <TableCell>
