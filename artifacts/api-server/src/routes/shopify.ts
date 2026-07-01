@@ -11,8 +11,10 @@ import {
   shopifySyncLogsTable,
   shopifyProductSyncJobsTable,
   warehousesTable,
+  usersTable,
 } from "@workspace/db";
 import { tenantMiddleware, getDefaultWarehouseId } from "../lib/tenant";
+import { getClientIp } from "../lib/audit";
 import {
   buildInstallUrl,
   fetchShopifyOrders,
@@ -121,21 +123,35 @@ router.post("/shopify/oauth/install", async (req, res, next) => {
 // This block is completely inert in production (env var is never set there).
 if (process.env.SHOPIFY_DEV_MOCK === "true") {
   const MOCK_JOB_ID = "dev-mock-job-001";
-  const mockJob = () => ({
+  const mockJob = (overrides: Record<string, unknown> = {}) => ({
     id: MOCK_JOB_ID,
-    status: "completed",
-    totalProducts: 142,
-    processedCount: 142,
-    skippedCount: 5,
-    errorCount: 3,
-    startedAt: new Date(Date.now() - 4 * 60 * 1000).toISOString(),
-    finishedAt: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
-    pausedAt: null,
-    cancelledAt: null,
-    errorMessage: null,
     organizationId: 0,
-    createdAt: new Date(Date.now() - 4 * 60 * 1000).toISOString(),
+    status: "completed",
+    totalShopify: 142,
+    totalErp: 138,
+    processed: 142,
+    created: 87,
+    updated: 47,
+    skipped: 5,
+    failed: 3,
+    missing: 2,
+    cancelSignal: false,
+    pauseSignal: false,
+    error: null,
+    startedAt: new Date(Date.now() - 4 * 60 * 1000).toISOString(),
+    updatedAt: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
+    finishedAt: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
+    triggeredByName: "Rahul Sharma",
+    triggeredByEmail: "rahul@devmock.com",
+    triggeredByIp: "49.36.103.42",
+    triggeredByLocation: "Mumbai, Maharashtra, India",
+    ...overrides,
   });
+  const mockJobs = () => [
+    mockJob({ id: "dev-mock-job-001", startedAt: new Date(Date.now() - 4 * 60 * 1000).toISOString(), finishedAt: new Date(Date.now() - 2 * 60 * 1000).toISOString() }),
+    mockJob({ id: "dev-mock-job-002", status: "completed_with_errors", created: 50, updated: 30, failed: 8, skipped: 12, startedAt: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString(), finishedAt: new Date(Date.now() - 26 * 60 * 60 * 1000 + 5 * 60 * 1000).toISOString(), triggeredByName: "Priya Mehta", triggeredByEmail: "priya@devmock.com", triggeredByIp: "103.21.58.220", triggeredByLocation: "Bangalore, Karnataka, India" }),
+    mockJob({ id: "dev-mock-job-003", status: "completed", created: 130, updated: 10, failed: 0, skipped: 2, startedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(), finishedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000 + 8 * 60 * 1000).toISOString(), triggeredByName: "Rahul Sharma", triggeredByEmail: "rahul@devmock.com", triggeredByIp: "49.36.103.42", triggeredByLocation: "Mumbai, Maharashtra, India" }),
+  ];
   const mockItems = () => {
     const now = Date.now();
     return [
@@ -177,6 +193,7 @@ if (process.env.SHOPIFY_DEV_MOCK === "true") {
 
   router.get("/shopify/product-sync-job/latest", (_req, res) => { res.json(mockJob()); });
   router.get("/shopify/product-sync-job/:id",    (_req, res) => { res.json(mockJob()); });
+  router.get("/shopify/sync-jobs",               (_req, res) => { res.json(mockJobs()); });
 
   router.post("/shopify/sync", (_req, res) => {
     res.json({ jobId: MOCK_JOB_ID });
@@ -516,7 +533,43 @@ router.post("/shopify/sync", async (req, res, next) => {
       res.status(400).json({ error: "Shopify not connected" });
       return;
     }
-    const jobId = await startProductSync(t.organizationId);
+
+    // Capture audit info — look up name/email from users table.
+    const ip = getClientIp(req);
+    const userRows = await db
+      .select({ name: usersTable.name, email: usersTable.email })
+      .from(usersTable)
+      .where(eq(usersTable.id, t.userId))
+      .limit(1); // org-scope-allow: lookup by internal PK for audit record
+    const user = userRows[0];
+
+    const jobId = await startProductSync(t.organizationId, {
+      audit: {
+        name: user?.name ?? null,
+        email: user?.email ?? null,
+        ip,
+        location: null, // filled in by async geo lookup below
+      },
+    });
+
+    // Fire-and-forget geolocation — update the job row when it resolves.
+    void (async () => {
+      try {
+        if (ip === "unknown" || ip.startsWith("127.") || ip.startsWith("::")) return;
+        const geoRes = await fetch(`http://ip-api.com/json/${ip}?fields=city,regionName,country`);
+        if (!geoRes.ok) return;
+        const geo = (await geoRes.json()) as { city?: string; regionName?: string; country?: string };
+        const parts = [geo.city, geo.regionName, geo.country].filter(Boolean);
+        if (!parts.length) return;
+        await db
+          .update(shopifyProductSyncJobsTable) // org-scope-allow: scoped by job UUID owned by this org; geo lookup fires after job creation
+          .set({ triggeredByLocation: parts.join(", ") })
+          .where(eq(shopifyProductSyncJobsTable.id, jobId));
+      } catch {
+        // geo lookup is best-effort
+      }
+    })();
+
     res.status(202).json({ jobId });
   } catch (err) {
     next(err);
@@ -1045,6 +1098,42 @@ router.post("/shopify/sync-logs/retry-failed", async (req, res, next) => {
   }
 });
 
+// ─── GET /shopify/sync-jobs ───────────────────────────────────────────────────
+// Returns the last 50 product sync jobs with audit trail info.
+
+router.get("/shopify/sync-jobs", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const limit = Math.min(Number(req.query.limit ?? 50), 200);
+    const jobs = await db
+      .select({
+        id: shopifyProductSyncJobsTable.id,
+        status: shopifyProductSyncJobsTable.status,
+        totalShopify: shopifyProductSyncJobsTable.totalShopify,
+        processed: shopifyProductSyncJobsTable.processed,
+        created: shopifyProductSyncJobsTable.created,
+        updated: shopifyProductSyncJobsTable.updated,
+        skipped: shopifyProductSyncJobsTable.skipped,
+        failed: shopifyProductSyncJobsTable.failed,
+        missing: shopifyProductSyncJobsTable.missing,
+        error: shopifyProductSyncJobsTable.error,
+        startedAt: shopifyProductSyncJobsTable.startedAt,
+        finishedAt: shopifyProductSyncJobsTable.finishedAt,
+        triggeredByName: shopifyProductSyncJobsTable.triggeredByName,
+        triggeredByEmail: shopifyProductSyncJobsTable.triggeredByEmail,
+        triggeredByIp: shopifyProductSyncJobsTable.triggeredByIp,
+        triggeredByLocation: shopifyProductSyncJobsTable.triggeredByLocation,
+      })
+      .from(shopifyProductSyncJobsTable)
+      .where(eq(shopifyProductSyncJobsTable.organizationId, t.organizationId))
+      .orderBy(sql`${shopifyProductSyncJobsTable.startedAt} DESC`)
+      .limit(limit);
+    res.json(jobs);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ─── GET /shopify/dashboard ───────────────────────────────────────────────────
 // Returns ERP + connection stats for the enterprise dashboard metrics grid.
 
@@ -1251,15 +1340,30 @@ router.post("/shopify/product-sync-job/:id/retry-skipped", async (req, res, next
 router.get("/shopify/export-report.csv", async (req, res, next) => {
   try {
     const t = req.tenant!;
-    const days = req.query.days ? Number(req.query.days) : 30;
     const statusFilter = typeof req.query.status === "string" ? req.query.status : null;
 
     const conds = [eq(shopifySyncLogsTable.organizationId, t.organizationId)];
     if (statusFilter) conds.push(eq(shopifySyncLogsTable.status, statusFilter));
-    if (days > 0) {
-      conds.push(
-        sql`${shopifySyncLogsTable.createdAt} >= NOW() - INTERVAL '${sql.raw(String(Math.floor(days)))} days'`,
-      );
+
+    // Support both legacy ?days= and new ?from=&to= ISO date params.
+    if (req.query.from && typeof req.query.from === "string") {
+      const from = new Date(req.query.from);
+      if (!isNaN(from.getTime())) conds.push(gte(shopifySyncLogsTable.createdAt, from));
+    } else if (req.query.days) {
+      const days = Number(req.query.days);
+      if (days > 0) {
+        conds.push(
+          sql`${shopifySyncLogsTable.createdAt} >= NOW() - INTERVAL '${sql.raw(String(Math.floor(days)))} days'`,
+        );
+      }
+    }
+    if (req.query.to && typeof req.query.to === "string") {
+      // "to" is inclusive — extend to end of that day.
+      const to = new Date(req.query.to);
+      if (!isNaN(to.getTime())) {
+        to.setHours(23, 59, 59, 999);
+        conds.push(lte(shopifySyncLogsTable.createdAt, to));
+      }
     }
 
     const rows = await db

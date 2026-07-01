@@ -98,8 +98,12 @@ import {
   Bell,
   AlertTriangle,
   Plus,
+  UserCircle2,
+  MapPin,
+  Shield,
+  CalendarDays,
 } from "lucide-react";
-import { format, formatDistanceToNow } from "date-fns";
+import { format, formatDistanceToNow, subDays } from "date-fns";
 import {
   useGetShopifyConnection,
   useDeleteShopifyConnection,
@@ -167,6 +171,29 @@ type ProductSyncJob = {
   startedAt: string;
   updatedAt: string;
   finishedAt: string | null;
+  triggeredByName: string | null;
+  triggeredByEmail: string | null;
+  triggeredByIp: string | null;
+  triggeredByLocation: string | null;
+};
+
+type SyncJobAudit = {
+  id: string;
+  status: string;
+  totalShopify: number | null;
+  processed: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  missing: number;
+  error: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  triggeredByName: string | null;
+  triggeredByEmail: string | null;
+  triggeredByIp: string | null;
+  triggeredByLocation: string | null;
 };
 
 type DashboardStats = {
@@ -426,6 +453,7 @@ function ConnectedView({
   const [syncPushDialogOpen, setSyncPushDialogOpen] = useState(false);
   const [drilldownStatus, setDrilldownStatus] = useState<string | null>(null);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -533,9 +561,7 @@ function ConnectedView({
     setDrilldownStatus(status);
   }
 
-  const handleExport = (days: number) => {
-    window.open(`/api/shopify/export-report.csv?days=${days}`, "_blank");
-  };
+  const handleOpenExport = () => setExportOpen(true);
 
   return (
     <>
@@ -659,7 +685,7 @@ function ConnectedView({
                 { icon: <ArrowLeftRight className="h-4 w-4 text-purple-500" />, title: "Sync Orders", desc: "Pull pending Shopify orders into ERP", onClick: onSyncOrders, loading: syncingOrders },
                 { icon: <Eye className="h-4 w-4 text-amber-500" />, title: "Dry Run Preview", desc: "Preview changes before syncing", onClick: () => toast({ title: "Coming soon", description: "Dry run preview will be available shortly." }) },
                 { icon: <RotateCcw className="h-4 w-4 text-orange-500" />, title: "Retry Failed", desc: "Re-queue all failed sync items", onClick: () => retryMutation.mutate("failed") },
-                { icon: <Download className="h-4 w-4 text-slate-500" />, title: "Export Reports", desc: "CSV · Excel · PDF with filters", onClick: () => handleExport(30) },
+                { icon: <Download className="h-4 w-4 text-slate-500" />, title: "Export Reports", desc: "CSV with custom date range & filters", onClick: handleOpenExport },
               ].map(({ icon, title, desc, onClick, primary, loading }) => (
                 <button
                   key={title}
@@ -698,7 +724,7 @@ function ConnectedView({
                       </Button>
                     </>
                   )}
-                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={() => handleExport(1)}>
+                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={handleOpenExport}>
                     <Download className="h-3 w-3" />Export
                   </Button>
                 </div>
@@ -735,7 +761,10 @@ function ConnectedView({
             </section>
           )}
 
-          {/* Sync History */}
+          {/* Sync Audit Trail */}
+          <SyncAuditCard onExport={handleOpenExport} />
+
+          {/* Event Log */}
           <SyncHistoryCard />
         </TabsContent>
 
@@ -750,6 +779,7 @@ function ConnectedView({
             connection={connection}
             onDisconnect={onDisconnect}
             disconnecting={disconnecting}
+            onExport={handleOpenExport}
           />
         </TabsContent>
       </Tabs>
@@ -769,6 +799,9 @@ function ConnectedView({
         status={drilldownStatus}
         onClose={() => setDrilldownStatus(null)}
       />
+
+      {/* ── Export Dialog ─────────────────────────────────────────────── */}
+      <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
     </>
   );
 }
@@ -980,13 +1013,13 @@ function AdvancedSettingsTab({
   connection,
   onDisconnect,
   disconnecting,
+  onExport,
 }: {
   connection: ConnectionData;
   onDisconnect: () => void;
   disconnecting: boolean;
+  onExport: () => void;
 }) {
-  const handleExport = (days: number) => window.open(`/api/shopify/export-report.csv?days=${days}`, "_blank");
-
   return (
     <div className="space-y-4 max-w-2xl">
       <Card>
@@ -1010,13 +1043,14 @@ function AdvancedSettingsTab({
       </Card>
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Export Reports</CardTitle><CardDescription>Download sync history as CSV</CardDescription></CardHeader>
-        <CardContent className="flex gap-2 flex-wrap">
-          {[["Last 24h", 1], ["Last 7 days", 7], ["Last 30 days", 30]].map(([label, days]) => (
-            <Button key={label} variant="outline" size="sm" onClick={() => handleExport(Number(days))}>
-              <Download className="h-3.5 w-3.5 mr-1.5" />{label}
-            </Button>
-          ))}
+        <CardHeader>
+          <CardTitle className="text-base">Export Reports</CardTitle>
+          <CardDescription>Download sync event log as CSV with custom date range and filters</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button variant="outline" size="sm" onClick={onExport}>
+            <Download className="h-3.5 w-3.5 mr-1.5" />Export CSV with Date Range…
+          </Button>
         </CardContent>
       </Card>
 
@@ -1204,5 +1238,244 @@ function SyncHistoryCard() {
         {logs.length > 0 && <p className="text-[11px] text-muted-foreground text-right">Showing {logs.length} of up to {HISTORY_LIMIT} most recent events</p>}
       </CardContent>
     </Card>
+  );
+}
+
+// ─── Sync Audit Card ──────────────────────────────────────────────────────────
+// Job-level audit trail: who triggered each sync, from where, what happened.
+
+function SyncAuditCard({ onExport }: { onExport: () => void }) {
+  const { data: jobs, isLoading } = useQuery<SyncJobAudit[]>({
+    queryKey: ["shopify-sync-jobs"],
+    queryFn: async () => {
+      const r = await fetch("/api/shopify/sync-jobs");
+      if (!r.ok) throw new Error("Failed to load sync jobs");
+      return r.json();
+    },
+    staleTime: 30_000,
+  });
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Shield className="h-4 w-4 text-[#95bf47]" />
+              Sync Audit Trail
+            </CardTitle>
+            <CardDescription className="mt-0.5">Full record of every sync job — who triggered it, from where, and what changed.</CardDescription>
+          </div>
+          <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={onExport}>
+            <Download className="h-3 w-3" />Export
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-muted-foreground text-sm py-6">
+            <Loader2 className="h-4 w-4 animate-spin" />Loading audit trail…
+          </div>
+        ) : !jobs?.length ? (
+          <div className="py-10 text-center text-sm text-muted-foreground">
+            No sync jobs recorded yet. Run your first sync to begin building the audit trail.
+          </div>
+        ) : (
+          <div className="overflow-auto rounded-md border max-h-[480px]">
+            <Table>
+              <TableHeader className="sticky top-0 bg-background z-10">
+                <TableRow>
+                  <TableHead className="text-xs w-44">Triggered by</TableHead>
+                  <TableHead className="text-xs">IP / Location</TableHead>
+                  <TableHead className="text-xs">Results</TableHead>
+                  <TableHead className="text-xs w-28">Status</TableHead>
+                  <TableHead className="text-xs w-36">Date / Time</TableHead>
+                  <TableHead className="text-xs w-20">Duration</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {jobs.map((job) => {
+                  const durationSecs = job.finishedAt
+                    ? (new Date(job.finishedAt).getTime() - new Date(job.startedAt).getTime()) / 1000
+                    : null;
+                  return (
+                    <TableRow key={job.id} className={job.status === "failed" ? "bg-destructive/5" : undefined}>
+                      <TableCell className="py-2.5">
+                        <div className="flex items-center gap-2">
+                          <UserCircle2 className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          <div>
+                            <p className="text-xs font-medium leading-tight">{job.triggeredByName ?? "System / Unknown"}</p>
+                            {job.triggeredByEmail && (
+                              <p className="text-[10px] text-muted-foreground leading-tight truncate max-w-[140px]">{job.triggeredByEmail}</p>
+                            )}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="py-2.5">
+                        <div className="flex items-start gap-1.5">
+                          <MapPin className="h-3 w-3 text-muted-foreground flex-shrink-0 mt-0.5" />
+                          <div>
+                            <p className="text-[10px] font-mono text-muted-foreground leading-tight">{job.triggeredByIp ?? "—"}</p>
+                            {job.triggeredByLocation && (
+                              <p className="text-[10px] text-muted-foreground leading-tight">{job.triggeredByLocation}</p>
+                            )}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="py-2.5">
+                        <div className="flex flex-wrap gap-x-2 gap-y-0.5">
+                          {job.created > 0 && <span className="text-[10px] text-green-600 font-medium">+{job.created} created</span>}
+                          {job.updated > 0 && <span className="text-[10px] text-blue-600 font-medium">{job.updated} updated</span>}
+                          {job.failed > 0 && <span className="text-[10px] text-destructive font-medium">{job.failed} failed</span>}
+                          {job.skipped > 0 && <span className="text-[10px] text-muted-foreground">{job.skipped} skipped</span>}
+                          {job.missing > 0 && <span className="text-[10px] text-orange-500">{job.missing} missing</span>}
+                          {job.created === 0 && job.updated === 0 && job.failed === 0 && (
+                            <span className="text-[10px] text-muted-foreground">No changes</span>
+                          )}
+                        </div>
+                        {job.totalShopify != null && (
+                          <p className="text-[10px] text-muted-foreground mt-0.5">{job.processed} / {job.totalShopify} processed</p>
+                        )}
+                      </TableCell>
+                      <TableCell className="py-2.5">
+                        <SyncStatusBadge status={job.status as ProductSyncJob["status"]} />
+                      </TableCell>
+                      <TableCell className="py-2.5">
+                        <p className="text-xs text-muted-foreground whitespace-nowrap">{fmtTime(job.startedAt)}</p>
+                        <p className="text-[10px] text-muted-foreground">{fmtAgo(job.startedAt)}</p>
+                      </TableCell>
+                      <TableCell className="py-2.5 text-xs text-muted-foreground">
+                        {durationSecs != null ? fmtDuration(durationSecs) : "—"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Export Dialog ────────────────────────────────────────────────────────────
+// Date-range + status filter CSV export.
+
+function ExportDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const today = format(new Date(), "yyyy-MM-dd");
+  const thirtyDaysAgo = format(subDays(new Date(), 30), "yyyy-MM-dd");
+
+  const [fromDate, setFromDate] = useState(thirtyDaysAgo);
+  const [toDate, setToDate] = useState(today);
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  const handleQuickRange = (days: number) => {
+    const to = new Date();
+    const from = days === 0 ? new Date() : subDays(to, days);
+    setToDate(format(to, "yyyy-MM-dd"));
+    setFromDate(format(from, "yyyy-MM-dd"));
+  };
+
+  const handleDownload = () => {
+    const params = new URLSearchParams({ from: fromDate, to: toDate });
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    window.open(`/api/shopify/export-report.csv?${params.toString()}`, "_blank");
+    onClose();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CalendarDays className="h-5 w-5 text-[#95bf47]" />
+            Export Sync Report
+          </DialogTitle>
+          <DialogDescription>Download sync event log as CSV. Choose a date range and optional status filter.</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-1">
+          {/* Quick range chips */}
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-2">Quick ranges</p>
+            <div className="flex gap-1.5 flex-wrap">
+              {[
+                { label: "Today", days: 0 },
+                { label: "Last 7 days", days: 7 },
+                { label: "Last 30 days", days: 30 },
+                { label: "Last 90 days", days: 90 },
+              ].map(({ label, days }) => (
+                <button
+                  key={label}
+                  onClick={() => handleQuickRange(days)}
+                  className="rounded-full border px-3 py-1 text-xs hover:bg-muted transition-colors"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Custom date range */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium">From date</label>
+              <Input
+                type="date"
+                value={fromDate}
+                max={toDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="h-9 text-sm"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium">To date</label>
+              <Input
+                type="date"
+                value={toDate}
+                min={fromDate}
+                max={today}
+                onChange={(e) => setToDate(e.target.value)}
+                className="h-9 text-sm"
+              />
+            </div>
+          </div>
+
+          {/* Status filter */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium">Status filter</label>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="h-9 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All events</SelectItem>
+                <SelectItem value="success">Success only</SelectItem>
+                <SelectItem value="error">Errors only</SelectItem>
+                <SelectItem value="skipped">Skipped only</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Preview summary */}
+          <div className="rounded-md bg-muted/50 border p-3 text-xs text-muted-foreground space-y-0.5">
+            <p><span className="font-medium text-foreground">Date range:</span> {fromDate || "—"} → {toDate || "—"}</p>
+            <p><span className="font-medium text-foreground">Status:</span> {statusFilter === "all" ? "All events" : statusFilter}</p>
+            <p><span className="font-medium text-foreground">Format:</span> CSV (up to 5,000 rows)</p>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleDownload} disabled={!fromDate || !toDate} className="gap-2">
+            <Download className="h-4 w-4" />
+            Download CSV
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

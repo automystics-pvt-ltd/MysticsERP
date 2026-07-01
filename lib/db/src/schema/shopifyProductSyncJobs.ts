@@ -57,6 +57,11 @@ export const shopifyProductSyncJobsTable = pgTable(
       .notNull()
       .defaultNow(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
+    /** Who triggered this sync (recorded at start time). */
+    triggeredByName: text("triggered_by_name"),
+    triggeredByEmail: text("triggered_by_email"),
+    triggeredByIp: text("triggered_by_ip"),
+    triggeredByLocation: text("triggered_by_location"),
   },
   (t) => ({
     orgIdx: index("shopify_product_sync_jobs_org_idx").on(t.organizationId),

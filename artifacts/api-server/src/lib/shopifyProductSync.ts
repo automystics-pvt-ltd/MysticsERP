@@ -139,7 +139,15 @@ export async function getProductSyncJob(
  */
 export async function startProductSync(
   organizationId: number,
-  opts?: { skipVariantIds?: Set<string> },
+  opts?: {
+    skipVariantIds?: Set<string>;
+    audit?: {
+      name?: string | null;
+      email?: string | null;
+      ip?: string | null;
+      location?: string | null;
+    };
+  },
 ): Promise<string> {
   // Prune old completed jobs first (keep last MAX_RETAINED_JOBS per org).
   void pruneOldProductSyncJobs(organizationId);
@@ -149,6 +157,10 @@ export async function startProductSync(
     id,
     organizationId,
     status: "running",
+    triggeredByName: opts?.audit?.name ?? null,
+    triggeredByEmail: opts?.audit?.email ?? null,
+    triggeredByIp: opts?.audit?.ip ?? null,
+    triggeredByLocation: opts?.audit?.location ?? null,
   });
 
   // Fire-and-forget — caller gets the job id immediately.
