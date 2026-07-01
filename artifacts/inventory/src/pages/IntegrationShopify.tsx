@@ -1800,7 +1800,7 @@ function SyncHistoryCard() {
             { label: "Failed",  value: summary.error,   icon: <AlertCircle className="h-4 w-4 text-destructive" />, cls: summary.error > 0 ? "text-destructive" : "text-muted-foreground", bg: summary.error > 0 ? "bg-red-50/60 dark:bg-red-900/15" : "bg-muted/40" },
             { label: "Skipped", value: summary.skipped, icon: <SkipForward className="h-4 w-4 text-muted-foreground" />, cls: "text-muted-foreground", bg: "bg-muted/40" },
           ].map(({ label, value, icon, cls, bg }) => (
-            <div key={label} className={cn("rounded-xl border p-4 flex items-center gap-3", bg)}>
+            <div key={label} className={cn("rounded-xl border p-4 flex items-center gap-3 mt-[0px] mb-[0px]", bg)}>
               {icon}
               <div>
                 <p className="text-xs text-muted-foreground leading-tight">{label}</p>
