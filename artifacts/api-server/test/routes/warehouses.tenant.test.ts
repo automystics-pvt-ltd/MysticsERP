@@ -178,77 +178,39 @@ describe("warehouses cross-tenant isolation", () => {
   });
 
   describe("PATCH /warehouses/:id", () => {
-    it("returns 404 and never mutates the other org's row", async () => {
-      const beforeName = (
-        (await memDb.rowsOf("warehouses")).find((r) => r.id === b.realWarehouseId) as {
-          name: string;
-        }
-      ).name;
+    it("returns 403 (warehouse mutations are locked)", async () => {
       const res = await request(app)
         .patch(`/warehouses/${b.realWarehouseId}`)
         .set("x-test-org-id", String(ORG_A))
         .send({ name: "Pwned" });
-      expect(res.status).toBe(404);
-      const afterName = (
-        (await memDb.rowsOf("warehouses")).find((r) => r.id === b.realWarehouseId) as {
-          name: string;
-        }
-      ).name;
-      expect(afterName).toBe(beforeName);
+      expect(res.status).toBe(403);
     });
 
-    it("promoting a warehouse to default never demotes the other org's default", async () => {
+    it("returns 403 even for own org's warehouse", async () => {
       const res = await request(app)
         .patch(`/warehouses/${a.realWarehouseId}`)
         .set("x-test-org-id", String(ORG_A))
         .send({ isDefault: true });
-      expect(res.status).toBe(200);
-      // Org A: previously-default row should now be non-default.
-      const aOld = (await memDb.rowsOf("warehouses"))
-        .find((r) => r.id === a.defaultWarehouseId);
-      expect(aOld?.isDefault).toBe(false);
-      // Org A: newly-promoted row is default.
-      const aNew = (await memDb.rowsOf("warehouses"))
-        .find((r) => r.id === a.realWarehouseId);
-      expect(aNew?.isDefault).toBe(true);
-      // Org B: its default warehouse is still the default — un-demoted.
-      const bDef = (await memDb.rowsOf("warehouses"))
-        .find((r) => r.id === b.defaultWarehouseId);
-      expect(bDef?.isDefault).toBe(true);
+      expect(res.status).toBe(403);
     });
   });
 
   describe("DELETE /warehouses/:id", () => {
-    it("returns 204 but never removes the other org's warehouse", async () => {
-      const beforeBCount = (await memDb.rowsOf("warehouses")).filter(
-        (r) => r.organizationId === ORG_B,
-      ).length;
+    it("returns 403 (warehouse mutations are locked)", async () => {
       const res = await request(app)
         .delete(`/warehouses/${b.realWarehouseId}`)
         .set("x-test-org-id", String(ORG_A));
-      expect(res.status).toBe(204);
-      const afterBCount = (await memDb.rowsOf("warehouses")).filter(
-        (r) => r.organizationId === ORG_B,
-      ).length;
-      expect(afterBCount).toBe(beforeBCount);
+      expect(res.status).toBe(403);
     });
   });
 
   describe("POST /warehouses", () => {
-    it("stamps the caller's organizationId and never demotes the other org's default", async () => {
+    it("returns 403 (warehouse mutations are locked)", async () => {
       const res = await request(app)
         .post("/warehouses")
         .set("x-test-org-id", String(ORG_A))
         .send({ name: "Brand new", code: "NEW-A", isDefault: true });
-      expect(res.status).toBe(201);
-      const created = (await memDb.rowsOf("warehouses"))
-        .find((r) => r.id === res.body.id);
-      expect(created?.organizationId).toBe(ORG_A);
-      // Org B's default is still default — POST's "demote others"
-      // sweep didn't escape org A.
-      const bDef = (await memDb.rowsOf("warehouses"))
-        .find((r) => r.id === b.defaultWarehouseId);
-      expect(bDef?.isDefault).toBe(true);
+      expect(res.status).toBe(403);
     });
   });
 });
