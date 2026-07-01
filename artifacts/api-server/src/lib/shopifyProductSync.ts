@@ -946,7 +946,11 @@ async function upsertVariant(
           name: variantName,
           description: p.body_html,
           category: p.product_type,
-          salePrice,
+          // salePrice intentionally excluded: ERP is the system of record for
+          // pricing. Overwriting here creates a race where a sync triggered
+          // shortly after a PATCH price change can revert the user's edit
+          // before the fire-and-forget pushProductFieldsToShopify push
+          // completes. Consistent with the products/update webhook handler.
           shopifyProductId: String(p.id),
           shopifyVariantId: String(v.id),
           shopifyInventoryItemId: v.inventory_item_id ? String(v.inventory_item_id) : null,
