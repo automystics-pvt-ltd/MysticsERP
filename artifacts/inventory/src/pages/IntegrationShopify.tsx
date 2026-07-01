@@ -1190,9 +1190,9 @@ function SyncSummarySection({
             onClick={() => status && onDrilldown(status)}
             disabled={!status}
             className={cn(
-              "rounded-xl border-t-2 bg-muted/30 p-3 text-center transition-all",
-              status ? "hover:bg-muted/70 hover:shadow-sm cursor-pointer" : "cursor-default",
-              border || "border-t-transparent",
+              "rounded-xl border border-b-2 bg-white shadow-sm p-3 text-center transition-all",
+              status ? "hover:shadow-md hover:border-b-[3px] cursor-pointer" : "cursor-default",
+              border ? border.replace("border-t-", "border-b-") : "border-b-transparent",
             )}
           >
             <p className="text-[10px] text-muted-foreground mb-1.5 leading-tight">{label}</p>
@@ -1785,22 +1785,28 @@ function AdvancedSettingsTab({
 
 // ─── Sync History Card ────────────────────────────────────────────────────────
 
-const HISTORY_LIMIT = 200;
+const HISTORY_PAGE_SIZE = 50;
 
 function SyncHistoryCard() {
+  const [page, setPage] = useState(0);
   const [statusFilter, setStatusFilter] = useState("all");
   const [entityFilter, setEntityFilter] = useState("all");
   const [daysFilter, setDaysFilter] = useState("7");
+  const [search, setSearch] = useState("");
+
+  // Reset page on filter change
+  const handleFilterChange = (setter: (v: string) => void) => (v: string) => { setter(v); setPage(0); };
 
   const params = useMemo(() => {
-    const p = new URLSearchParams({ limit: String(HISTORY_LIMIT) });
+    const p = new URLSearchParams({ limit: String(HISTORY_PAGE_SIZE), offset: String(page * HISTORY_PAGE_SIZE) });
     if (statusFilter !== "all") p.set("status", statusFilter);
     if (entityFilter !== "all") p.set("entity", entityFilter);
     if (daysFilter !== "all") p.set("days", daysFilter);
+    if (search.trim()) p.set("search", search.trim());
     return p.toString();
-  }, [statusFilter, entityFilter, daysFilter]);
+  }, [statusFilter, entityFilter, daysFilter, search, page]);
 
-  const { data, isLoading } = useQuery<{ logs: SyncLog[]; summary: { total: number; success: number; error: number; skipped: number } }>({
+  const { data, isLoading, isFetching } = useQuery<{ logs: SyncLog[]; total: number; summary: { total: number; success: number; error: number; skipped: number } }>({
     queryKey: ["shopify-sync-logs", params],
     queryFn: async () => {
       const r = await fetch(`/api/shopify/sync-logs?${params}`);
@@ -1808,10 +1814,17 @@ function SyncHistoryCard() {
       return r.json();
     },
     staleTime: 30_000,
+    placeholderData: (prev) => prev,
   });
 
   const logs = data?.logs ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / HISTORY_PAGE_SIZE));
+  const from = total === 0 ? 0 : page * HISTORY_PAGE_SIZE + 1;
+  const to = Math.min((page + 1) * HISTORY_PAGE_SIZE, total);
   const summary = data?.summary ?? { total: 0, success: 0, error: 0, skipped: 0 };
+  const hasFilters = statusFilter !== "all" || entityFilter !== "all" || daysFilter !== "7" || search.trim() !== "";
+  const resetFilters = () => { setStatusFilter("all"); setEntityFilter("all"); setDaysFilter("7"); setSearch(""); setPage(0); };
 
   return (
     <Card>
@@ -1857,7 +1870,16 @@ function SyncHistoryCard() {
 
         {/* Filters */}
         <div className="flex gap-2 flex-wrap items-center">
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <div className="relative flex-1 min-w-[180px]">
+            <Package className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Search product name or SKU…"
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+              className="h-8 pl-8 text-xs"
+            />
+          </div>
+          <Select value={statusFilter} onValueChange={handleFilterChange(setStatusFilter)}>
             <SelectTrigger className="w-36 h-8 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All statuses</SelectItem>
@@ -1866,7 +1888,7 @@ function SyncHistoryCard() {
               <SelectItem value="skipped">Skipped</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={entityFilter} onValueChange={setEntityFilter}>
+          <Select value={entityFilter} onValueChange={handleFilterChange(setEntityFilter)}>
             <SelectTrigger className="w-36 h-8 text-xs"><SelectValue placeholder="Entity" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All entities</SelectItem>
@@ -1875,7 +1897,7 @@ function SyncHistoryCard() {
               <SelectItem value="order">Order</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={daysFilter} onValueChange={setDaysFilter}>
+          <Select value={daysFilter} onValueChange={handleFilterChange(setDaysFilter)}>
             <SelectTrigger className="w-32 h-8 text-xs"><SelectValue placeholder="Period" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="1">Last 24 h</SelectItem>
@@ -1884,11 +1906,8 @@ function SyncHistoryCard() {
               <SelectItem value="all">All time</SelectItem>
             </SelectContent>
           </Select>
-          {(statusFilter !== "all" || entityFilter !== "all" || daysFilter !== "7") && (
-            <button
-              onClick={() => { setStatusFilter("all"); setEntityFilter("all"); setDaysFilter("7"); }}
-              className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
-            >
+          {hasFilters && (
+            <button onClick={resetFilters} className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors">
               Reset filters
             </button>
           )}
@@ -1907,17 +1926,17 @@ function SyncHistoryCard() {
           </div>
         ) : (
           <TooltipProvider>
-            <ScrollArea className="max-h-[420px] rounded-xl border overflow-hidden">
+            <div className={cn("rounded-xl border overflow-hidden transition-opacity", isFetching ? "opacity-60" : "opacity-100")}>
               <Table>
-                <TableHeader className="sticky top-0 bg-muted/80 backdrop-blur-sm z-10">
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="text-xs font-semibold w-24">Entity</TableHead>
-                    <TableHead className="text-xs font-semibold w-20">Action</TableHead>
-                    <TableHead className="text-xs font-semibold">Product / SKU</TableHead>
-                    <TableHead className="text-xs font-semibold w-24">Status</TableHead>
-                    <TableHead className="text-xs font-semibold">Reason</TableHead>
-                    <TableHead className="text-xs font-semibold font-mono">Shopify ID</TableHead>
-                    <TableHead className="text-xs font-semibold w-36">Time</TableHead>
+                <TableHeader className="sticky top-0 bg-slate-50 z-10">
+                  <TableRow className="hover:bg-transparent border-b">
+                    <TableHead className="text-xs font-semibold text-slate-600 w-24 py-3">Entity</TableHead>
+                    <TableHead className="text-xs font-semibold text-slate-600 w-20 py-3">Action</TableHead>
+                    <TableHead className="text-xs font-semibold text-slate-600 py-3">Product / SKU</TableHead>
+                    <TableHead className="text-xs font-semibold text-slate-600 w-24 py-3">Status</TableHead>
+                    <TableHead className="text-xs font-semibold text-slate-600 py-3">Reason</TableHead>
+                    <TableHead className="text-xs font-semibold text-slate-600 font-mono py-3">Shopify ID</TableHead>
+                    <TableHead className="text-xs font-semibold text-slate-600 w-36 py-3">Time</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1925,7 +1944,8 @@ function SyncHistoryCard() {
                     <TableRow
                       key={row.id}
                       className={cn(
-                        row.status === "error" ? "bg-destructive/5 hover:bg-destructive/8" : idx % 2 === 0 ? "bg-muted/20 hover:bg-muted/40" : "hover:bg-muted/20",
+                        "border-b last:border-0",
+                        row.status === "error" ? "bg-red-50/40 hover:bg-red-50/70" : idx % 2 === 0 ? "bg-white hover:bg-slate-50/70" : "bg-slate-50/40 hover:bg-slate-50/80",
                       )}
                     >
                       <TableCell className="text-xs capitalize py-2.5">
@@ -1935,8 +1955,8 @@ function SyncHistoryCard() {
                       </TableCell>
                       <TableCell className="text-xs py-2.5 capitalize text-muted-foreground">{row.action}</TableCell>
                       <TableCell className="text-xs py-2.5 max-w-[200px]">
-                        <div className="truncate font-medium">{row.name ?? "—"}</div>
-                        {row.sku && <div className="text-muted-foreground font-mono text-[10px] truncate mt-0.5">{row.sku}</div>}
+                        <div className="truncate font-semibold text-slate-800">{row.name ?? "—"}</div>
+                        {row.sku && <div className="text-muted-foreground font-mono text-[10px] truncate mt-0.5 flex items-center gap-1"><Hash className="h-2.5 w-2.5" />{row.sku}</div>}
                         {row.parentItemId && <div className="text-[10px] text-muted-foreground">variant</div>}
                       </TableCell>
                       <TableCell className="py-2.5">{statusBadge(row.status)}</TableCell>
@@ -1959,19 +1979,41 @@ function SyncHistoryCard() {
                           <span className="text-muted-foreground">—</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-[11px] font-mono py-2.5 text-muted-foreground max-w-[100px] truncate">{row.shopifyId ?? "—"}</TableCell>
+                      <TableCell className="text-[11px] font-mono py-2.5 text-slate-400 max-w-[100px] truncate">{row.shopifyId ?? "—"}</TableCell>
                       <TableCell className="text-xs text-muted-foreground py-2.5 whitespace-nowrap">{fmtTime(row.createdAt)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
-            </ScrollArea>
+            </div>
           </TooltipProvider>
         )}
-        {logs.length > 0 && (
-          <p className="text-[11px] text-muted-foreground text-right">
-            Showing {logs.length.toLocaleString()} of up to {HISTORY_LIMIT} most recent events
-          </p>
+
+        {/* Pagination footer */}
+        {total > 0 && (
+          <div className="flex items-center justify-between gap-4 pt-1">
+            <p className="text-xs text-muted-foreground">
+              {isFetching
+                ? <span className="flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" />Loading…</span>
+                : `Showing ${from.toLocaleString()}–${to.toLocaleString()} of ${total.toLocaleString()} events`
+              }
+            </p>
+            <div className="flex items-center gap-1">
+              <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled={page === 0 || isFetching} onClick={() => setPage(0)}>
+                <ChevronLeft className="h-3.5 w-3.5 mr-[-4px]" /><ChevronLeft className="h-3.5 w-3.5" />
+              </Button>
+              <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled={page === 0 || isFetching} onClick={() => setPage(p => p - 1)}>
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </Button>
+              <span className="text-xs font-medium px-3 py-1 rounded border min-w-[80px] text-center">{page + 1} / {totalPages}</span>
+              <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled={page >= totalPages - 1 || isFetching} onClick={() => setPage(p => p + 1)}>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+              <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled={page >= totalPages - 1 || isFetching} onClick={() => setPage(totalPages - 1)}>
+                <ChevronRight className="h-3.5 w-3.5 ml-[-4px]" /><ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
         )}
       </CardContent>
     </Card>
@@ -1980,16 +2022,32 @@ function SyncHistoryCard() {
 
 // ─── Sync Audit Card ──────────────────────────────────────────────────────────
 
+const AUDIT_PAGE_SIZE = 50;
+
 function SyncAuditCard({ onExport }: { onExport: () => void }) {
-  const { data: jobs, isLoading } = useQuery<SyncJobAudit[]>({
-    queryKey: ["shopify-sync-jobs"],
+  const [page, setPage] = useState(0);
+
+  const auditParams = useMemo(() => new URLSearchParams({
+    limit: String(AUDIT_PAGE_SIZE),
+    offset: String(page * AUDIT_PAGE_SIZE),
+  }).toString(), [page]);
+
+  const { data, isLoading, isFetching } = useQuery<{ jobs: SyncJobAudit[]; total: number }>({
+    queryKey: ["shopify-sync-jobs", auditParams],
     queryFn: async () => {
-      const r = await fetch("/api/shopify/sync-jobs");
+      const r = await fetch(`/api/shopify/sync-jobs?${auditParams}`);
       if (!r.ok) throw new Error("Failed to load sync jobs");
       return r.json();
     },
     staleTime: 30_000,
+    placeholderData: (prev) => prev,
   });
+
+  const jobs = data?.jobs ?? [];
+  const auditTotal = data?.total ?? 0;
+  const auditTotalPages = Math.max(1, Math.ceil(auditTotal / AUDIT_PAGE_SIZE));
+  const auditFrom = auditTotal === 0 ? 0 : page * AUDIT_PAGE_SIZE + 1;
+  const auditTo = Math.min((page + 1) * AUDIT_PAGE_SIZE, auditTotal);
 
   return (
     <Card>
@@ -2022,16 +2080,16 @@ function SyncAuditCard({ onExport }: { onExport: () => void }) {
             <p className="text-xs text-muted-foreground/70 mt-1">Run your first sync to begin building the audit trail.</p>
           </div>
         ) : (
-          <ScrollArea className="max-h-[480px] rounded-xl border overflow-hidden">
+          <div className={cn("rounded-xl border overflow-hidden transition-opacity", isFetching ? "opacity-60" : "opacity-100")}>
             <Table>
-              <TableHeader className="sticky top-0 bg-muted/80 backdrop-blur-sm z-10">
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="text-xs font-semibold w-52">Triggered by</TableHead>
-                  <TableHead className="text-xs font-semibold">IP / Location</TableHead>
-                  <TableHead className="text-xs font-semibold">Results</TableHead>
-                  <TableHead className="text-xs font-semibold w-28">Status</TableHead>
-                  <TableHead className="text-xs font-semibold w-36">Date / Time</TableHead>
-                  <TableHead className="text-xs font-semibold w-20">Duration</TableHead>
+              <TableHeader className="sticky top-0 bg-slate-50 z-10">
+                <TableRow className="hover:bg-transparent border-b">
+                  <TableHead className="text-xs font-semibold text-slate-600 w-52 py-3">Triggered by</TableHead>
+                  <TableHead className="text-xs font-semibold text-slate-600 py-3">IP / Location</TableHead>
+                  <TableHead className="text-xs font-semibold text-slate-600 py-3">Results</TableHead>
+                  <TableHead className="text-xs font-semibold text-slate-600 w-28 py-3">Status</TableHead>
+                  <TableHead className="text-xs font-semibold text-slate-600 w-36 py-3">Date / Time</TableHead>
+                  <TableHead className="text-xs font-semibold text-slate-600 w-20 py-3">Duration</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -2044,7 +2102,8 @@ function SyncAuditCard({ onExport }: { onExport: () => void }) {
                     <TableRow
                       key={job.id}
                       className={cn(
-                        job.status === "failed" ? "bg-destructive/5 hover:bg-destructive/8" : idx % 2 === 0 ? "bg-muted/20 hover:bg-muted/40" : "hover:bg-muted/20",
+                        "border-b last:border-0",
+                        job.status === "failed" ? "bg-red-50/40 hover:bg-red-50/70" : idx % 2 === 0 ? "bg-white hover:bg-slate-50/70" : "bg-slate-50/40 hover:bg-slate-50/80",
                       )}
                     >
                       <TableCell className="py-3">
@@ -2101,7 +2160,34 @@ function SyncAuditCard({ onExport }: { onExport: () => void }) {
                 })}
               </TableBody>
             </Table>
-          </ScrollArea>
+          </div>
+        )}
+
+        {/* Pagination footer */}
+        {auditTotal > 0 && (
+          <div className="flex items-center justify-between gap-4 pt-3">
+            <p className="text-xs text-muted-foreground">
+              {isFetching
+                ? <span className="flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" />Loading…</span>
+                : `Showing ${auditFrom.toLocaleString()}–${auditTo.toLocaleString()} of ${auditTotal.toLocaleString()} sync jobs`
+              }
+            </p>
+            <div className="flex items-center gap-1">
+              <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled={page === 0 || isFetching} onClick={() => setPage(0)}>
+                <ChevronLeft className="h-3.5 w-3.5 mr-[-4px]" /><ChevronLeft className="h-3.5 w-3.5" />
+              </Button>
+              <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled={page === 0 || isFetching} onClick={() => setPage(p => p - 1)}>
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </Button>
+              <span className="text-xs font-medium px-3 py-1 rounded border min-w-[80px] text-center">{page + 1} / {auditTotalPages}</span>
+              <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled={page >= auditTotalPages - 1 || isFetching} onClick={() => setPage(p => p + 1)}>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+              <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled={page >= auditTotalPages - 1 || isFetching} onClick={() => setPage(auditTotalPages - 1)}>
+                <ChevronRight className="h-3.5 w-3.5 ml-[-4px]" /><ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
         )}
       </CardContent>
     </Card>

@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { Router, type IRouter } from "express";
-import { and, eq, lt, isNotNull, isNull, inArray, sql, count, sum, gte, lte } from "drizzle-orm";
+import { and, eq, lt, isNotNull, isNull, inArray, sql, count, sum, gte, lte, ilike, or } from "drizzle-orm";
 import {
   db,
   organizationsTable,
@@ -193,7 +193,7 @@ if (process.env.SHOPIFY_DEV_MOCK === "true" && !process.env.VITEST) {
 
   router.get("/shopify/product-sync-job/latest", (_req, res) => { res.json(mockJob()); });
   router.get("/shopify/product-sync-job/:id",    (_req, res) => { res.json(mockJob()); });
-  router.get("/shopify/sync-jobs",               (_req, res) => { res.json(mockJobs()); });
+  router.get("/shopify/sync-jobs",               (_req, res) => { const j = mockJobs(); res.json({ jobs: j, total: j.length }); });
 
   router.post("/shopify/sync", (_req, res) => {
     res.json({ jobId: MOCK_JOB_ID });
@@ -1041,10 +1041,12 @@ router.get("/shopify/reconcile", async (req, res, next) => {
 router.get("/shopify/sync-logs", async (req, res, next) => {
   try {
     const t = req.tenant!;
-    const limit = Math.min(Number(req.query["limit"] ?? 200), 500);
+    const limit = Math.min(Number(req.query["limit"] ?? 50), 500);
+    const offset = Number(req.query["offset"] ?? 0);
     const entity = typeof req.query["entity"] === "string" ? req.query["entity"] : null;
     const status = typeof req.query["status"] === "string" ? req.query["status"] : null;
     const days = req.query["days"] ? Number(req.query["days"]) : null;
+    const search = typeof req.query["search"] === "string" && req.query["search"].trim() ? req.query["search"].trim() : null;
 
     const conds = [eq(shopifySyncLogsTable.organizationId, t.organizationId)];
     if (entity) conds.push(eq(shopifySyncLogsTable.entity, entity));
@@ -1054,14 +1056,22 @@ router.get("/shopify/sync-logs", async (req, res, next) => {
         sql`${shopifySyncLogsTable.createdAt} >= NOW() - INTERVAL '${sql.raw(String(Math.floor(days)))} days'`,
       );
     }
+    if (search) {
+      conds.push(or(ilike(shopifySyncLogsTable.name, `%${search}%`), ilike(shopifySyncLogsTable.sku, `%${search}%`))!);
+    }
 
-    const [rows, summary] = await Promise.all([
+    const [rows, totalCount, summary] = await Promise.all([
       db
         .select()
         .from(shopifySyncLogsTable)
         .where(and(...conds))
         .orderBy(sql`${shopifySyncLogsTable.createdAt} DESC`)
-        .limit(limit),
+        .limit(limit)
+        .offset(offset),
+      db
+        .select({ n: sql<number>`COUNT(*)::int` })
+        .from(shopifySyncLogsTable)
+        .where(and(...conds)),
       db
         .select({
           status: shopifySyncLogsTable.status,
@@ -1081,7 +1091,7 @@ router.get("/shopify/sync-logs", async (req, res, next) => {
       else if (row.status === "skipped") counts.skipped = n;
     }
 
-    res.json({ logs: rows, summary: counts });
+    res.json({ logs: rows, total: Number(totalCount[0]?.n ?? 0), summary: counts });
   } catch (err) {
     next(err);
   }
@@ -1105,30 +1115,38 @@ router.get("/shopify/sync-jobs", async (req, res, next) => {
   try {
     const t = req.tenant!;
     const limit = Math.min(Number(req.query.limit ?? 50), 200);
-    const jobs = await db
-      .select({
-        id: shopifyProductSyncJobsTable.id,
-        status: shopifyProductSyncJobsTable.status,
-        totalShopify: shopifyProductSyncJobsTable.totalShopify,
-        processed: shopifyProductSyncJobsTable.processed,
-        created: shopifyProductSyncJobsTable.created,
-        updated: shopifyProductSyncJobsTable.updated,
-        skipped: shopifyProductSyncJobsTable.skipped,
-        failed: shopifyProductSyncJobsTable.failed,
-        missing: shopifyProductSyncJobsTable.missing,
-        error: shopifyProductSyncJobsTable.error,
-        startedAt: shopifyProductSyncJobsTable.startedAt,
-        finishedAt: shopifyProductSyncJobsTable.finishedAt,
-        triggeredByName: shopifyProductSyncJobsTable.triggeredByName,
-        triggeredByEmail: shopifyProductSyncJobsTable.triggeredByEmail,
-        triggeredByIp: shopifyProductSyncJobsTable.triggeredByIp,
-        triggeredByLocation: shopifyProductSyncJobsTable.triggeredByLocation,
-      })
-      .from(shopifyProductSyncJobsTable)
-      .where(eq(shopifyProductSyncJobsTable.organizationId, t.organizationId))
-      .orderBy(sql`${shopifyProductSyncJobsTable.startedAt} DESC`)
-      .limit(limit);
-    res.json(jobs);
+    const offset = Number(req.query.offset ?? 0);
+    const [jobs, totalCount] = await Promise.all([
+      db
+        .select({
+          id: shopifyProductSyncJobsTable.id,
+          status: shopifyProductSyncJobsTable.status,
+          totalShopify: shopifyProductSyncJobsTable.totalShopify,
+          processed: shopifyProductSyncJobsTable.processed,
+          created: shopifyProductSyncJobsTable.created,
+          updated: shopifyProductSyncJobsTable.updated,
+          skipped: shopifyProductSyncJobsTable.skipped,
+          failed: shopifyProductSyncJobsTable.failed,
+          missing: shopifyProductSyncJobsTable.missing,
+          error: shopifyProductSyncJobsTable.error,
+          startedAt: shopifyProductSyncJobsTable.startedAt,
+          finishedAt: shopifyProductSyncJobsTable.finishedAt,
+          triggeredByName: shopifyProductSyncJobsTable.triggeredByName,
+          triggeredByEmail: shopifyProductSyncJobsTable.triggeredByEmail,
+          triggeredByIp: shopifyProductSyncJobsTable.triggeredByIp,
+          triggeredByLocation: shopifyProductSyncJobsTable.triggeredByLocation,
+        })
+        .from(shopifyProductSyncJobsTable)
+        .where(eq(shopifyProductSyncJobsTable.organizationId, t.organizationId))
+        .orderBy(sql`${shopifyProductSyncJobsTable.startedAt} DESC`)
+        .limit(limit)
+        .offset(offset),
+      db
+        .select({ n: sql<number>`COUNT(*)::int` })
+        .from(shopifyProductSyncJobsTable)
+        .where(eq(shopifyProductSyncJobsTable.organizationId, t.organizationId)),
+    ]);
+    res.json({ jobs, total: Number(totalCount[0]?.n ?? 0) });
   } catch (err) {
     next(err);
   }
@@ -1239,6 +1257,8 @@ router.get("/shopify/product-sync-job/:id/items", async (req, res, next) => {
     const statusParam = typeof req.query.status === "string" ? req.query.status : null;
     const limit = Math.min(Number(req.query.limit ?? 200), 500);
     const offset = Number(req.query.offset ?? 0);
+    const search = typeof req.query.search === "string" && req.query.search.trim() ? req.query.search.trim() : null;
+    const failureReasonParam = typeof req.query.failureReason === "string" ? req.query.failureReason : null;
 
     // Fetch the job to get its time window.
     const jobRows = await db
@@ -1277,6 +1297,12 @@ router.get("/shopify/product-sync-job/:id/items", async (req, res, next) => {
     } else if (statusParam === "updated") {
       conds.push(eq(shopifySyncLogsTable.status, "success"));
       conds.push(eq(shopifySyncLogsTable.action, "update"));
+    }
+    if (search) {
+      conds.push(or(ilike(shopifySyncLogsTable.name, `%${search}%`), ilike(shopifySyncLogsTable.sku, `%${search}%`))!);
+    }
+    if (failureReasonParam) {
+      conds.push(eq(shopifySyncLogsTable.failureReason, failureReasonParam));
     }
 
     const [rows, totalCount] = await Promise.all([
