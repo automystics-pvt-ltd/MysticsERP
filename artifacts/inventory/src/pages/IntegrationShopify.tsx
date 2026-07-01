@@ -1113,7 +1113,7 @@ function KpiSection({
       {/* Secondary stats strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
         {secondary.map(({ label, value, icon }) => (
-          <div key={label} className="flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3">
+          <div key={label} className="flex items-center gap-3 rounded-lg border px-4 py-3 bg-[#ffffff]">
             <div className="text-muted-foreground">{icon}</div>
             <div>
               <p className="text-xs text-muted-foreground leading-tight">{label}</p>
