@@ -1515,7 +1515,16 @@ export default function Items() {
                     <TableCell className="text-center">
                       {(() => {
                         const stock = isParent ? (variantTotalStockMap.get(parent.id) ?? 0) : (Number(parent.totalStock) || 0);
-                        return <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium", stock > 0 ? "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300" : "bg-red-500 text-white")}>{stock} pcs</span>;
+                        const limit = Number(parent.reorderLevel) || 0;
+                        const hasLimit = parent.reorderLevel != null && limit > 0;
+                        const cls = !hasLimit
+                          ? "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                          : stock > limit
+                            ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
+                            : stock === limit
+                              ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300"
+                              : "bg-red-500 text-white";
+                        return <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium", cls)}>{stock} pcs</span>;
                       })()}
                     </TableCell>
                     {/* Shopify */}
@@ -1648,7 +1657,16 @@ export default function Items() {
                         <TableCell className="text-center">
                           {(() => {
                             const stock = Number(v.totalStock) || 0;
-                            return <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium", stock > 0 ? "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300" : "bg-red-500 text-white")}>{stock} pcs</span>;
+                            const limit = Number(v.reorderLevel) || 0;
+                            const hasLimit = v.reorderLevel != null && limit > 0;
+                            const cls = !hasLimit
+                              ? "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                              : stock > limit
+                                ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
+                                : stock === limit
+                                  ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300"
+                                  : "bg-red-500 text-white";
+                            return <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium", cls)}>{stock} pcs</span>;
                           })()}
                         </TableCell>
                         {/* Shopify */}
