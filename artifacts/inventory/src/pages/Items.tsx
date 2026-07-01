@@ -567,6 +567,16 @@ export default function Items() {
     return map;
   }, [allItemsForOptions]);
 
+  const variantTotalStockMap = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const item of allItemsForOptions ?? []) {
+      if (item.parentItemId != null) {
+        map.set(item.parentItemId, (map.get(item.parentItemId) ?? 0) + (Number(item.totalStock) || 0));
+      }
+    }
+    return map;
+  }, [allItemsForOptions]);
+
   const exportColumns = useMemo(
     (): ExportColumn<Item>[] => [
       { header: "Name", accessor: (r) => r.name },
@@ -1367,9 +1377,9 @@ export default function Items() {
               <TableHead>Product</TableHead>
               <TableHead className="w-[110px]">Status</TableHead>
               <TableHead className="w-[150px]">Price</TableHead>
-              <TableHead className="w-[60px] text-center">Main</TableHead>
-              <TableHead className="w-[70px] text-center">Shopify</TableHead>
-              <TableHead className="w-[60px] text-center">Store</TableHead>
+              <TableHead className="w-[90px] text-center">Main</TableHead>
+              <TableHead className="w-[90px] text-center">Shopify</TableHead>
+              <TableHead className="w-[80px] text-center">Store</TableHead>
               <TableHead className="w-[100px]">Created</TableHead>
               <TableHead className="w-[100px]">Updated</TableHead>
               <TableHead className="w-[50px]"></TableHead>
@@ -1494,18 +1504,18 @@ export default function Items() {
                     </TableCell>
                     {/* Main */}
                     <TableCell className="text-center">
-                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" title="In ERP" />
+                      {(() => {
+                        const stock = isParent ? (variantTotalStockMap.get(parent.id) ?? 0) : (Number(parent.totalStock) || 0);
+                        return <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium", stock > 0 ? "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300" : "bg-red-500 text-white")}>{stock} pcs</span>;
+                      })()}
                     </TableCell>
                     {/* Shopify */}
                     <TableCell className="text-center">
-                      <span
-                        className={cn("inline-block h-2.5 w-2.5 rounded-full", parent.shopifyProductId ? "bg-green-500" : "bg-gray-300 dark:bg-gray-600")}
-                        title={parent.shopifyProductId ? "Linked to Shopify" : "Not on Shopify"}
-                      />
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-500 text-white">0 pcs</span>
                     </TableCell>
                     {/* Store */}
                     <TableCell className="text-center">
-                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300 dark:bg-gray-600" title="Store not configured" />
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-500 text-white">0 pcs</span>
                     </TableCell>
                     {/* Created */}
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
@@ -1619,18 +1629,18 @@ export default function Items() {
                         </TableCell>
                         {/* Main */}
                         <TableCell className="text-center">
-                          <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" title="In ERP" />
+                          {(() => {
+                            const stock = Number(v.totalStock) || 0;
+                            return <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium", stock > 0 ? "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300" : "bg-red-500 text-white")}>{stock} pcs</span>;
+                          })()}
                         </TableCell>
                         {/* Shopify */}
                         <TableCell className="text-center">
-                          <span
-                            className={cn("inline-block h-2.5 w-2.5 rounded-full", v.shopifyVariantId ? "bg-green-500" : "bg-gray-300 dark:bg-gray-600")}
-                            title={v.shopifyVariantId ? "Linked to Shopify" : "Not on Shopify"}
-                          />
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-500 text-white">0 pcs</span>
                         </TableCell>
                         {/* Store */}
                         <TableCell className="text-center">
-                          <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300 dark:bg-gray-600" title="Store not configured" />
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-500 text-white">0 pcs</span>
                         </TableCell>
                         {/* Created */}
                         <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
