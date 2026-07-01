@@ -1,3 +1,4 @@
+import { TablePagination } from "@/components/TablePagination";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import {
@@ -99,7 +100,6 @@ import {
   Download,
   Eye,
   ChevronRight,
-  ChevronLeft,
   Bell,
   AlertTriangle,
   Plus,
@@ -1114,7 +1114,7 @@ function KpiSection({
       {/* Secondary stats strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
         {secondary.map(({ label, value, icon }) => (
-          <div key={label} className="flex items-center gap-3 rounded-lg border px-4 py-3 bg-[#ffffff]">
+          <div key={label} className="flex items-center gap-3 rounded-xl border px-4 py-3 bg-[#ffffff]">
             <div className="text-muted-foreground">{icon}</div>
             <div>
               <p className="text-xs text-muted-foreground leading-tight">{label}</p>
@@ -1340,13 +1340,13 @@ function DrilldownSheet({
   status: string | null;
   onClose: () => void;
 }) {
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(1);
   const [reasonFilter, setReasonFilter] = useState("all");
   const [search, setSearch] = useState("");
 
   // Reset page & filters when the drilldown target changes
   useEffect(() => {
-    setPage(0);
+    setPage(1);
     setReasonFilter("all");
     setSearch("");
   }, [jobId, status]);
@@ -1354,7 +1354,7 @@ function DrilldownSheet({
   const params = useMemo(() => {
     const p = new URLSearchParams({
       limit: String(DRILLDOWN_PAGE_SIZE),
-      offset: String(page * DRILLDOWN_PAGE_SIZE),
+      offset: String((page - 1) * DRILLDOWN_PAGE_SIZE),
     });
     if (status) p.set("status", status);
     if (reasonFilter !== "all") p.set("failureReason", reasonFilter);
@@ -1375,9 +1375,6 @@ function DrilldownSheet({
   });
 
   const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / DRILLDOWN_PAGE_SIZE));
-  const from = total === 0 ? 0 : page * DRILLDOWN_PAGE_SIZE + 1;
-  const to = Math.min((page + 1) * DRILLDOWN_PAGE_SIZE, total);
 
   const STATUS_META: Record<string, { label: string; icon: React.ReactNode; color: string; badgeCls: string }> = {
     failed:  { label: "Failed Items",  icon: <XCircle className="h-4 w-4" />,       color: "text-destructive",                    badgeCls: "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400" },
@@ -1390,7 +1387,7 @@ function DrilldownSheet({
 
   const showReasonFilter = status === "failed" || status === "skipped";
   const hasFilters = reasonFilter !== "all" || search.trim() !== "";
-  const resetFilters = () => { setReasonFilter("all"); setSearch(""); setPage(0); };
+  const resetFilters = () => { setReasonFilter("all"); setSearch(""); setPage(1); };
 
   return (
     <Sheet open={!!status} onOpenChange={(o) => !o && onClose()}>
@@ -1427,12 +1424,12 @@ function DrilldownSheet({
               <Input
                 placeholder="Search product name or SKU…"
                 value={search}
-                onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
                 className="h-8 pl-8 text-xs bg-white"
               />
             </div>
             {showReasonFilter && (
-              <Select value={reasonFilter} onValueChange={(v) => { setReasonFilter(v); setPage(0); }}>
+              <Select value={reasonFilter} onValueChange={(v) => { setReasonFilter(v); setPage(1); }}>
                 <SelectTrigger className="h-8 w-44 text-xs bg-white">
                   <SelectValue placeholder="All reasons" />
                 </SelectTrigger>
@@ -1538,56 +1535,14 @@ function DrilldownSheet({
 
         {/* ── Pagination footer ────────────────────────────────────── */}
         {total > 0 && (
-          <div className="flex-shrink-0 border-t bg-white px-6 py-3 flex items-center justify-between gap-4">
-            <p className="text-xs text-muted-foreground">
-              {isFetching
-                ? <span className="flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" />Loading…</span>
-                : `Showing ${from.toLocaleString()}–${to.toLocaleString()} of ${total.toLocaleString()} items`
-              }
-            </p>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 w-8 p-0 bg-white"
-                disabled={page === 0 || isFetching}
-                onClick={() => setPage(0)}
-              >
-                <ChevronLeft className="h-3.5 w-3.5 mr-[-4px]" />
-                <ChevronLeft className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 w-8 p-0 bg-white"
-                disabled={page === 0 || isFetching}
-                onClick={() => setPage((p) => p - 1)}
-              >
-                <ChevronLeft className="h-3.5 w-3.5" />
-              </Button>
-              <span className="text-xs font-medium px-3 py-1 rounded border bg-white min-w-[80px] text-center">
-                {page + 1} / {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 w-8 p-0 bg-white"
-                disabled={page >= totalPages - 1 || isFetching}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                <ChevronRight className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 w-8 p-0 bg-white"
-                disabled={page >= totalPages - 1 || isFetching}
-                onClick={() => setPage(totalPages - 1)}
-              >
-                <ChevronRight className="h-3.5 w-3.5 ml-[-4px]" />
-                <ChevronRight className="h-3.5 w-3.5" />
-              </Button>
-            </div>
+          <div className="flex-shrink-0 border-t bg-white px-6 py-3">
+            <TablePagination
+              total={total}
+              page={page}
+              pageSize={DRILLDOWN_PAGE_SIZE}
+              onPageChange={setPage}
+              itemLabel="items"
+            />
           </div>
         )}
       </SheetContent>
@@ -1705,7 +1660,7 @@ function AdvancedSettingsTab({
           </div>
         </CardHeader>
         <CardContent className="pt-4">
-          <div className="grid grid-cols-2 gap-0 divide-y divide-x-0 rounded-lg border overflow-hidden">
+          <div className="grid grid-cols-2 gap-0 divide-y divide-x-0 rounded-xl border overflow-hidden">
             {details.map(({ label, value, icon, mono }) => (
               <div key={label} className="flex items-center gap-3 px-4 py-3 even:bg-muted/20">
                 {icon}
@@ -1760,7 +1715,7 @@ function AdvancedSettingsTab({
           </div>
         </CardHeader>
         <CardContent className="pt-4">
-          <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 flex items-center justify-between flex-wrap gap-3">
+          <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-4 flex items-center justify-between flex-wrap gap-3">
             <div>
               <p className="text-sm font-medium">Disconnect Shopify</p>
               <p className="text-xs text-muted-foreground mt-0.5">Removes the connection, webhooks, and all sync settings for this store.</p>
@@ -1795,10 +1750,10 @@ function SyncHistoryCard() {
   const [search, setSearch] = useState("");
 
   // Reset page on filter change
-  const handleFilterChange = (setter: (v: string) => void) => (v: string) => { setter(v); setPage(0); };
+  const handleFilterChange = (setter: (v: string) => void) => (v: string) => { setter(v); setPage(1); };
 
   const params = useMemo(() => {
-    const p = new URLSearchParams({ limit: String(HISTORY_PAGE_SIZE), offset: String(page * HISTORY_PAGE_SIZE) });
+    const p = new URLSearchParams({ limit: String(HISTORY_PAGE_SIZE), offset: String((page - 1) * HISTORY_PAGE_SIZE) });
     if (statusFilter !== "all") p.set("status", statusFilter);
     if (entityFilter !== "all") p.set("entity", entityFilter);
     if (daysFilter !== "all") p.set("days", daysFilter);
@@ -1819,12 +1774,9 @@ function SyncHistoryCard() {
 
   const logs = data?.logs ?? [];
   const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / HISTORY_PAGE_SIZE));
-  const from = total === 0 ? 0 : page * HISTORY_PAGE_SIZE + 1;
-  const to = Math.min((page + 1) * HISTORY_PAGE_SIZE, total);
   const summary = data?.summary ?? { total: 0, success: 0, error: 0, skipped: 0 };
   const hasFilters = statusFilter !== "all" || entityFilter !== "all" || daysFilter !== "7" || search.trim() !== "";
-  const resetFilters = () => { setStatusFilter("all"); setEntityFilter("all"); setDaysFilter("7"); setSearch(""); setPage(0); };
+  const resetFilters = () => { setStatusFilter("all"); setEntityFilter("all"); setDaysFilter("7"); setSearch(""); setPage(1); };
 
   return (
     <Card>
@@ -1989,32 +1941,13 @@ function SyncHistoryCard() {
           </TooltipProvider>
         )}
 
-        {/* Pagination footer */}
-        {total > 0 && (
-          <div className="flex items-center justify-between gap-4 pt-1">
-            <p className="text-xs text-muted-foreground">
-              {isFetching
-                ? <span className="flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" />Loading…</span>
-                : `Showing ${from.toLocaleString()}–${to.toLocaleString()} of ${total.toLocaleString()} events`
-              }
-            </p>
-            <div className="flex items-center gap-1">
-              <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled={page === 0 || isFetching} onClick={() => setPage(0)}>
-                <ChevronLeft className="h-3.5 w-3.5 mr-[-4px]" /><ChevronLeft className="h-3.5 w-3.5" />
-              </Button>
-              <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled={page === 0 || isFetching} onClick={() => setPage(p => p - 1)}>
-                <ChevronLeft className="h-3.5 w-3.5" />
-              </Button>
-              <span className="text-xs font-medium px-3 py-1 rounded border min-w-[80px] text-center">{page + 1} / {totalPages}</span>
-              <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled={page >= totalPages - 1 || isFetching} onClick={() => setPage(p => p + 1)}>
-                <ChevronRight className="h-3.5 w-3.5" />
-              </Button>
-              <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled={page >= totalPages - 1 || isFetching} onClick={() => setPage(totalPages - 1)}>
-                <ChevronRight className="h-3.5 w-3.5 ml-[-4px]" /><ChevronRight className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          </div>
-        )}
+        <TablePagination
+          total={total}
+          page={page}
+          pageSize={HISTORY_PAGE_SIZE}
+          onPageChange={setPage}
+          itemLabel="events"
+        />
       </CardContent>
     </Card>
   );
@@ -2025,11 +1958,11 @@ function SyncHistoryCard() {
 const AUDIT_PAGE_SIZE = 50;
 
 function SyncAuditCard({ onExport }: { onExport: () => void }) {
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(1);
 
   const auditParams = useMemo(() => new URLSearchParams({
     limit: String(AUDIT_PAGE_SIZE),
-    offset: String(page * AUDIT_PAGE_SIZE),
+    offset: String((page - 1) * AUDIT_PAGE_SIZE),
   }).toString(), [page]);
 
   const { data, isLoading, isFetching } = useQuery<{ jobs: SyncJobAudit[]; total: number }>({
@@ -2045,9 +1978,6 @@ function SyncAuditCard({ onExport }: { onExport: () => void }) {
 
   const jobs = data?.jobs ?? [];
   const auditTotal = data?.total ?? 0;
-  const auditTotalPages = Math.max(1, Math.ceil(auditTotal / AUDIT_PAGE_SIZE));
-  const auditFrom = auditTotal === 0 ? 0 : page * AUDIT_PAGE_SIZE + 1;
-  const auditTo = Math.min((page + 1) * AUDIT_PAGE_SIZE, auditTotal);
 
   return (
     <Card>
@@ -2163,32 +2093,13 @@ function SyncAuditCard({ onExport }: { onExport: () => void }) {
           </div>
         )}
 
-        {/* Pagination footer */}
-        {auditTotal > 0 && (
-          <div className="flex items-center justify-between gap-4 pt-3">
-            <p className="text-xs text-muted-foreground">
-              {isFetching
-                ? <span className="flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" />Loading…</span>
-                : `Showing ${auditFrom.toLocaleString()}–${auditTo.toLocaleString()} of ${auditTotal.toLocaleString()} sync jobs`
-              }
-            </p>
-            <div className="flex items-center gap-1">
-              <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled={page === 0 || isFetching} onClick={() => setPage(0)}>
-                <ChevronLeft className="h-3.5 w-3.5 mr-[-4px]" /><ChevronLeft className="h-3.5 w-3.5" />
-              </Button>
-              <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled={page === 0 || isFetching} onClick={() => setPage(p => p - 1)}>
-                <ChevronLeft className="h-3.5 w-3.5" />
-              </Button>
-              <span className="text-xs font-medium px-3 py-1 rounded border min-w-[80px] text-center">{page + 1} / {auditTotalPages}</span>
-              <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled={page >= auditTotalPages - 1 || isFetching} onClick={() => setPage(p => p + 1)}>
-                <ChevronRight className="h-3.5 w-3.5" />
-              </Button>
-              <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled={page >= auditTotalPages - 1 || isFetching} onClick={() => setPage(auditTotalPages - 1)}>
-                <ChevronRight className="h-3.5 w-3.5 ml-[-4px]" /><ChevronRight className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          </div>
-        )}
+        <TablePagination
+          total={auditTotal}
+          page={page}
+          pageSize={AUDIT_PAGE_SIZE}
+          onPageChange={setPage}
+          itemLabel="sync jobs"
+        />
       </CardContent>
     </Card>
   );
