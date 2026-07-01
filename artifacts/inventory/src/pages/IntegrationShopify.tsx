@@ -58,12 +58,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 import {
   Loader2,
   RefreshCw,
@@ -102,6 +106,17 @@ import {
   MapPin,
   Shield,
   CalendarDays,
+  Link2,
+  Globe,
+  Gauge,
+  Hash,
+  Server,
+  Webhook,
+  ArrowRight,
+  MoreHorizontal,
+  CheckSquare,
+  Database,
+  Cpu,
 } from "lucide-react";
 import { format, formatDistanceToNow, subDays } from "date-fns";
 import {
@@ -113,6 +128,8 @@ import {
   getGetShopifyConnectionQueryKey,
 } from "@/lib/queryKeys";
 
+// ─── Shopify Icon ─────────────────────────────────────────────────────────────
+
 function ShopifyIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 50 57" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
@@ -121,6 +138,8 @@ function ShopifyIcon({ className }: { className?: string }) {
     </svg>
   );
 }
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const SHOP_DOMAIN_RE = /^[a-z0-9][a-z0-9-]{0,58}[a-z0-9]\.myshopify\.com$/i;
 const connectSchema = z.object({
@@ -155,6 +174,16 @@ function fmtMoney(value: string | number | null | undefined) {
   if (n >= 1_000) return `₹${(n / 1_000).toFixed(1)}K`;
   return `₹${n.toLocaleString("en-IN")}`;
 }
+function getInitials(name: string | null | undefined, email: string | null | undefined): string {
+  if (name) {
+    const parts = name.trim().split(" ");
+    return parts.length >= 2 ? `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase() : name.slice(0, 2).toUpperCase();
+  }
+  if (email) return email.slice(0, 2).toUpperCase();
+  return "SY";
+}
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type ProductSyncJob = {
   id: string;
@@ -241,22 +270,36 @@ const FAILURE_REASON_LABELS: Record<string, string> = {
   skipped_no_connection: "No connection",
 };
 
+// ─── Badges ───────────────────────────────────────────────────────────────────
+
 function SyncStatusBadge({ status }: { status: ProductSyncJob["status"] }) {
   const cfg = {
-    running:               { label: "Running",          className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 animate-pulse" },
-    paused:                { label: "Paused",           className: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" },
-    completed:             { label: "Completed",        className: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" },
-    completed_with_errors: { label: "With Warnings",    className: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" },
-    cancelled:             { label: "Cancelled",        className: "bg-muted text-muted-foreground" },
-    failed:                { label: "Failed",           className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" },
+    running:               { label: "Running",        className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-800/40 animate-pulse" },
+    paused:                { label: "Paused",         className: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-800/40" },
+    completed:             { label: "Completed",      className: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-800/40" },
+    completed_with_errors: { label: "With Warnings",  className: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-800/40" },
+    cancelled:             { label: "Cancelled",      className: "bg-muted text-muted-foreground" },
+    failed:                { label: "Failed",         className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800/40" },
   }[status] ?? { label: status, className: "bg-muted" };
-  return <Badge variant="outline" className={`text-[11px] font-medium ${cfg.className}`}>{cfg.label}</Badge>;
+  return (
+    <Badge variant="outline" className={cn("text-[11px] font-medium px-2 py-0.5", cfg.className)}>
+      {cfg.label}
+    </Badge>
+  );
 }
 
 function statusBadge(status: string) {
-  if (status === "success") return <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-900/30 text-[10px] py-0">Success</Badge>;
-  if (status === "error") return <Badge variant="outline" className="bg-red-50 text-destructive border-red-200 dark:bg-red-900/20 dark:border-red-900/30 text-[10px] py-0">Failed</Badge>;
-  return <Badge variant="outline" className="text-[10px] py-0">Skipped</Badge>;
+  if (status === "success") return (
+    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-900/30 text-[10px] py-0">
+      Success
+    </Badge>
+  );
+  if (status === "error") return (
+    <Badge variant="outline" className="bg-red-50 text-destructive border-red-200 dark:bg-red-900/20 dark:border-red-900/30 text-[10px] py-0">
+      Failed
+    </Badge>
+  );
+  return <Badge variant="outline" className="text-[10px] py-0 text-muted-foreground">Skipped</Badge>;
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
@@ -333,7 +376,14 @@ export default function IntegrationShopify() {
     return (
       <div className="space-y-6 max-w-2xl">
         {header}
-        <Card><CardContent className="flex items-center gap-3 py-10 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading…</CardContent></Card>
+        <Card>
+          <CardContent className="py-12">
+            <div className="flex flex-col items-center gap-3 text-muted-foreground">
+              <Loader2 className="h-6 w-6 animate-spin text-[#95bf47]" />
+              <p className="text-sm">Loading integration status…</p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -343,61 +393,32 @@ export default function IntegrationShopify() {
       <div className="space-y-6 max-w-2xl">
         {header}
         <Card className="border-destructive/40">
-          <CardHeader><CardTitle className="text-destructive">Couldn't load Shopify status</CardTitle><CardDescription>{error instanceof Error ? error.message : "Unknown error."}</CardDescription></CardHeader>
-          <CardFooter><Button onClick={() => refetch()} variant="outline"><RefreshCw className="mr-2 h-4 w-4" />Retry</Button></CardFooter>
+          <CardHeader>
+            <CardTitle className="text-destructive flex items-center gap-2">
+              <AlertCircle className="h-5 w-5" />
+              Couldn't load Shopify status
+            </CardTitle>
+            <CardDescription>{error instanceof Error ? error.message : "Unknown error."}</CardDescription>
+          </CardHeader>
+          <CardFooter>
+            <Button onClick={() => refetch()} variant="outline" size="sm">
+              <RefreshCw className="mr-2 h-4 w-4" />Retry
+            </Button>
+          </CardFooter>
         </Card>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4 max-w-6xl">
+    <div className="space-y-6">
       {header}
-
       {!connection?.connected ? (
-        <Card className="max-w-xl">
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <ShopifyIcon className="h-8 w-8 text-[#95bf47]" />
-              <div>
-                <CardTitle>Connect your Shopify store</CardTitle>
-                <CardDescription>Enter your store domain and app credentials to connect via OAuth.</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <Form {...connectForm}>
-              <form onSubmit={connectForm.handleSubmit((v) => oauthMutation.mutate({ data: { shopDomain: v.shopDomain, apiKey: v.apiKey, apiSecret: v.apiSecret } }))} className="space-y-4">
-                <FormField control={connectForm.control} name="shopDomain" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Shop domain</FormLabel>
-                    <FormControl><Input placeholder="your-store.myshopify.com" autoComplete="off" {...field} data-testid="input-shopify-domain" /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={connectForm.control} name="apiKey" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>API Key</FormLabel>
-                    <FormControl><Input placeholder="Shopify app API key" autoComplete="off" {...field} data-testid="input-shopify-api-key" /></FormControl>
-                    <FormDescription>Found in your Shopify app's "API credentials" tab.</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={connectForm.control} name="apiSecret" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>API Secret Key</FormLabel>
-                    <FormControl><Input type="password" placeholder="Shopify app API secret" autoComplete="off" {...field} data-testid="input-shopify-api-secret" /></FormControl>
-                    <FormDescription>Used to verify incoming Shopify webhook signatures.</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <Button type="submit" disabled={oauthMutation.isPending} data-testid="btn-connect-shopify">
-                  {oauthMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Redirecting…</> : <><ExternalLink className="mr-2 h-4 w-4" />Connect with Shopify</>}
-                </Button>
-              </form>
-            </Form>
-          </CardContent>
-        </Card>
+        <ConnectionSetupView
+          form={connectForm}
+          onSubmit={(v) => oauthMutation.mutate({ data: { shopDomain: v.shopDomain, apiKey: v.apiKey, apiSecret: v.apiSecret } })}
+          isPending={oauthMutation.isPending}
+        />
       ) : (
         <ConnectedView
           connection={connection}
@@ -410,6 +431,123 @@ export default function IntegrationShopify() {
           onConnectionChange={invalidateConnection}
         />
       )}
+    </div>
+  );
+}
+
+// ─── Not-Connected: Setup View ────────────────────────────────────────────────
+
+function ConnectionSetupView({
+  form,
+  onSubmit,
+  isPending,
+}: {
+  form: ReturnType<typeof useForm<ConnectValues>>;
+  onSubmit: (v: ConnectValues) => void;
+  isPending: boolean;
+}) {
+  const features = [
+    { icon: <ArrowLeftRight className="h-4 w-4 text-[#95bf47]" />, title: "Bi-directional sync", desc: "Products, inventory & orders flow between Shopify and your ERP automatically." },
+    { icon: <Bell className="h-4 w-4 text-blue-500" />, title: "Real-time webhooks", desc: "Inventory levels update the moment a Shopify order is placed or fulfilled." },
+    { icon: <Shield className="h-4 w-4 text-purple-500" />, title: "Full audit trail", desc: "Every sync job is logged with who triggered it, from where, and what changed." },
+    { icon: <Lock className="h-4 w-4 text-slate-500" />, title: "OAuth 2.0 secured", desc: "Credentials are never stored. Shopify's official OAuth flow handles authentication." },
+  ];
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 rounded-xl border bg-card overflow-hidden shadow-sm max-w-4xl">
+      {/* Left: branding + features */}
+      <div className="bg-gradient-to-br from-[#95bf47]/8 via-background to-[#5a8a1f]/5 border-r p-8 flex flex-col gap-6">
+        <div className="flex items-center gap-3">
+          <div className="h-12 w-12 rounded-xl bg-[#95bf47]/15 flex items-center justify-center">
+            <ShopifyIcon className="h-7 w-7 text-[#95bf47]" />
+          </div>
+          <div>
+            <h2 className="font-semibold text-lg leading-tight">Connect Shopify</h2>
+            <p className="text-sm text-muted-foreground">Link your store to Mystics ERP</p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          {features.map(({ icon, title, desc }) => (
+            <div key={title} className="flex gap-3">
+              <div className="flex-shrink-0 h-8 w-8 rounded-lg bg-background border flex items-center justify-center shadow-sm">
+                {icon}
+              </div>
+              <div>
+                <p className="text-sm font-medium leading-tight">{title}</p>
+                <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-auto">
+          <div className="flex flex-wrap gap-2">
+            {["OAuth 2.0", "HMAC verified", "Multi-location", "Webhooks"].map((tag) => (
+              <span key={tag} className="inline-flex items-center gap-1 text-[11px] font-medium border rounded-full px-2.5 py-0.5 bg-background text-muted-foreground">
+                <CheckCircle2 className="h-2.5 w-2.5 text-[#95bf47]" />{tag}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Right: form */}
+      <div className="p-8 flex flex-col justify-center">
+        <div className="max-w-sm">
+          <h3 className="font-semibold text-base mb-1">Store credentials</h3>
+          <p className="text-sm text-muted-foreground mb-6">Enter your store domain and API credentials to start the OAuth flow.</p>
+
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <FormField control={form.control} name="shopDomain" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Shop domain</FormLabel>
+                  <FormControl>
+                    <div className="relative">
+                      <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input placeholder="your-store.myshopify.com" autoComplete="off" className="pl-9" {...field} data-testid="input-shopify-domain" />
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="apiKey" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>API Key</FormLabel>
+                  <FormControl>
+                    <div className="relative">
+                      <Hash className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input placeholder="Shopify app API key" autoComplete="off" className="pl-9" {...field} data-testid="input-shopify-api-key" />
+                    </div>
+                  </FormControl>
+                  <FormDescription className="text-xs">Found in your Shopify app's "API credentials" tab.</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="apiSecret" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>API Secret Key</FormLabel>
+                  <FormControl>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input type="password" placeholder="Shopify app API secret" autoComplete="off" className="pl-9" {...field} data-testid="input-shopify-api-secret" />
+                    </div>
+                  </FormControl>
+                  <FormDescription className="text-xs">Used to verify incoming Shopify webhook signatures.</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <Button type="submit" disabled={isPending} className="w-full bg-[#95bf47] hover:bg-[#7aaa2e] text-white mt-2" data-testid="btn-connect-shopify">
+                {isPending
+                  ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Redirecting to Shopify…</>
+                  : <><ExternalLink className="mr-2 h-4 w-4" />Connect with Shopify</>
+                }
+              </Button>
+            </form>
+          </Form>
+        </div>
+      </div>
     </div>
   );
 }
@@ -450,7 +588,6 @@ function ConnectedView({
 }) {
   const [tab, setTab] = useState("overview");
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
-  const [syncPushDialogOpen, setSyncPushDialogOpen] = useState(false);
   const [drilldownStatus, setDrilldownStatus] = useState<string | null>(null);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
@@ -556,235 +693,133 @@ function ConnectedView({
   const speed = elapsed > 0 && job ? job.processed / elapsed : 0;
   const eta = speed > 0 && job?.totalShopify ? Math.round(((job.totalShopify - job.processed) / speed)) : null;
 
-  function handleStatClick(status: string) {
-    if (!job) return;
-    setDrilldownStatus(status);
-  }
-
-  const handleOpenExport = () => setExportOpen(true);
-
   return (
     <>
-      {/* ── Enterprise Header ──────────────────────────────────────────── */}
-      <div className="flex items-center justify-between flex-wrap gap-3 px-1">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-lg bg-[#95bf47]/15 flex items-center justify-center">
-            <ShopifyIcon className="h-5 w-5 text-[#95bf47]" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-base">{connection.shopDomain}</span>
-              <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800/40 rounded-full px-2 py-0.5">
-                <span className="h-1.5 w-1.5 bg-green-500 rounded-full" />
-                Connected
-              </span>
-            </div>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Last synced {fmtAgo(connection.lastSyncedAt)} · Webhooks active
-            </p>
-          </div>
-        </div>
+      {/* ── Integration Health Banner ───────────────────────────────────── */}
+      <IntegrationBanner
+        connection={connection}
+        job={job ?? null}
+        isActive={isActive}
+        isIdle={isIdle}
+        isRunning={isRunning}
+        pct={pct}
+        onSyncStart={() => setSyncDialogOpen(true)}
+        onPushAll={onPushAll}
+        pushingAll={pushingAll}
+        onSyncOrders={onSyncOrders}
+        syncingOrders={syncingOrders}
+        onExport={() => setExportOpen(true)}
+        onRetryFailed={() => retryMutation.mutate("failed")}
+        retrying={retryMutation.isPending}
+      />
 
-        <div className="flex items-center gap-2">
-          {isIdle && (
-            <Button onClick={() => setSyncDialogOpen(true)} className="gap-2 bg-[#95bf47] hover:bg-[#7aaa2e] text-white" data-testid="btn-sync-shopify-products">
-              <Zap className="h-4 w-4" />
-              Sync Products
-            </Button>
-          )}
-          {isActive && (
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5 text-sm font-medium text-blue-600 dark:text-blue-400">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Syncing… {pct}%
-              </div>
-              {isRunning ? (
-                <Button variant="outline" size="sm" onClick={() => controlMutation.mutate({ action: "pause" })} disabled={controlMutation.isPending}>
-                  <Pause className="h-3.5 w-3.5 mr-1.5" />Pause
-                </Button>
-              ) : (
-                <Button variant="outline" size="sm" onClick={() => controlMutation.mutate({ action: "resume" })} disabled={controlMutation.isPending}>
-                  <Play className="h-3.5 w-3.5 mr-1.5" />Resume
-                </Button>
-              )}
-              <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => controlMutation.mutate({ action: "cancel" })} disabled={controlMutation.isPending}>
-                <XCircle className="h-3.5 w-3.5 mr-1.5" />Cancel
-              </Button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── Live Progress Bar (when active) ───────────────────────────── */}
-      {isActive && job?.totalShopify && (
-        <div className="space-y-1.5 px-1">
-          <Progress value={pct} className="h-2" />
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>{job.processed.toLocaleString()} of {job.totalShopify.toLocaleString()} products processed</span>
-            <div className="flex items-center gap-3">
-              {speed > 0 && <span>{speed.toFixed(1)}/s</span>}
-              {eta != null && <span>ETA ~{fmtDuration(eta)}</span>}
-            </div>
-          </div>
-        </div>
+      {/* ── Live Sync Command Panel (visible only when active) ─────────── */}
+      {isActive && job && (
+        <SyncProgressPanel
+          job={job}
+          pct={pct}
+          speed={speed}
+          eta={eta}
+          isRunning={isRunning}
+          isPaused={isPaused}
+          onPause={() => controlMutation.mutate({ action: "pause" })}
+          onResume={() => controlMutation.mutate({ action: "resume" })}
+          onCancel={() => controlMutation.mutate({ action: "cancel" })}
+          controlPending={controlMutation.isPending}
+        />
       )}
 
-      {/* ── Tabs ──────────────────────────────────────────────────────── */}
+      {/* ── Main Tabs ──────────────────────────────────────────────────── */}
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="h-9">
-          <TabsTrigger value="overview" className="gap-1.5 text-sm"><BarChart3 className="h-3.5 w-3.5" />Store Overview</TabsTrigger>
-          <TabsTrigger value="warehouses" className="gap-1.5 text-sm"><Warehouse className="h-3.5 w-3.5" />Warehouses</TabsTrigger>
-          <TabsTrigger value="advanced" className="gap-1.5 text-sm"><Settings2 className="h-3.5 w-3.5" />Advanced Settings</TabsTrigger>
+        <TabsList className="h-10 bg-muted/60 p-1 rounded-lg">
+          <TabsTrigger value="overview" className="gap-2 text-sm rounded-md data-[state=active]:shadow-sm">
+            <BarChart3 className="h-3.5 w-3.5" />Store Overview
+          </TabsTrigger>
+          <TabsTrigger value="warehouses" className="gap-2 text-sm rounded-md data-[state=active]:shadow-sm">
+            <Warehouse className="h-3.5 w-3.5" />Warehouses
+          </TabsTrigger>
+          <TabsTrigger value="advanced" className="gap-2 text-sm rounded-md data-[state=active]:shadow-sm">
+            <Settings2 className="h-3.5 w-3.5" />Advanced
+          </TabsTrigger>
         </TabsList>
 
         {/* ── Store Overview ──────────────────────────────────────────── */}
-        <TabsContent value="overview" className="space-y-6 mt-4">
+        <TabsContent value="overview" className="space-y-6 mt-5">
 
-          {/* Dashboard metrics */}
-          <section>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold flex items-center gap-2">
-                <ShoppingBag className="h-4 w-4 text-[#95bf47]" />
-                Shopify Store Summary
-              </h3>
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Clock className="h-3 w-3" />
-                {dashLoading ? "Loading…" : `Last updated ${fmtAgo(dashboard?.lastSyncedAt)}`}
-              </div>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-              {dashLoading ? Array.from({ length: 10 }).map((_, i) => (
-                <div key={i} className="rounded-lg border bg-muted/30 p-3 h-16 animate-pulse" />
-              )) : [
-                { label: "Total Shopify Products", value: dashboard?.shopifyTotal ?? connection.productCount ?? 0, accent: true, icon: <ShoppingBag className="h-3.5 w-3.5" /> },
-                { label: "ERP Mapped", value: `${dashboard?.mappedItems ?? 0} / ${dashboard?.erpTotal ?? 0}`, icon: <CheckCheck className="h-3.5 w-3.5 text-green-500" /> },
-                { label: "Simple Products", value: dashboard?.simpleItems ?? 0, icon: <Package className="h-3.5 w-3.5" /> },
-                { label: "Variant Products", value: dashboard?.variantProducts ?? 0, icon: <ArrowUpDown className="h-3.5 w-3.5" /> },
-                { label: "Total Variants", value: dashboard?.totalVariants ?? 0, icon: <PackageCheck className="h-3.5 w-3.5" /> },
-                { label: "Warehouses", value: dashboard?.warehouseCount ?? connection.totalWarehouseCount ?? 0, icon: <Warehouse className="h-3.5 w-3.5" /> },
-                { label: "Inventory Value", value: fmtMoney(dashboard?.inventoryValue), icon: <TrendingUp className="h-3.5 w-3.5 text-[#95bf47]" /> },
-                { label: "Last Sync", value: fmtAgo(dashboard?.lastSyncedAt ?? connection.lastSyncedAt), small: true, icon: <Clock className="h-3.5 w-3.5 text-muted-foreground" /> },
-                { label: "Webhooks", value: connection.webhooksRegisteredAt ? "Active" : "None", icon: <Bell className="h-3.5 w-3.5" /> },
-                { label: "Sync Status", value: job ? (isActive ? "Running" : "Idle") : "Never run", icon: <Activity className="h-3.5 w-3.5" /> },
-              ].map(({ label, value, accent, small, icon }) => (
-                <div key={label} className={`rounded-lg border p-3 ${accent ? "bg-[#95bf47]/5 border-[#95bf47]/20" : "bg-muted/30"}`}>
-                  <div className="flex items-center gap-1.5 text-muted-foreground mb-1">{icon}<span className="text-[11px]">{label}</span></div>
-                  <p className={`font-semibold tabular-nums ${small ? "text-sm" : "text-lg"} ${accent ? "text-[#7aaa2e]" : ""}`}>{value}</p>
-                </div>
-              ))}
-            </div>
-          </section>
+          {/* KPI Cards */}
+          <KpiSection dashboard={dashboard} dashLoading={dashLoading} connection={connection} />
 
           {/* Quick Actions */}
           <section>
-            <h3 className="text-sm font-semibold mb-3">Quick Actions</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <SectionHeader icon={<Zap className="h-4 w-4 text-[#95bf47]" />} title="Quick Actions" desc="Trigger sync operations or pull reports" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
               {[
-                { icon: <Zap className="h-4 w-4 text-[#95bf47]" />, title: "Sync Products", desc: "Import all Shopify products to ERP", onClick: () => setSyncDialogOpen(true), primary: true },
-                { icon: <RefreshCw className="h-4 w-4 text-blue-500" />, title: "Push All to Shopify", desc: "Push all linked ERP products to Shopify", onClick: onPushAll, loading: pushingAll },
-                { icon: <ArrowLeftRight className="h-4 w-4 text-purple-500" />, title: "Sync Orders", desc: "Pull pending Shopify orders into ERP", onClick: onSyncOrders, loading: syncingOrders },
-                { icon: <Eye className="h-4 w-4 text-amber-500" />, title: "Dry Run Preview", desc: "Preview changes before syncing", onClick: () => toast({ title: "Coming soon", description: "Dry run preview will be available shortly." }) },
-                { icon: <RotateCcw className="h-4 w-4 text-orange-500" />, title: "Retry Failed", desc: "Re-queue all failed sync items", onClick: () => retryMutation.mutate("failed") },
-                { icon: <Download className="h-4 w-4 text-slate-500" />, title: "Export Reports", desc: "CSV with custom date range & filters", onClick: handleOpenExport },
-              ].map(({ icon, title, desc, onClick, primary, loading }) => (
+                { icon: <Zap className="h-5 w-5 text-[#95bf47]" />, iconBg: "bg-[#95bf47]/10", title: "Sync Products", desc: "Import all Shopify products to ERP", onClick: () => setSyncDialogOpen(true), primary: true },
+                { icon: <RefreshCw className="h-5 w-5 text-blue-500" />, iconBg: "bg-blue-50 dark:bg-blue-900/20", title: "Push All to Shopify", desc: "Push all linked ERP products to Shopify", onClick: onPushAll, loading: pushingAll },
+                { icon: <ArrowLeftRight className="h-5 w-5 text-purple-500" />, iconBg: "bg-purple-50 dark:bg-purple-900/20", title: "Sync Orders", desc: "Pull pending Shopify orders into ERP", onClick: onSyncOrders, loading: syncingOrders },
+                { icon: <Eye className="h-5 w-5 text-amber-500" />, iconBg: "bg-amber-50 dark:bg-amber-900/20", title: "Dry Run Preview", desc: "Preview changes before syncing", onClick: () => toast({ title: "Coming soon", description: "Dry run preview will be available shortly." }) },
+                { icon: <RotateCcw className="h-5 w-5 text-orange-500" />, iconBg: "bg-orange-50 dark:bg-orange-900/20", title: "Retry Failed Items", desc: "Re-queue all failed sync items", onClick: () => retryMutation.mutate("failed") },
+                { icon: <Download className="h-5 w-5 text-slate-500" />, iconBg: "bg-slate-50 dark:bg-slate-900/20", title: "Export Reports", desc: "CSV with custom date range & filters", onClick: () => setExportOpen(true) },
+              ].map(({ icon, iconBg, title, desc, onClick, primary, loading }) => (
                 <button
                   key={title}
                   onClick={onClick}
                   disabled={!!loading}
-                  className={`flex items-center gap-3 rounded-lg border p-3.5 text-left transition-colors hover:bg-muted/50 disabled:opacity-60 ${primary ? "border-[#95bf47]/30 hover:bg-[#95bf47]/5" : ""}`}
+                  className={cn(
+                    "group flex items-center gap-4 rounded-xl border bg-card p-4 text-left transition-all",
+                    "hover:shadow-sm hover:border-border/80 disabled:opacity-60",
+                    primary ? "border-[#95bf47]/30 hover:bg-[#95bf47]/5 hover:border-[#95bf47]/50" : "hover:bg-muted/40",
+                  )}
                 >
-                  <div className="flex-shrink-0">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : icon}</div>
-                  <div>
-                    <p className="text-sm font-medium">{title}</p>
-                    <p className="text-xs text-muted-foreground">{desc}</p>
+                  <div className={cn("flex-shrink-0 h-10 w-10 rounded-lg flex items-center justify-center", iconBg)}>
+                    {loading ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> : icon}
                   </div>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground ml-auto flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold leading-tight">{title}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{desc}</p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0 transition-transform group-hover:translate-x-0.5" />
                 </button>
               ))}
             </div>
           </section>
 
-          {/* Last Sync Summary — clickable stat tiles */}
+          {/* Last Sync Summary */}
           {job && (
-            <section>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold flex items-center gap-2">
-                  <Activity className="h-4 w-4" />
-                  Last Sync Summary
-                  <SyncStatusBadge status={job.status} />
-                </h3>
-                <div className="flex items-center gap-2">
-                  {(job.status === "completed_with_errors" || job.status === "failed") && (
-                    <>
-                      <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={() => retryMutation.mutate("failed")} disabled={retryMutation.isPending}>
-                        <RotateCcw className="h-3 w-3" />Retry Failed
-                      </Button>
-                      <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={() => retryMutation.mutate("skipped")} disabled={retryMutation.isPending}>
-                        <SkipForward className="h-3 w-3" />Retry Skipped
-                      </Button>
-                    </>
-                  )}
-                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={handleOpenExport}>
-                    <Download className="h-3 w-3" />Export
-                  </Button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-4 sm:grid-cols-4 lg:grid-cols-8 gap-2">
-                {[
-                  { label: "Shopify Total", value: job.totalShopify ?? "—", status: null, color: "" },
-                  { label: "ERP Total", value: job.totalErp ?? "—", status: null, color: "" },
-                  { label: "Created", value: job.created, status: "created", color: "text-green-600" },
-                  { label: "Updated", value: job.updated, status: "updated", color: "text-blue-600" },
-                  { label: "Skipped", value: job.skipped, status: "skipped", color: "text-amber-600" },
-                  { label: "Failed", value: job.failed, status: "failed", color: job.failed > 0 ? "text-destructive" : "" },
-                  { label: "Missing", value: job.missing, status: "missing", color: job.missing > 0 ? "text-orange-600" : "" },
-                  { label: "Duration", value: job.finishedAt ? fmtDuration((new Date(job.finishedAt).getTime() - new Date(job.startedAt).getTime()) / 1000) : "—", status: null, color: "" },
-                ].map(({ label, value, status, color }) => (
-                  <button
-                    key={label}
-                    onClick={() => status && handleStatClick(status)}
-                    disabled={!status}
-                    className={`rounded-lg border bg-muted/30 p-3 text-center ${status ? "hover:bg-muted/70 hover:border-primary/30 cursor-pointer transition-colors" : ""} ${!status ? "cursor-default" : ""}`}
-                  >
-                    <p className="text-[10px] text-muted-foreground mb-1">{label}</p>
-                    <p className={`text-lg font-semibold tabular-nums ${color}`}>{value}</p>
-                    {status && <p className="text-[10px] text-muted-foreground mt-0.5">Click to view</p>}
-                  </button>
-                ))}
-              </div>
-
-              <p className="text-xs text-muted-foreground mt-2">
-                Started {fmtTime(job.startedAt)}
-                {job.finishedAt && ` · Finished ${fmtTime(job.finishedAt)}`}
-              </p>
-            </section>
+            <SyncSummarySection
+              job={job}
+              onDrilldown={(s) => setDrilldownStatus(s)}
+              onExport={() => setExportOpen(true)}
+              onRetryFailed={() => retryMutation.mutate("failed")}
+              onRetrySkipped={() => retryMutation.mutate("skipped")}
+              retrying={retryMutation.isPending}
+            />
           )}
 
-          {/* Sync Audit Trail */}
-          <SyncAuditCard onExport={handleOpenExport} />
+          {/* Audit Trail */}
+          <SyncAuditCard onExport={() => setExportOpen(true)} />
 
           {/* Event Log */}
           <SyncHistoryCard />
         </TabsContent>
 
-        {/* ── Warehouses Tab ──────────────────────────────────────────── */}
-        <TabsContent value="warehouses" className="mt-4">
+        {/* ── Warehouses ──────────────────────────────────────────────── */}
+        <TabsContent value="warehouses" className="mt-5">
           <FixedWarehousesTab />
         </TabsContent>
 
-        {/* ── Advanced Settings ───────────────────────────────────────── */}
-        <TabsContent value="advanced" className="mt-4 space-y-4">
+        {/* ── Advanced Settings ────────────────────────────────────────── */}
+        <TabsContent value="advanced" className="mt-5 space-y-5">
           <AdvancedSettingsTab
             connection={connection}
             onDisconnect={onDisconnect}
             disconnecting={disconnecting}
-            onExport={handleOpenExport}
+            onExport={() => setExportOpen(true)}
           />
         </TabsContent>
       </Tabs>
 
-      {/* ── Pre-Sync Confirmation Dialog ─────────────────────────────── */}
+      {/* Dialogs & sheets */}
       <PreSyncDialog
         open={syncDialogOpen}
         onClose={() => setSyncDialogOpen(false)}
@@ -792,21 +827,414 @@ function ConnectedView({
         confirming={startMutation.isPending}
         shopifyTotal={connection.productCount}
       />
-
-      {/* ── Drill-down Sheet ─────────────────────────────────────────── */}
       <DrilldownSheet
         jobId={job?.id ?? null}
         status={drilldownStatus}
         onClose={() => setDrilldownStatus(null)}
       />
-
-      {/* ── Export Dialog ─────────────────────────────────────────────── */}
       <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
     </>
   );
 }
 
-// ─── Pre-Sync Confirmation Dialog ────────────────────────────────────────────
+// ─── Integration Health Banner ────────────────────────────────────────────────
+
+function IntegrationBanner({
+  connection,
+  job,
+  isActive,
+  isIdle,
+  isRunning,
+  pct,
+  onSyncStart,
+  onPushAll,
+  pushingAll,
+  onSyncOrders,
+  syncingOrders,
+  onExport,
+  onRetryFailed,
+  retrying,
+}: {
+  connection: ConnectionData;
+  job: ProductSyncJob | null;
+  isActive: boolean;
+  isIdle: boolean;
+  isRunning: boolean;
+  pct: number;
+  onSyncStart: () => void;
+  onPushAll: () => void;
+  pushingAll: boolean;
+  onSyncOrders: () => void;
+  syncingOrders: boolean;
+  onExport: () => void;
+  onRetryFailed: () => void;
+  retrying: boolean;
+}) {
+  return (
+    <Card className="overflow-hidden border-0 shadow-sm bg-gradient-to-r from-card to-[#95bf47]/3">
+      <div className="h-1 w-full bg-gradient-to-r from-[#95bf47] via-[#7aaa2e] to-[#95bf47]/40" />
+      <CardContent className="py-5 px-6">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          {/* Left: identity */}
+          <div className="flex items-center gap-4">
+            <div className="h-12 w-12 rounded-xl bg-[#95bf47]/12 border border-[#95bf47]/20 flex items-center justify-center flex-shrink-0">
+              <ShopifyIcon className="h-6 w-6 text-[#95bf47]" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span className="font-semibold text-base tracking-tight">{connection.shopDomain}</span>
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800/40 rounded-full px-2.5 py-0.5">
+                  <span className="h-1.5 w-1.5 bg-green-500 rounded-full animate-pulse" />
+                  Connected
+                </span>
+                {connection.webhooksRegisteredAt && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/40 rounded-full px-2 py-0.5">
+                    <Bell className="h-2.5 w-2.5" />Webhooks
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-3 mt-1.5">
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Clock className="h-3 w-3" />Last synced {fmtAgo(connection.lastSyncedAt)}
+                </span>
+                {connection.productCount != null && (
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Package className="h-3 w-3" />{connection.productCount.toLocaleString()} products
+                  </span>
+                )}
+                {isActive && (
+                  <span className="text-xs font-medium text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                    <Loader2 className="h-3 w-3 animate-spin" />Syncing {pct}%
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Right: actions */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {isIdle && (
+              <Button
+                onClick={onSyncStart}
+                size="sm"
+                className="gap-2 bg-[#95bf47] hover:bg-[#7aaa2e] text-white shadow-sm"
+                data-testid="btn-sync-shopify-products"
+              >
+                <Zap className="h-4 w-4" />Sync Products
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onPushAll}
+              disabled={pushingAll}
+              className="gap-1.5"
+            >
+              {pushingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              Push to Shopify
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onSyncOrders}
+              disabled={syncingOrders}
+              className="gap-1.5"
+            >
+              {syncingOrders ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowLeftRight className="h-3.5 w-3.5" />}
+              Sync Orders
+            </Button>
+            <Button variant="outline" size="sm" onClick={onExport} className="gap-1.5 text-muted-foreground">
+              <Download className="h-3.5 w-3.5" />Export
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Live Sync Command Panel ──────────────────────────────────────────────────
+
+function SyncProgressPanel({
+  job,
+  pct,
+  speed,
+  eta,
+  isRunning,
+  isPaused,
+  onPause,
+  onResume,
+  onCancel,
+  controlPending,
+}: {
+  job: ProductSyncJob;
+  pct: number;
+  speed: number;
+  eta: number | null;
+  isRunning: boolean;
+  isPaused: boolean;
+  onPause: () => void;
+  onResume: () => void;
+  onCancel: () => void;
+  controlPending: boolean;
+}) {
+  return (
+    <Card className={cn(
+      "border overflow-hidden",
+      isRunning ? "border-blue-300 dark:border-blue-800/60 bg-blue-50/40 dark:bg-blue-900/10" : "border-amber-300 dark:border-amber-800/60 bg-amber-50/40 dark:bg-amber-900/10",
+    )}>
+      <div className={cn("h-0.5 w-full", isRunning ? "bg-blue-400" : "bg-amber-400")} />
+      <CardContent className="py-4 px-6">
+        <div className="flex items-center gap-5 flex-wrap">
+          {/* Status icon */}
+          <div className={cn("h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0", isRunning ? "bg-blue-100 dark:bg-blue-900/30" : "bg-amber-100 dark:bg-amber-900/30")}>
+            {isRunning
+              ? <Loader2 className="h-5 w-5 text-blue-600 dark:text-blue-400 animate-spin" />
+              : <Pause className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+            }
+          </div>
+
+          {/* Label + progress */}
+          <div className="flex-1 min-w-[200px]">
+            <div className="flex items-center justify-between mb-2">
+              <span className={cn("text-sm font-semibold", isRunning ? "text-blue-700 dark:text-blue-300" : "text-amber-700 dark:text-amber-300")}>
+                {isRunning ? "Product Sync Running" : "Product Sync Paused"} — {pct}%
+              </span>
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                {speed > 0 && <span className="flex items-center gap-1"><Gauge className="h-3 w-3" />{speed.toFixed(1)}/s</span>}
+                {eta != null && <span className="flex items-center gap-1"><Clock className="h-3 w-3" />ETA ~{fmtDuration(eta)}</span>}
+              </div>
+            </div>
+            <Progress value={pct} className={cn("h-2", isRunning ? "[&>div]:bg-blue-500" : "[&>div]:bg-amber-500")} />
+            <p className="text-xs text-muted-foreground mt-1.5">
+              {job.processed.toLocaleString()} of {job.totalShopify?.toLocaleString() ?? "?"} products processed
+              {job.created > 0 && <span className="ml-2 text-green-600">· {job.created} created</span>}
+              {job.updated > 0 && <span className="ml-2 text-blue-600">· {job.updated} updated</span>}
+              {job.failed > 0 && <span className="ml-2 text-destructive">· {job.failed} failed</span>}
+            </p>
+          </div>
+
+          {/* Controls */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {isRunning ? (
+              <Button variant="outline" size="sm" onClick={onPause} disabled={controlPending} className="gap-1.5 h-8">
+                <Pause className="h-3.5 w-3.5" />Pause
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" onClick={onResume} disabled={controlPending} className="gap-1.5 h-8">
+                <Play className="h-3.5 w-3.5" />Resume
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={onCancel} disabled={controlPending} className="gap-1.5 h-8 text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30">
+              <XCircle className="h-3.5 w-3.5" />Cancel
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── KPI Section ──────────────────────────────────────────────────────────────
+
+function KpiSection({
+  dashboard,
+  dashLoading,
+  connection,
+}: {
+  dashboard: DashboardStats | undefined;
+  dashLoading: boolean;
+  connection: ConnectionData;
+}) {
+  const primary = [
+    {
+      label: "Shopify Products",
+      value: dashLoading ? null : (dashboard?.shopifyTotal ?? connection.productCount ?? 0),
+      icon: <ShoppingBag className="h-5 w-5" />,
+      iconCls: "bg-[#95bf47]/12 text-[#95bf47]",
+      desc: "Total products in your Shopify store",
+      accent: true,
+    },
+    {
+      label: "ERP Coverage",
+      value: dashLoading ? null : `${dashboard?.mappedItems ?? 0} / ${dashboard?.erpTotal ?? 0}`,
+      icon: <CheckCheck className="h-5 w-5" />,
+      iconCls: "bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400",
+      desc: "Items mapped between Shopify and ERP",
+    },
+    {
+      label: "Inventory Value",
+      value: dashLoading ? null : fmtMoney(dashboard?.inventoryValue),
+      icon: <TrendingUp className="h-5 w-5" />,
+      iconCls: "bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400",
+      desc: "Total stock value across all warehouses",
+    },
+  ];
+
+  const secondary = [
+    { label: "Simple Products", value: dashboard?.simpleItems ?? 0, icon: <Package className="h-3.5 w-3.5" /> },
+    { label: "Variant Products", value: dashboard?.variantProducts ?? 0, icon: <ArrowUpDown className="h-3.5 w-3.5" /> },
+    { label: "Total Variants", value: dashboard?.totalVariants ?? 0, icon: <PackageCheck className="h-3.5 w-3.5" /> },
+    { label: "Warehouses", value: dashboard?.warehouseCount ?? connection.totalWarehouseCount ?? 0, icon: <Warehouse className="h-3.5 w-3.5" /> },
+  ];
+
+  return (
+    <section>
+      <SectionHeader
+        icon={<BarChart3 className="h-4 w-4 text-muted-foreground" />}
+        title="Store Overview"
+        desc={dashLoading ? "Loading…" : `Last updated ${fmtAgo(dashboard?.lastSyncedAt ?? connection.lastSyncedAt)}`}
+      />
+
+      {/* Primary KPI cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+        {primary.map(({ label, value, icon, iconCls, desc, accent }) => (
+          <Card key={label} className={cn("border", accent ? "border-[#95bf47]/25 bg-[#95bf47]/3" : "")}>
+            <CardContent className="py-5 px-5">
+              <div className="flex items-start justify-between">
+                <div className={cn("h-10 w-10 rounded-lg flex items-center justify-center", iconCls)}>
+                  {icon}
+                </div>
+              </div>
+              <div className="mt-3">
+                {dashLoading || value === null ? (
+                  <Skeleton className="h-8 w-24 mb-1" />
+                ) : (
+                  <p className="text-2xl font-bold tabular-nums tracking-tight">{value}</p>
+                )}
+                <p className="text-sm font-medium mt-0.5">{label}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{desc}</p>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Secondary stats strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
+        {secondary.map(({ label, value, icon }) => (
+          <div key={label} className="flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3">
+            <div className="text-muted-foreground">{icon}</div>
+            <div>
+              <p className="text-xs text-muted-foreground leading-tight">{label}</p>
+              {dashLoading ? (
+                <Skeleton className="h-4 w-10 mt-0.5" />
+              ) : (
+                <p className="text-sm font-semibold tabular-nums">{value}</p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// ─── Sync Summary Section ─────────────────────────────────────────────────────
+
+function SyncSummarySection({
+  job,
+  onDrilldown,
+  onExport,
+  onRetryFailed,
+  onRetrySkipped,
+  retrying,
+}: {
+  job: ProductSyncJob;
+  onDrilldown: (status: string) => void;
+  onExport: () => void;
+  onRetryFailed: () => void;
+  onRetrySkipped: () => void;
+  retrying: boolean;
+}) {
+  const tiles = [
+    { label: "Shopify Total", value: job.totalShopify ?? "—", status: null, color: "", border: "" },
+    { label: "ERP Total",     value: job.totalErp ?? "—",     status: null, color: "", border: "" },
+    { label: "Created",  value: job.created,  status: "created", color: "text-green-600 dark:text-green-400",    border: job.created > 0 ? "border-t-green-400" : "" },
+    { label: "Updated",  value: job.updated,  status: "updated", color: "text-blue-600 dark:text-blue-400",      border: job.updated > 0 ? "border-t-blue-400" : "" },
+    { label: "Skipped",  value: job.skipped,  status: "skipped", color: "text-amber-600 dark:text-amber-400",    border: job.skipped > 0 ? "border-t-amber-400" : "" },
+    { label: "Failed",   value: job.failed,   status: "failed",  color: job.failed > 0 ? "text-destructive" : "",         border: job.failed > 0 ? "border-t-destructive" : "" },
+    { label: "Missing",  value: job.missing,  status: "missing", color: job.missing > 0 ? "text-orange-600 dark:text-orange-400" : "", border: job.missing > 0 ? "border-t-orange-400" : "" },
+    { label: "Duration", value: job.finishedAt ? fmtDuration((new Date(job.finishedAt).getTime() - new Date(job.startedAt).getTime()) / 1000) : "—", status: null, color: "", border: "" },
+  ];
+
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div className="flex items-center gap-2.5">
+          <SectionHeader icon={<Activity className="h-4 w-4" />} title="Last Sync Summary" inline />
+          <SyncStatusBadge status={job.status} />
+        </div>
+        <div className="flex items-center gap-2">
+          {(job.status === "completed_with_errors" || job.status === "failed") && (
+            <>
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={onRetryFailed} disabled={retrying}>
+                <RotateCcw className="h-3 w-3" />Retry Failed
+              </Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={onRetrySkipped} disabled={retrying}>
+                <SkipForward className="h-3 w-3" />Retry Skipped
+              </Button>
+            </>
+          )}
+          <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={onExport}>
+            <Download className="h-3 w-3" />Export
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+        {tiles.map(({ label, value, status, color, border }) => (
+          <button
+            key={label}
+            onClick={() => status && onDrilldown(status)}
+            disabled={!status}
+            className={cn(
+              "rounded-xl border-t-2 bg-muted/30 p-3 text-center transition-all",
+              status ? "hover:bg-muted/70 hover:shadow-sm cursor-pointer" : "cursor-default",
+              border || "border-t-transparent",
+            )}
+          >
+            <p className="text-[10px] text-muted-foreground mb-1.5 leading-tight">{label}</p>
+            <p className={cn("text-xl font-bold tabular-nums leading-none", color)}>{value}</p>
+            {status && <p className="text-[9px] text-muted-foreground mt-1.5 uppercase tracking-wide">View →</p>}
+          </button>
+        ))}
+      </div>
+
+      <p className="text-xs text-muted-foreground mt-2.5 flex items-center gap-1.5">
+        <CalendarDays className="h-3 w-3" />
+        Started {fmtTime(job.startedAt)}
+        {job.finishedAt && ` · Finished ${fmtTime(job.finishedAt)}`}
+      </p>
+    </section>
+  );
+}
+
+// ─── Section Header helper ────────────────────────────────────────────────────
+
+function SectionHeader({ icon, title, desc, inline = false }: { icon: React.ReactNode; title: string; desc?: string; inline?: boolean }) {
+  if (inline) {
+    return (
+      <div className="flex items-center gap-2">
+        <div className="text-muted-foreground">{icon}</div>
+        <span className="text-sm font-semibold">{title}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center justify-between">
+      <div>
+        <div className="flex items-center gap-2">
+          <div className="text-muted-foreground">{icon}</div>
+          <h3 className="text-sm font-semibold">{title}</h3>
+        </div>
+        {desc && <p className="text-xs text-muted-foreground mt-0.5 ml-6">{desc}</p>}
+      </div>
+    </div>
+  );
+}
+
+// ─── Pre-Sync Confirmation Dialog ─────────────────────────────────────────────
 
 function PreSyncDialog({
   open,
@@ -822,59 +1250,75 @@ function PreSyncDialog({
   shopifyTotal: number | null;
 }) {
   const now = new Date();
-  const browser = typeof navigator !== "undefined" ? navigator.userAgent.split(" ").slice(-1)[0] ?? "Unknown" : "Unknown";
   const browserName = /Chrome/.test(navigator.userAgent) ? "Chrome" : /Firefox/.test(navigator.userAgent) ? "Firefox" : /Safari/.test(navigator.userAgent) ? "Safari" : "Browser";
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Zap className="h-5 w-5 text-[#95bf47]" />
-            Sync Products
+          <DialogTitle className="flex items-center gap-2.5 text-base">
+            <div className="h-8 w-8 rounded-lg bg-[#95bf47]/12 flex items-center justify-center">
+              <Zap className="h-4 w-4 text-[#95bf47]" />
+            </div>
+            Start Product Sync
           </DialogTitle>
           <DialogDescription>Review what this sync will do before starting.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="rounded-lg bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/40 p-3 text-sm text-amber-800 dark:text-amber-300 flex items-start gap-2">
+          <div className="rounded-xl bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/40 p-4 text-sm text-amber-800 dark:text-amber-300 flex items-start gap-3">
             <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-            <span>
-              <strong>Backup Before Sync?</strong> This operation may update products, prices, inventory, and variants across{" "}
-              <strong>{shopifyTotal != null ? `${shopifyTotal.toLocaleString()} Shopify products` : "your Shopify store"}</strong>.
-              Do you want to continue?
-            </span>
+            <div>
+              <p className="font-semibold mb-0.5">Confirm before continuing</p>
+              <p className="text-xs leading-relaxed">
+                This will process <strong>{shopifyTotal != null ? `${shopifyTotal.toLocaleString()} Shopify products` : "your Shopify store"}</strong>, updating prices, SKUs, barcodes, and images. Continue?
+              </p>
+            </div>
           </div>
 
           <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">This sync will:</p>
-            <ul className="space-y-1.5">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">This sync will</p>
+            <div className="grid grid-cols-1 gap-2">
               {[
                 "Import all product variants from Shopify",
                 "Update prices, SKUs, barcodes, and images",
                 "Detect missing ERP items",
-                "Record a full audit trail",
+                "Record a full audit trail with user & IP",
               ].map((item) => (
-                <li key={item} className="flex items-center gap-2 text-sm">
-                  <CheckCircle2 className="h-3.5 w-3.5 text-[#95bf47] flex-shrink-0" />
+                <div key={item} className="flex items-center gap-2.5 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-[#95bf47] flex-shrink-0" />
                   {item}
-                </li>
+                </div>
               ))}
-            </ul>
+            </div>
           </div>
 
-          <div className="rounded-lg bg-muted/50 border p-3 text-xs space-y-1 text-muted-foreground">
-            <p><span className="font-medium text-foreground">Triggered by:</span> {typeof window !== "undefined" ? (window as { __clerk_user_email?: string }).__clerk_user_email ?? "Current user" : "Current user"}</p>
-            <p><span className="font-medium text-foreground">Device:</span> {browserName} · Web</p>
-            <p><span className="font-medium text-foreground">Date/Time:</span> {format(now, "dd MMM yyyy, hh:mm a")}</p>
-            <p><span className="font-medium text-foreground">Sync type:</span> Full product sync (Shopify → ERP)</p>
+          <div className="rounded-xl bg-muted/60 border p-3.5 text-xs space-y-1.5">
+            <div className="grid grid-cols-2 gap-1.5">
+              <div>
+                <span className="text-muted-foreground">Triggered by</span>
+                <p className="font-medium mt-0.5">{(window as { __clerk_user_email?: string }).__clerk_user_email ?? "Current user"}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Device</span>
+                <p className="font-medium mt-0.5">{browserName} · Web</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Date / Time</span>
+                <p className="font-medium mt-0.5">{format(now, "dd MMM yyyy, hh:mm a")}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Sync type</span>
+                <p className="font-medium mt-0.5">Full product sync</p>
+              </div>
+            </div>
           </div>
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={confirming}>Cancel</Button>
-          <Button onClick={onConfirm} disabled={confirming} className="bg-[#95bf47] hover:bg-[#7aaa2e] text-white">
-            {confirming ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Starting…</> : <><Zap className="mr-2 h-4 w-4" />Start Sync</>}
+          <Button onClick={onConfirm} disabled={confirming} className="bg-[#95bf47] hover:bg-[#7aaa2e] text-white gap-2">
+            {confirming ? <><Loader2 className="h-4 w-4 animate-spin" />Starting…</> : <><Zap className="h-4 w-4" />Start Sync</>}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -904,20 +1348,22 @@ function DrilldownSheet({
     enabled: !!jobId && !!status,
   });
 
-  const title = status ? {
+  const title = status ? ({
     failed: "Failed Items",
     skipped: "Skipped Items",
     created: "Created Items",
     updated: "Updated Items",
     missing: "Missing Items",
-  }[status] ?? status : "";
+  }[status] ?? status) : "";
+
+  const titleColor = status === "failed" ? "text-destructive" : status === "skipped" ? "text-amber-600" : status === "created" ? "text-green-600" : status === "updated" ? "text-blue-600" : "";
 
   return (
     <Sheet open={!!status} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
-        <SheetHeader className="mb-4">
-          <SheetTitle className="flex items-center gap-2">
-            <AlertCircle className="h-4 w-4 text-[#95bf47]" />
+      <SheetContent side="right" className="w-full sm:max-w-2xl flex flex-col">
+        <SheetHeader className="mb-4 flex-shrink-0">
+          <SheetTitle className={cn("flex items-center gap-2 text-base", titleColor)}>
+            <AlertCircle className="h-4 w-4" />
             {title}
           </SheetTitle>
           <SheetDescription>
@@ -926,40 +1372,52 @@ function DrilldownSheet({
         </SheetHeader>
 
         {isLoading ? (
-          <div className="flex items-center gap-2 text-muted-foreground text-sm py-10 justify-center">
-            <Loader2 className="h-4 w-4 animate-spin" />Loading items…
+          <div className="flex-1 flex items-center justify-center">
+            <div className="flex items-center gap-3 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span className="text-sm">Loading items…</span>
+            </div>
           </div>
         ) : !data?.items.length ? (
-          <div className="py-10 text-center text-sm text-muted-foreground">No items found.</div>
-        ) : (
-          <div className="overflow-auto rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-xs">Product / SKU</TableHead>
-                  <TableHead className="text-xs w-24">Status</TableHead>
-                  <TableHead className="text-xs">Reason</TableHead>
-                  <TableHead className="text-xs font-mono">Shopify ID</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.items.map((row) => (
-                  <TableRow key={row.id} className={row.status === "error" ? "bg-destructive/5" : undefined}>
-                    <TableCell className="text-xs py-2">
-                      <div className="truncate font-medium max-w-[200px]">{row.name ?? "—"}</div>
-                      {row.sku && <div className="text-muted-foreground font-mono text-[10px]">{row.sku}</div>}
-                    </TableCell>
-                    <TableCell className="py-2">{statusBadge(row.status)}</TableCell>
-                    <TableCell className="text-xs py-2 text-muted-foreground max-w-[180px]">
-                      {row.failureReason ? FAILURE_REASON_LABELS[row.failureReason] ?? row.failureReason : "—"}
-                      {row.errorMessage && <div className="text-[10px] truncate">{row.errorMessage}</div>}
-                    </TableCell>
-                    <TableCell className="text-xs font-mono py-2 text-muted-foreground truncate max-w-[100px]">{row.shopifyId ?? "—"}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <PackageX className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
+              <p className="text-sm text-muted-foreground">No items found.</p>
+            </div>
           </div>
+        ) : (
+          <ScrollArea className="flex-1 -mx-6">
+            <div className="px-6">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/40">
+                    <TableHead className="text-xs font-semibold">Product / SKU</TableHead>
+                    <TableHead className="text-xs font-semibold w-24">Status</TableHead>
+                    <TableHead className="text-xs font-semibold">Reason</TableHead>
+                    <TableHead className="text-xs font-semibold font-mono">Shopify ID</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.items.map((row) => (
+                    <TableRow key={row.id} className={row.status === "error" ? "bg-destructive/5 hover:bg-destructive/8" : undefined}>
+                      <TableCell className="text-xs py-2.5">
+                        <div className="truncate font-medium max-w-[200px]">{row.name ?? "—"}</div>
+                        {row.sku && <div className="text-muted-foreground font-mono text-[10px] mt-0.5">{row.sku}</div>}
+                      </TableCell>
+                      <TableCell className="py-2.5">{statusBadge(row.status)}</TableCell>
+                      <TableCell className="text-xs py-2.5 text-muted-foreground max-w-[180px]">
+                        {row.failureReason ? FAILURE_REASON_LABELS[row.failureReason] ?? row.failureReason : "—"}
+                        {row.errorMessage && <div className="text-[10px] truncate mt-0.5 text-destructive/70">{row.errorMessage}</div>}
+                      </TableCell>
+                      <TableCell className="text-[11px] font-mono py-2.5 text-muted-foreground truncate max-w-[100px]">
+                        {row.shopifyId ?? "—"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </ScrollArea>
         )}
       </SheetContent>
     </Sheet>
@@ -970,34 +1428,65 @@ function DrilldownSheet({
 
 function FixedWarehousesTab() {
   const FIXED = [
-    { name: "Main Warehouse", code: "MAIN", desc: "Primary storage for physical inventory.", icon: <Warehouse className="h-5 w-5 text-blue-500" /> },
-    { name: "Shopify Warehouse", code: "SHOPIFY", desc: "Virtual location for Shopify-fulfilled stock.", icon: <ShopifyIcon className="h-5 w-5 text-[#95bf47]" /> },
-    { name: "Store Warehouse", code: "STORE", desc: "Retail / POS in-store stock location.", icon: <Package className="h-5 w-5 text-purple-500" /> },
+    {
+      name: "Main Warehouse",
+      code: "MAIN",
+      desc: "Primary storage location for all physical inventory items.",
+      icon: <Warehouse className="h-6 w-6 text-blue-500" />,
+      iconBg: "bg-blue-50 dark:bg-blue-900/20",
+      badge: "Primary",
+      badgeCls: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800/40",
+    },
+    {
+      name: "Shopify Warehouse",
+      code: "SHOPIFY",
+      desc: "Virtual location for Shopify-fulfilled and dropshipped stock.",
+      icon: <ShopifyIcon className="h-6 w-6 text-[#95bf47]" />,
+      iconBg: "bg-[#95bf47]/10",
+      badge: "Virtual",
+      badgeCls: "bg-[#95bf47]/10 text-[#5a8a1f] border-[#95bf47]/30",
+    },
+    {
+      name: "Store Warehouse",
+      code: "STORE",
+      desc: "Retail / POS in-store stock location for walk-in sales.",
+      icon: <Package className="h-6 w-6 text-purple-500" />,
+      iconBg: "bg-purple-50 dark:bg-purple-900/20",
+      badge: "Retail",
+      badgeCls: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/20 dark:text-purple-400 dark:border-purple-800/40",
+    },
   ];
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg bg-muted/50 border p-3 flex items-center gap-2 text-sm text-muted-foreground">
-        <Lock className="h-4 w-4 flex-shrink-0" />
-        <span>Warehouse management is locked. Only these 3 fixed system warehouses are available. Contact your system administrator to make changes.</span>
+      <div className="rounded-xl bg-amber-50/60 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/40 px-4 py-3 flex items-start gap-3 text-sm">
+        <Lock className="h-4 w-4 flex-shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+        <div>
+          <p className="font-medium text-amber-800 dark:text-amber-300 text-xs">Warehouse management is locked</p>
+          <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-0.5">
+            Only these 3 fixed system warehouses are available for Shopify integration. Contact your system administrator to make changes.
+          </p>
+        </div>
       </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {FIXED.map(({ name, code, desc, icon }) => (
-          <Card key={code} className="relative overflow-hidden">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
+        {FIXED.map(({ name, code, desc, icon, iconBg, badge, badgeCls }) => (
+          <Card key={code} className="relative overflow-hidden hover:shadow-sm transition-shadow">
+            <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-border to-transparent" />
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between mb-4">
+                <div className={cn("h-12 w-12 rounded-xl flex items-center justify-center", iconBg)}>
                   {icon}
-                  <CardTitle className="text-base">{name}</CardTitle>
                 </div>
-                <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+                <div className="flex items-center gap-1.5">
+                  <Badge variant="outline" className={cn("text-[10px] font-medium", badgeCls)}>{badge}</Badge>
+                  <Lock className="h-3 w-3 text-muted-foreground" />
+                </div>
               </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-xs text-muted-foreground">{desc}</p>
-              <div className="mt-3 flex items-center gap-2">
-                <Badge variant="outline" className="text-[10px] font-mono">{code}</Badge>
-                <Badge variant="outline" className="text-[10px] bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-900/30">System</Badge>
+              <h4 className="font-semibold text-sm leading-tight">{name}</h4>
+              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{desc}</p>
+              <div className="mt-3 pt-3 border-t">
+                <Badge variant="outline" className="font-mono text-[10px] tracking-wide">{code}</Badge>
               </div>
             </CardContent>
           </Card>
@@ -1020,54 +1509,103 @@ function AdvancedSettingsTab({
   disconnecting: boolean;
   onExport: () => void;
 }) {
+  const details = [
+    { label: "Store domain",          value: connection.shopDomain,         icon: <Globe className="h-4 w-4 text-muted-foreground" /> },
+    { label: "Last synced",           value: fmtTime(connection.lastSyncedAt), icon: <Clock className="h-4 w-4 text-muted-foreground" /> },
+    { label: "Last webhook",          value: fmtTime(connection.lastWebhookAt), icon: <Bell className="h-4 w-4 text-muted-foreground" /> },
+    { label: "Webhooks registered",   value: fmtTime(connection.webhooksRegisteredAt), icon: <Webhook className="h-4 w-4 text-muted-foreground" /> },
+    { label: "Shopify location ID",   value: connection.locationId ?? "—",   icon: <Hash className="h-4 w-4 text-muted-foreground" />, mono: true },
+    { label: "Products tracked",      value: connection.productCount ?? 0,   icon: <Package className="h-4 w-4 text-muted-foreground" /> },
+  ];
+
   return (
-    <div className="space-y-4 max-w-2xl">
+    <div className="space-y-5 max-w-2xl">
+      {/* Connection details */}
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Connection Details</CardTitle>
+        <CardHeader className="pb-0">
+          <div className="flex items-center gap-2.5">
+            <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center">
+              <Link2 className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div>
+              <CardTitle className="text-sm font-semibold">Connection Details</CardTitle>
+              <CardDescription className="text-xs">Technical information about your Shopify connection</CardDescription>
+            </div>
+          </div>
         </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-4 text-sm">
-          <div><p className="text-xs text-muted-foreground">Store domain</p><p className="font-medium">{connection.shopDomain}</p></div>
-          <div><p className="text-xs text-muted-foreground">Last synced</p><p>{fmtTime(connection.lastSyncedAt)}</p></div>
-          <div><p className="text-xs text-muted-foreground">Last webhook</p><p>{fmtTime(connection.lastWebhookAt)}</p></div>
-          <div><p className="text-xs text-muted-foreground">Webhooks registered</p><p>{fmtTime(connection.webhooksRegisteredAt)}</p></div>
-          <div><p className="text-xs text-muted-foreground">Shopify location ID</p><p className="font-mono text-xs">{connection.locationId ?? "—"}</p></div>
-          <div><p className="text-xs text-muted-foreground">Products tracked</p><p>{connection.productCount ?? 0}</p></div>
+        <CardContent className="pt-4">
+          <div className="grid grid-cols-2 gap-0 divide-y divide-x-0 rounded-lg border overflow-hidden">
+            {details.map(({ label, value, icon, mono }) => (
+              <div key={label} className="flex items-center gap-3 px-4 py-3 even:bg-muted/20">
+                {icon}
+                <div className="min-w-0">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide leading-tight">{label}</p>
+                  <p className={cn("text-sm font-medium mt-0.5 truncate", mono ? "font-mono text-xs" : "")}>{String(value)}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
           {connection.scopes && (
-            <div className="col-span-2">
-              <p className="text-xs text-muted-foreground mb-1">Granted API scopes</p>
-              <p className="font-mono text-xs break-all bg-muted rounded p-2">{connection.scopes}</p>
+            <div className="mt-4">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Granted API Scopes</p>
+              <p className="font-mono text-xs break-all bg-muted rounded-lg p-3 text-muted-foreground leading-relaxed">{connection.scopes}</p>
             </div>
           )}
         </CardContent>
       </Card>
 
+      {/* Export reports */}
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Export Reports</CardTitle>
-          <CardDescription>Download sync event log as CSV with custom date range and filters</CardDescription>
+        <CardHeader className="pb-0">
+          <div className="flex items-center gap-2.5">
+            <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center">
+              <Download className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div>
+              <CardTitle className="text-sm font-semibold">Export Reports</CardTitle>
+              <CardDescription className="text-xs">Download sync event log as CSV with custom date range and filters</CardDescription>
+            </div>
+          </div>
         </CardHeader>
-        <CardContent>
-          <Button variant="outline" size="sm" onClick={onExport}>
-            <Download className="h-3.5 w-3.5 mr-1.5" />Export CSV with Date Range…
+        <CardContent className="pt-4">
+          <Button variant="outline" size="sm" onClick={onExport} className="gap-2">
+            <Download className="h-3.5 w-3.5" />Export CSV with Date Range…
           </Button>
         </CardContent>
       </Card>
 
+      {/* Danger zone */}
       <Card className="border-destructive/30">
-        <CardHeader><CardTitle className="text-base text-destructive">Danger Zone</CardTitle><CardDescription>These actions cannot be undone.</CardDescription></CardHeader>
-        <CardContent>
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30"
-            onClick={onDisconnect}
-            disabled={disconnecting}
-            data-testid="btn-disconnect-shopify"
-          >
-            {disconnecting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Unlink className="mr-2 h-4 w-4" />}
-            Disconnect Shopify
-          </Button>
+        <CardHeader className="pb-0">
+          <div className="flex items-center gap-2.5">
+            <div className="h-8 w-8 rounded-lg bg-destructive/10 flex items-center justify-center">
+              <AlertTriangle className="h-4 w-4 text-destructive" />
+            </div>
+            <div>
+              <CardTitle className="text-sm font-semibold text-destructive">Danger Zone</CardTitle>
+              <CardDescription className="text-xs">These actions are irreversible and cannot be undone.</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-4">
+          <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4 flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <p className="text-sm font-medium">Disconnect Shopify</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Removes the connection, webhooks, and all sync settings for this store.</p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/40 flex-shrink-0"
+              onClick={onDisconnect}
+              disabled={disconnecting}
+              data-testid="btn-disconnect-shopify"
+            >
+              {disconnecting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Unlink className="mr-2 h-4 w-4" />}
+              Disconnect Shopify
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>
@@ -1106,42 +1644,48 @@ function SyncHistoryCard() {
 
   return (
     <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Activity className="h-4 w-4" />
-            Sync History
-          </CardTitle>
+      <CardHeader className="pb-4">
+        <div className="flex items-start justify-between flex-wrap gap-3">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Activity className="h-4 w-4 text-muted-foreground" />
+              Sync Event Log
+            </CardTitle>
+            <CardDescription className="mt-0.5">Individual product-level sync events and webhook callbacks.</CardDescription>
+          </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex gap-3 flex-wrap">
+
+      <CardContent className="space-y-5">
+        {/* Summary pills */}
+        <div className="grid grid-cols-3 gap-3">
           {[
-            { label: "Success", value: summary.success, icon: <CheckCheck className="h-4 w-4 text-green-500" />, cls: "text-green-600" },
-            { label: "Failed",  value: summary.error,   icon: <AlertCircle className="h-4 w-4 text-destructive" />, cls: summary.error > 0 ? "text-destructive" : undefined },
-            { label: "Skipped", value: summary.skipped, icon: <SkipForward className="h-4 w-4 text-muted-foreground" />, cls: undefined },
-          ].map(({ label, value, icon, cls }) => (
-            <div key={label} className="rounded-lg border bg-muted/30 p-3 flex items-center gap-3">
+            { label: "Success", value: summary.success, icon: <CheckCheck className="h-4 w-4 text-green-500" />, cls: "text-green-700 dark:text-green-400", bg: "bg-green-50/60 dark:bg-green-900/15" },
+            { label: "Failed",  value: summary.error,   icon: <AlertCircle className="h-4 w-4 text-destructive" />, cls: summary.error > 0 ? "text-destructive" : "text-muted-foreground", bg: summary.error > 0 ? "bg-red-50/60 dark:bg-red-900/15" : "bg-muted/40" },
+            { label: "Skipped", value: summary.skipped, icon: <SkipForward className="h-4 w-4 text-muted-foreground" />, cls: "text-muted-foreground", bg: "bg-muted/40" },
+          ].map(({ label, value, icon, cls, bg }) => (
+            <div key={label} className={cn("rounded-xl border p-4 flex items-center gap-3", bg)}>
               {icon}
               <div>
-                <p className="text-xs text-muted-foreground">{label}</p>
-                <p className={`text-xl font-semibold tabular-nums ${cls ?? ""}`}>{value}</p>
+                <p className="text-xs text-muted-foreground leading-tight">{label}</p>
+                <p className={cn("text-2xl font-bold tabular-nums leading-tight mt-0.5", cls)}>{value}</p>
               </div>
             </div>
           ))}
         </div>
 
         {summary.skipped > 0 && (
-          <div className="rounded-md bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/40 p-3 text-xs text-amber-800 dark:text-amber-400 flex items-start gap-2">
+          <div className="rounded-xl bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/40 px-4 py-3 text-xs text-amber-800 dark:text-amber-400 flex items-start gap-2.5">
             <Info className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
             <span>
-              <strong>{summary.skipped} skipped items</strong> — most are "Not yet in ERP" which means Shopify sent inventory updates for products not yet imported.{" "}
-              <strong>Running Product Sync will create ERP records and resolve these skips.</strong>
+              <strong>{summary.skipped} skipped items</strong> — most are "Not yet in ERP" (Shopify sent inventory updates for products not yet imported).{" "}
+              <strong>Running Product Sync will resolve these.</strong>
             </span>
           </div>
         )}
 
-        <div className="flex gap-2 flex-wrap">
+        {/* Filters */}
+        <div className="flex gap-2 flex-wrap items-center">
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-36 h-8 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
@@ -1169,54 +1713,72 @@ function SyncHistoryCard() {
               <SelectItem value="all">All time</SelectItem>
             </SelectContent>
           </Select>
+          {(statusFilter !== "all" || entityFilter !== "all" || daysFilter !== "7") && (
+            <button
+              onClick={() => { setStatusFilter("all"); setEntityFilter("all"); setDaysFilter("7"); }}
+              className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+            >
+              Reset filters
+            </button>
+          )}
         </div>
 
+        {/* Table */}
         {isLoading ? (
-          <div className="flex items-center gap-2 text-muted-foreground text-sm py-6">
-            <Loader2 className="h-4 w-4 animate-spin" />Loading sync history…
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 w-full rounded-lg" />)}
           </div>
         ) : logs.length === 0 ? (
-          <div className="py-10 text-center text-sm text-muted-foreground">No sync events match the current filters.</div>
+          <div className="py-12 text-center">
+            <Activity className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+            <p className="text-sm font-medium text-muted-foreground">No sync events match the current filters</p>
+            <p className="text-xs text-muted-foreground/70 mt-1">Try adjusting the filters above</p>
+          </div>
         ) : (
           <TooltipProvider>
-            <div className="overflow-auto max-h-[400px] rounded-md border">
+            <ScrollArea className="max-h-[420px] rounded-xl border overflow-hidden">
               <Table>
-                <TableHeader className="sticky top-0 bg-background z-10">
-                  <TableRow>
-                    <TableHead className="text-xs w-24">Entity</TableHead>
-                    <TableHead className="text-xs w-20">Action</TableHead>
-                    <TableHead className="text-xs">Product / SKU</TableHead>
-                    <TableHead className="text-xs w-24">Status</TableHead>
-                    <TableHead className="text-xs">Reason</TableHead>
-                    <TableHead className="text-xs font-mono">Shopify ID</TableHead>
-                    <TableHead className="text-xs w-36">Time</TableHead>
+                <TableHeader className="sticky top-0 bg-muted/80 backdrop-blur-sm z-10">
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="text-xs font-semibold w-24">Entity</TableHead>
+                    <TableHead className="text-xs font-semibold w-20">Action</TableHead>
+                    <TableHead className="text-xs font-semibold">Product / SKU</TableHead>
+                    <TableHead className="text-xs font-semibold w-24">Status</TableHead>
+                    <TableHead className="text-xs font-semibold">Reason</TableHead>
+                    <TableHead className="text-xs font-semibold font-mono">Shopify ID</TableHead>
+                    <TableHead className="text-xs font-semibold w-36">Time</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {logs.map((row) => (
-                    <TableRow key={row.id} className={row.status === "error" ? "bg-destructive/5" : undefined}>
-                      <TableCell className="text-xs capitalize py-2">
-                        <span className="inline-flex items-center gap-1">
+                  {logs.map((row, idx) => (
+                    <TableRow
+                      key={row.id}
+                      className={cn(
+                        row.status === "error" ? "bg-destructive/5 hover:bg-destructive/8" : idx % 2 === 0 ? "bg-muted/20 hover:bg-muted/40" : "hover:bg-muted/20",
+                      )}
+                    >
+                      <TableCell className="text-xs capitalize py-2.5">
+                        <span className="inline-flex items-center gap-1 text-muted-foreground">
                           {row.direction === "inbound" ? "← " : "→ "}{row.entity}
                         </span>
                       </TableCell>
-                      <TableCell className="text-xs py-2 capitalize">{row.action}</TableCell>
-                      <TableCell className="text-xs py-2 max-w-[200px]">
+                      <TableCell className="text-xs py-2.5 capitalize text-muted-foreground">{row.action}</TableCell>
+                      <TableCell className="text-xs py-2.5 max-w-[200px]">
                         <div className="truncate font-medium">{row.name ?? "—"}</div>
-                        {row.sku && <div className="text-muted-foreground font-mono text-[10px] truncate">{row.sku}</div>}
+                        {row.sku && <div className="text-muted-foreground font-mono text-[10px] truncate mt-0.5">{row.sku}</div>}
                         {row.parentItemId && <div className="text-[10px] text-muted-foreground">variant</div>}
                       </TableCell>
-                      <TableCell className="py-2">{statusBadge(row.status)}</TableCell>
-                      <TableCell className="text-xs py-2 max-w-[180px]">
+                      <TableCell className="py-2.5">{statusBadge(row.status)}</TableCell>
+                      <TableCell className="text-xs py-2.5 max-w-[180px]">
                         {row.failureReason ? (
-                          <span className="inline-flex items-start gap-1 flex-wrap">
+                          <span className="inline-flex items-start gap-1.5 flex-wrap">
                             <Badge variant="outline" className="text-[10px] py-0 h-5 shrink-0">
                               {FAILURE_REASON_LABELS[row.failureReason] ?? row.failureReason}
                             </Badge>
                             {row.errorMessage && (
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <Info className="h-3 w-3 text-muted-foreground cursor-help flex-shrink-0 mt-0.5" />
+                                  <Info className="h-3 w-3 text-muted-foreground cursor-help flex-shrink-0 mt-1" />
                                 </TooltipTrigger>
                                 <TooltipContent side="left" className="max-w-xs text-xs break-words">{row.errorMessage}</TooltipContent>
                               </Tooltip>
@@ -1226,23 +1788,26 @@ function SyncHistoryCard() {
                           <span className="text-muted-foreground">—</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-xs font-mono py-2 text-muted-foreground max-w-[100px] truncate">{row.shopifyId ?? "—"}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground py-2 whitespace-nowrap">{fmtTime(row.createdAt)}</TableCell>
+                      <TableCell className="text-[11px] font-mono py-2.5 text-muted-foreground max-w-[100px] truncate">{row.shopifyId ?? "—"}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground py-2.5 whitespace-nowrap">{fmtTime(row.createdAt)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
-            </div>
+            </ScrollArea>
           </TooltipProvider>
         )}
-        {logs.length > 0 && <p className="text-[11px] text-muted-foreground text-right">Showing {logs.length} of up to {HISTORY_LIMIT} most recent events</p>}
+        {logs.length > 0 && (
+          <p className="text-[11px] text-muted-foreground text-right">
+            Showing {logs.length.toLocaleString()} of up to {HISTORY_LIMIT} most recent events
+          </p>
+        )}
       </CardContent>
     </Card>
   );
 }
 
 // ─── Sync Audit Card ──────────────────────────────────────────────────────────
-// Job-level audit trail: who triggered each sync, from where, what happened.
 
 function SyncAuditCard({ onExport }: { onExport: () => void }) {
   const { data: jobs, isLoading } = useQuery<SyncJobAudit[]>({
@@ -1257,94 +1822,107 @@ function SyncAuditCard({ onExport }: { onExport: () => void }) {
 
   return (
     <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
+      <CardHeader className="pb-4">
+        <div className="flex items-start justify-between">
           <div>
             <CardTitle className="text-base flex items-center gap-2">
               <Shield className="h-4 w-4 text-[#95bf47]" />
               Sync Audit Trail
             </CardTitle>
-            <CardDescription className="mt-0.5">Full record of every sync job — who triggered it, from where, and what changed.</CardDescription>
+            <CardDescription className="mt-0.5">
+              Full record of every sync job — who triggered it, from where, and what changed.
+            </CardDescription>
           </div>
-          <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={onExport}>
-            <Download className="h-3 w-3" />Export
+          <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 flex-shrink-0" onClick={onExport}>
+            <Download className="h-3.5 w-3.5" />Export
           </Button>
         </div>
       </CardHeader>
+
       <CardContent>
         {isLoading ? (
-          <div className="flex items-center gap-2 text-muted-foreground text-sm py-6">
-            <Loader2 className="h-4 w-4 animate-spin" />Loading audit trail…
+          <div className="space-y-3">
+            {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 w-full rounded-xl" />)}
           </div>
         ) : !jobs?.length ? (
-          <div className="py-10 text-center text-sm text-muted-foreground">
-            No sync jobs recorded yet. Run your first sync to begin building the audit trail.
+          <div className="py-12 text-center">
+            <Shield className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+            <p className="text-sm font-medium text-muted-foreground">No sync jobs recorded yet</p>
+            <p className="text-xs text-muted-foreground/70 mt-1">Run your first sync to begin building the audit trail.</p>
           </div>
         ) : (
-          <div className="overflow-auto rounded-md border max-h-[480px]">
+          <ScrollArea className="max-h-[480px] rounded-xl border overflow-hidden">
             <Table>
-              <TableHeader className="sticky top-0 bg-background z-10">
-                <TableRow>
-                  <TableHead className="text-xs w-44">Triggered by</TableHead>
-                  <TableHead className="text-xs">IP / Location</TableHead>
-                  <TableHead className="text-xs">Results</TableHead>
-                  <TableHead className="text-xs w-28">Status</TableHead>
-                  <TableHead className="text-xs w-36">Date / Time</TableHead>
-                  <TableHead className="text-xs w-20">Duration</TableHead>
+              <TableHeader className="sticky top-0 bg-muted/80 backdrop-blur-sm z-10">
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="text-xs font-semibold w-52">Triggered by</TableHead>
+                  <TableHead className="text-xs font-semibold">IP / Location</TableHead>
+                  <TableHead className="text-xs font-semibold">Results</TableHead>
+                  <TableHead className="text-xs font-semibold w-28">Status</TableHead>
+                  <TableHead className="text-xs font-semibold w-36">Date / Time</TableHead>
+                  <TableHead className="text-xs font-semibold w-20">Duration</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {jobs.map((job) => {
+                {jobs.map((job, idx) => {
                   const durationSecs = job.finishedAt
                     ? (new Date(job.finishedAt).getTime() - new Date(job.startedAt).getTime()) / 1000
                     : null;
+                  const initials = getInitials(job.triggeredByName, job.triggeredByEmail);
                   return (
-                    <TableRow key={job.id} className={job.status === "failed" ? "bg-destructive/5" : undefined}>
-                      <TableCell className="py-2.5">
-                        <div className="flex items-center gap-2">
-                          <UserCircle2 className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                          <div>
-                            <p className="text-xs font-medium leading-tight">{job.triggeredByName ?? "System / Unknown"}</p>
+                    <TableRow
+                      key={job.id}
+                      className={cn(
+                        job.status === "failed" ? "bg-destructive/5 hover:bg-destructive/8" : idx % 2 === 0 ? "bg-muted/20 hover:bg-muted/40" : "hover:bg-muted/20",
+                      )}
+                    >
+                      <TableCell className="py-3">
+                        <div className="flex items-center gap-2.5">
+                          <Avatar className="h-7 w-7 flex-shrink-0 text-[10px] font-semibold">
+                            <AvatarFallback className="bg-[#95bf47]/15 text-[#5a8a1f] text-[10px]">{initials}</AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold leading-tight truncate">{job.triggeredByName ?? "System / Unknown"}</p>
                             {job.triggeredByEmail && (
-                              <p className="text-[10px] text-muted-foreground leading-tight truncate max-w-[140px]">{job.triggeredByEmail}</p>
+                              <p className="text-[10px] text-muted-foreground leading-tight truncate max-w-[150px]">{job.triggeredByEmail}</p>
                             )}
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="py-2.5">
+                      <TableCell className="py-3">
                         <div className="flex items-start gap-1.5">
                           <MapPin className="h-3 w-3 text-muted-foreground flex-shrink-0 mt-0.5" />
-                          <div>
-                            <p className="text-[10px] font-mono text-muted-foreground leading-tight">{job.triggeredByIp ?? "—"}</p>
+                          <div className="min-w-0">
+                            <p className="text-[10px] font-mono text-muted-foreground leading-tight truncate">{job.triggeredByIp ?? "—"}</p>
                             {job.triggeredByLocation && (
                               <p className="text-[10px] text-muted-foreground leading-tight">{job.triggeredByLocation}</p>
                             )}
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="py-2.5">
+                      <TableCell className="py-3">
                         <div className="flex flex-wrap gap-x-2 gap-y-0.5">
-                          {job.created > 0 && <span className="text-[10px] text-green-600 font-medium">+{job.created} created</span>}
-                          {job.updated > 0 && <span className="text-[10px] text-blue-600 font-medium">{job.updated} updated</span>}
-                          {job.failed > 0 && <span className="text-[10px] text-destructive font-medium">{job.failed} failed</span>}
+                          {job.created > 0 && <span className="text-[10px] font-semibold text-green-600 dark:text-green-400">+{job.created} created</span>}
+                          {job.updated > 0 && <span className="text-[10px] font-semibold text-blue-600 dark:text-blue-400">{job.updated} updated</span>}
+                          {job.failed > 0 && <span className="text-[10px] font-semibold text-destructive">{job.failed} failed</span>}
                           {job.skipped > 0 && <span className="text-[10px] text-muted-foreground">{job.skipped} skipped</span>}
-                          {job.missing > 0 && <span className="text-[10px] text-orange-500">{job.missing} missing</span>}
+                          {job.missing > 0 && <span className="text-[10px] text-orange-500 dark:text-orange-400">{job.missing} missing</span>}
                           {job.created === 0 && job.updated === 0 && job.failed === 0 && (
-                            <span className="text-[10px] text-muted-foreground">No changes</span>
+                            <span className="text-[10px] text-muted-foreground italic">No changes</span>
                           )}
                         </div>
                         {job.totalShopify != null && (
-                          <p className="text-[10px] text-muted-foreground mt-0.5">{job.processed} / {job.totalShopify} processed</p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">{job.processed.toLocaleString()} / {job.totalShopify.toLocaleString()} processed</p>
                         )}
                       </TableCell>
-                      <TableCell className="py-2.5">
+                      <TableCell className="py-3">
                         <SyncStatusBadge status={job.status as ProductSyncJob["status"]} />
                       </TableCell>
-                      <TableCell className="py-2.5">
-                        <p className="text-xs text-muted-foreground whitespace-nowrap">{fmtTime(job.startedAt)}</p>
+                      <TableCell className="py-3">
+                        <p className="text-xs font-medium whitespace-nowrap">{fmtTime(job.startedAt)}</p>
                         <p className="text-[10px] text-muted-foreground">{fmtAgo(job.startedAt)}</p>
                       </TableCell>
-                      <TableCell className="py-2.5 text-xs text-muted-foreground">
+                      <TableCell className="py-3 text-xs text-muted-foreground font-mono">
                         {durationSecs != null ? fmtDuration(durationSecs) : "—"}
                       </TableCell>
                     </TableRow>
@@ -1352,7 +1930,7 @@ function SyncAuditCard({ onExport }: { onExport: () => void }) {
                 })}
               </TableBody>
             </Table>
-          </div>
+          </ScrollArea>
         )}
       </CardContent>
     </Card>
@@ -1360,7 +1938,6 @@ function SyncAuditCard({ onExport }: { onExport: () => void }) {
 }
 
 // ─── Export Dialog ────────────────────────────────────────────────────────────
-// Date-range + status filter CSV export.
 
 function ExportDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const today = format(new Date(), "yyyy-MM-dd");
@@ -1384,32 +1961,36 @@ function ExportDialog({ open, onClose }: { open: boolean; onClose: () => void })
     onClose();
   };
 
+  const quickRanges = [
+    { label: "Today", days: 0 },
+    { label: "Last 7 days", days: 7 },
+    { label: "Last 30 days", days: 30 },
+    { label: "Last 90 days", days: 90 },
+  ];
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <CalendarDays className="h-5 w-5 text-[#95bf47]" />
+          <DialogTitle className="flex items-center gap-2.5 text-base">
+            <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center">
+              <CalendarDays className="h-4 w-4 text-[#95bf47]" />
+            </div>
             Export Sync Report
           </DialogTitle>
-          <DialogDescription>Download sync event log as CSV. Choose a date range and optional status filter.</DialogDescription>
+          <DialogDescription>Download the sync event log as CSV. Select a date range and optional status filter.</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-1">
-          {/* Quick range chips */}
+        <div className="space-y-5 py-1">
+          {/* Quick ranges */}
           <div>
-            <p className="text-xs font-medium text-muted-foreground mb-2">Quick ranges</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Quick range</p>
             <div className="flex gap-1.5 flex-wrap">
-              {[
-                { label: "Today", days: 0 },
-                { label: "Last 7 days", days: 7 },
-                { label: "Last 30 days", days: 30 },
-                { label: "Last 90 days", days: 90 },
-              ].map(({ label, days }) => (
+              {quickRanges.map(({ label, days }) => (
                 <button
                   key={label}
                   onClick={() => handleQuickRange(days)}
-                  className="rounded-full border px-3 py-1 text-xs hover:bg-muted transition-colors"
+                  className="rounded-full border px-3 py-1.5 text-xs font-medium hover:bg-muted hover:border-border transition-colors"
                 >
                   {label}
                 </button>
@@ -1419,10 +2000,10 @@ function ExportDialog({ open, onClose }: { open: boolean; onClose: () => void })
 
           <Separator />
 
-          {/* Custom date range */}
+          {/* Date pickers */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium">From date</label>
+              <label className="text-xs font-semibold">From date</label>
               <Input
                 type="date"
                 value={fromDate}
@@ -1432,7 +2013,7 @@ function ExportDialog({ open, onClose }: { open: boolean; onClose: () => void })
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium">To date</label>
+              <label className="text-xs font-semibold">To date</label>
               <Input
                 type="date"
                 value={toDate}
@@ -1446,11 +2027,9 @@ function ExportDialog({ open, onClose }: { open: boolean; onClose: () => void })
 
           {/* Status filter */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium">Status filter</label>
+            <label className="text-xs font-semibold">Status filter</label>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="h-9 text-sm">
-                <SelectValue />
-              </SelectTrigger>
+              <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All events</SelectItem>
                 <SelectItem value="success">Success only</SelectItem>
@@ -1461,18 +2040,26 @@ function ExportDialog({ open, onClose }: { open: boolean; onClose: () => void })
           </div>
 
           {/* Preview summary */}
-          <div className="rounded-md bg-muted/50 border p-3 text-xs text-muted-foreground space-y-0.5">
-            <p><span className="font-medium text-foreground">Date range:</span> {fromDate || "—"} → {toDate || "—"}</p>
-            <p><span className="font-medium text-foreground">Status:</span> {statusFilter === "all" ? "All events" : statusFilter}</p>
-            <p><span className="font-medium text-foreground">Format:</span> CSV (up to 5,000 rows)</p>
+          <div className="rounded-xl bg-muted/60 border p-3.5 text-xs space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Date range</span>
+              <span className="font-medium">{fromDate || "—"} → {toDate || "—"}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Status</span>
+              <span className="font-medium">{statusFilter === "all" ? "All events" : statusFilter}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Format</span>
+              <span className="font-medium">CSV · up to 5,000 rows</span>
+            </div>
           </div>
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={handleDownload} disabled={!fromDate || !toDate} className="gap-2">
-            <Download className="h-4 w-4" />
-            Download CSV
+            <Download className="h-4 w-4" />Download CSV
           </Button>
         </DialogFooter>
       </DialogContent>
