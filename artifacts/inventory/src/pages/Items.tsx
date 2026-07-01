@@ -1482,7 +1482,7 @@ export default function Items() {
                     {/* Barcode */}
                     <TableCell className="text-xs font-mono text-muted-foreground max-w-[200px]">
                       {parent.barcode ? (
-                        <span className="truncate block">{parent.barcode} | {parent.sku}</span>
+                        <span className="truncate block">{parent.barcode}</span>
                       ) : (
                         <span className="text-muted-foreground/50">—</span>
                       )}
@@ -1632,7 +1632,7 @@ export default function Items() {
                         {/* Barcode */}
                         <TableCell className="text-xs font-mono text-muted-foreground max-w-[200px]">
                           {v.barcode ? (
-                            <span className="truncate block">{v.barcode} | {v.sku}</span>
+                            <span className="truncate block">{v.barcode}</span>
                           ) : (
                             <span className="text-muted-foreground/50">—</span>
                           )}
