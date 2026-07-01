@@ -1641,6 +1641,14 @@ router.patch("/items/bulk-edit", async (req, res, next) => {
         ),
       );
 
+    // Push product fields (including price) to Shopify for each updated item.
+    const shopifyFieldsUpdated = ["salePrice", "category", "archivedAt"].some((k) => k in updates);
+    if (shopifyFieldsUpdated) {
+      for (const id of ids) {
+        pushProductFieldsToShopify(t.organizationId, id);
+      }
+    }
+
     res.json({ updated: ids.length });
   } catch (err) {
     next(err);

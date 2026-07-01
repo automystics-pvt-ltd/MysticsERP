@@ -342,16 +342,8 @@ export default function Items() {
   const brandFilter = filterValues.brand === "all" ? "" : filterValues.brand;
   const stockFilter = filterValues.stock as "all" | "in-stock" | "low-stock" | "out-of-stock";
   const statusFilter = filterValues.status as "active" | "archived" | "all";
-  // Warehouse filter — last selection remembered in localStorage.
-  const [warehouseFilter, setWarehouseFilterState] = useState<number | "all">(
-    () => {
-      if (typeof window === "undefined") return "all";
-      const raw = window.localStorage.getItem(WAREHOUSE_FILTER_KEY);
-      if (!raw || raw === "all") return "all";
-      const n = Number(raw);
-      return Number.isFinite(n) && Number.isInteger(n) && n > 0 ? n : "all";
-    },
-  );
+  // Warehouse filter — no default selection on load; user picks explicitly.
+  const [warehouseFilter, setWarehouseFilterState] = useState<number | "all">("all");
   const setWarehouseFilter = (v: number | "all") => {
     setWarehouseFilterState(v);
     if (typeof window !== "undefined") {
@@ -531,11 +523,15 @@ export default function Items() {
   const itemExtraFilterCount = [
     warehouseFilter !== "all",
     priceMin !== "" || priceMax !== "",
+    categoryFilter !== "",
+    brandFilter !== "",
   ].filter(Boolean).length;
 
   const itemActiveChips: FilterChip[] = [
     ...(warehouseFilter !== "all" && scopedWarehouseName ? [{ key: "wh", label: `Warehouse: ${scopedWarehouseName}`, onRemove: () => setWarehouseFilterState("all") }] : []),
     ...((priceMin || priceMax) ? [{ key: "price", label: `Price: ${priceMin ? `₹${priceMin}` : "any"} – ${priceMax ? `₹${priceMax}` : "any"}`, onRemove: () => { setPriceMin(""); setPriceMax(""); } }] : []),
+    ...(categoryFilter ? [{ key: "cat", label: `Type: ${categoryFilter}`, onRemove: () => { setFilter("cat", "all"); setPage(1); } }] : []),
+    ...(brandFilter ? [{ key: "brand", label: `Vendor: ${brandFilter}`, onRemove: () => { setFilter("brand", "all"); setPage(1); } }] : []),
   ];
   // "status" = "active" is the silent default; show a chip only when non-default.
   // FilterBar filterDefs already renders it as a dropdown chip automatically.
@@ -1159,24 +1155,6 @@ export default function Items() {
         }}
       />
 
-      {/* Shopify-style status tabs */}
-      <div className="flex items-center gap-0 border-b mb-2">
-        {(["active", "all", "archived"] as const).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => { setFilter("status", tab); setPage(1); setSelectedIds(new Set()); }}
-            className={cn(
-              "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
-              statusFilter === tab
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {tab === "active" ? "Active" : tab === "archived" ? "Archived" : "All"}
-          </button>
-        ))}
-      </div>
-
       <FilterBar
         search={filterValues.search}
         onSearchChange={(v) => { setFilter("search", v); setPage(1); }}
@@ -1189,14 +1167,6 @@ export default function Items() {
               { value: "archived", label: "Archived" },
               { value: "all", label: "All" },
             ],
-          },
-          {
-            key: "cat", label: "Type", type: "select",
-            options: categoryOptions.map((c) => ({ value: c, label: c })),
-          },
-          {
-            key: "brand", label: "Vendor", type: "select",
-            options: brandOptions.map((b) => ({ value: b, label: b })),
           },
           {
             key: "stock", label: "Stock Status", type: "select",
@@ -1212,28 +1182,64 @@ export default function Items() {
         filterCount={itemExtraFilterCount}
         activeChips={itemActiveChips}
         filterContent={
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">Price range (₹)</Label>
-            <div className="flex items-center gap-2">
-              <Input
-                type="number"
-                min={0}
-                step="0.01"
-                placeholder="Min"
-                className="h-8 text-sm"
-                value={priceMin}
-                onChange={(e) => setPriceMin(e.target.value)}
-              />
-              <span className="text-muted-foreground text-xs">–</span>
-              <Input
-                type="number"
-                min={0}
-                step="0.01"
-                placeholder="Max"
-                className="h-8 text-sm"
-                value={priceMax}
-                onChange={(e) => setPriceMax(e.target.value)}
-              />
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Category (Type)</Label>
+              <Select
+                value={filterValues.cat || "all"}
+                onValueChange={(v) => { setFilter("cat", v); setPage(1); }}
+              >
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue placeholder="All categories" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItemUI value="all">All</SelectItemUI>
+                  {categoryOptions.map((c) => (
+                    <SelectItemUI key={c} value={c}>{c}</SelectItemUI>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Vendor (Brand)</Label>
+              <Select
+                value={filterValues.brand || "all"}
+                onValueChange={(v) => { setFilter("brand", v); setPage(1); }}
+              >
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue placeholder="All vendors" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItemUI value="all">All</SelectItemUI>
+                  {brandOptions.map((b) => (
+                    <SelectItemUI key={b} value={b}>{b}</SelectItemUI>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Price range (₹)</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  placeholder="Min"
+                  className="h-8 text-sm"
+                  value={priceMin}
+                  onChange={(e) => setPriceMin(e.target.value)}
+                />
+                <span className="text-muted-foreground text-xs">–</span>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  placeholder="Max"
+                  className="h-8 text-sm"
+                  value={priceMax}
+                  onChange={(e) => setPriceMax(e.target.value)}
+                />
+              </div>
             </div>
           </div>
         }

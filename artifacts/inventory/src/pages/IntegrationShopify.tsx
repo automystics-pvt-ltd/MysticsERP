@@ -124,7 +124,6 @@ import {
   useGetShopifyConnection,
   useDeleteShopifyConnection,
   useSyncShopifyOrders,
-  usePushShopifyProducts,
   useStartShopifyInstall,
   getGetShopifyConnectionQueryKey,
 } from "@/lib/queryKeys";
@@ -344,17 +343,6 @@ export default function IntegrationShopify() {
     },
   });
 
-  const pushProductsMutation = usePushShopifyProducts({
-    mutation: {
-      onSuccess: (data) => {
-        toast({ title: "Products pushed to Shopify", description: `Queued ${data.itemCount} product${data.itemCount === 1 ? "" : "s"} for push.` });
-      },
-      onError: (err: unknown) => {
-        toast({ title: "Push failed", description: err instanceof Error ? err.message : "Try again", variant: "destructive" });
-      },
-    },
-  });
-
   useEffect(() => {
     const url = new URL(window.location.href);
     if (url.searchParams.get("connected") === "1") {
@@ -427,8 +415,6 @@ export default function IntegrationShopify() {
           disconnecting={disconnectMutation.isPending}
           onSyncOrders={() => syncOrdersMutation.mutate()}
           syncingOrders={syncOrdersMutation.isPending}
-          onPushAll={() => pushProductsMutation.mutate()}
-          pushingAll={pushProductsMutation.isPending}
           onConnectionChange={invalidateConnection}
         />
       )}
@@ -574,8 +560,6 @@ function ConnectedView({
   disconnecting,
   onSyncOrders,
   syncingOrders,
-  onPushAll,
-  pushingAll,
   onConnectionChange,
 }: {
   connection: ConnectionData;
@@ -583,8 +567,6 @@ function ConnectedView({
   disconnecting: boolean;
   onSyncOrders: () => void;
   syncingOrders: boolean;
-  onPushAll: () => void;
-  pushingAll: boolean;
   onConnectionChange: () => void;
 }) {
   const [tab, setTab] = useState("overview");
@@ -705,8 +687,6 @@ function ConnectedView({
         isRunning={isRunning}
         pct={pct}
         onSyncStart={() => setSyncDialogOpen(true)}
-        onPushAll={onPushAll}
-        pushingAll={pushingAll}
         onSyncOrders={onSyncOrders}
         syncingOrders={syncingOrders}
         onExport={() => setExportOpen(true)}
@@ -756,7 +736,6 @@ function ConnectedView({
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
               {[
                 { icon: <Zap className="h-5 w-5 text-[#95bf47]" />, iconBg: "bg-[#95bf47]/10", title: "Sync Products", desc: "Import all Shopify products to ERP", onClick: () => setSyncDialogOpen(true), primary: true },
-                { icon: <RefreshCw className="h-5 w-5 text-blue-500" />, iconBg: "bg-blue-50 dark:bg-blue-900/20", title: "Push All to Shopify", desc: "Push all linked ERP products to Shopify", onClick: onPushAll, loading: pushingAll },
                 { icon: <ArrowLeftRight className="h-5 w-5 text-purple-500" />, iconBg: "bg-purple-50 dark:bg-purple-900/20", title: "Sync Orders", desc: "Pull pending Shopify orders into ERP", onClick: onSyncOrders, loading: syncingOrders },
                 { icon: <Eye className="h-5 w-5 text-amber-500" />, iconBg: "bg-amber-50 dark:bg-amber-900/20", title: "Dry Run Preview", desc: "Preview changes before syncing", onClick: () => toast({ title: "Coming soon", description: "Dry run preview will be available shortly." }) },
                 { icon: <RotateCcw className="h-5 w-5 text-orange-500" />, iconBg: "bg-orange-50 dark:bg-orange-900/20", title: "Retry Failed Items", desc: "Re-queue all failed sync items", onClick: () => retryMutation.mutate("failed") },
@@ -848,8 +827,6 @@ function IntegrationBanner({
   isRunning,
   pct,
   onSyncStart,
-  onPushAll,
-  pushingAll,
   onSyncOrders,
   syncingOrders,
   onExport,
@@ -863,8 +840,6 @@ function IntegrationBanner({
   isRunning: boolean;
   pct: number;
   onSyncStart: () => void;
-  onPushAll: () => void;
-  pushingAll: boolean;
   onSyncOrders: () => void;
   syncingOrders: boolean;
   onExport: () => void;
@@ -924,16 +899,6 @@ function IntegrationBanner({
                 <Zap className="h-4 w-4" />Sync Products
               </Button>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onPushAll}
-              disabled={pushingAll}
-              className="gap-1.5"
-            >
-              {pushingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-              Push to Shopify
-            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -1672,12 +1637,6 @@ function AdvancedSettingsTab({
             ))}
           </div>
 
-          {connection.scopes && (
-            <div className="mt-4">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Granted API Scopes</p>
-              <p className="font-mono text-xs break-all bg-muted rounded-lg p-3 text-muted-foreground leading-relaxed">{connection.scopes}</p>
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -2138,7 +2097,7 @@ function ExportDialog({ open, onClose }: { open: boolean; onClose: () => void })
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md bg-white dark:bg-background">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2.5 text-base">
             <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center">
