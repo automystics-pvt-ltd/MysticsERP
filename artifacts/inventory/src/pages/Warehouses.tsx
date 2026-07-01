@@ -1304,6 +1304,12 @@ export default function Warehouses() {
                 <DropdownMenuItem onClick={() => handleExportWarehouses("all")}>Export All ({totalCount})</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <Can module="warehouses" action="create">
+              <Button size="sm" className="gap-1.5" onClick={handleCreate} data-testid="btn-create-warehouse">
+                <Plus className="h-4 w-4" />
+                New Warehouse
+              </Button>
+            </Can>
           </div>
         }
       />

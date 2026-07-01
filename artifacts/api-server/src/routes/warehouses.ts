@@ -41,8 +41,71 @@ router.get("/warehouses", async (req, res, next) => {
   }
 });
 
-router.post("/warehouses", (_req, res) => {
-  res.status(403).json({ error: "Warehouse creation is disabled. Only the 3 fixed system warehouses (Main, Shopify, Store) are allowed." });
+router.post("/warehouses", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const { name, code, addressLine1, city, state, country, isDefault } = req.body as {
+      name?: string;
+      code?: string;
+      addressLine1?: string | null;
+      city?: string | null;
+      state?: string | null;
+      country?: string | null;
+      isDefault?: boolean;
+    };
+
+    if (!name?.trim()) {
+      res.status(400).json({ error: "Name is required" });
+      return;
+    }
+    if (!code?.trim()) {
+      res.status(400).json({ error: "Code is required" });
+      return;
+    }
+
+    const result = await db.transaction(async (tx) => {
+      // If this warehouse is being set as default, clear the others first
+      if (isDefault) {
+        await tx
+          .update(warehousesTable)
+          .set({ isDefault: false })
+          .where(eq(warehousesTable.organizationId, t.organizationId)); // org-scope-allow: scoped to tenant, clearing default flag across all rows
+      }
+
+      const [row] = await tx
+        .insert(warehousesTable)
+        .values({
+          organizationId: t.organizationId,
+          name: name.trim(),
+          code: code.trim().toUpperCase(),
+          addressLine1: addressLine1 ?? null,
+          city: city ?? null,
+          state: state ?? null,
+          country: country ?? null,
+          isDefault: isDefault ?? false,
+          isSystem: false,
+          isVirtual: false,
+        })
+        .returning();
+
+      return row!;
+    });
+
+    res.status(201).json(serializeWarehouse(result));
+  } catch (err: unknown) {
+    const pg = err as { code?: string; constraint?: string };
+    if (pg.code === "23505") {
+      if (pg.constraint?.includes("name")) {
+        res.status(409).json({ error: "A warehouse with that name already exists." });
+      } else if (pg.constraint?.includes("code")) {
+        res.status(409).json({ error: "A warehouse with that code already exists." });
+      } else {
+        res.status(409).json({ error: "Duplicate warehouse." });
+      }
+      return;
+    }
+    next(err);
+  }
 });
 
 router.get("/warehouses/stock-summaries", async (req, res, next) => {
@@ -272,12 +335,152 @@ router.get("/warehouses/:id", async (req, res, next) => {
   }
 });
 
-router.patch("/warehouses/:id", (_req, res) => {
-  res.status(403).json({ error: "Warehouse editing is disabled. Only the 3 fixed system warehouses (Main, Shopify, Store) are allowed." });
+router.patch("/warehouses/:id", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const id = Number(req.params.id);
+
+    const [existing] = await db
+      .select()
+      .from(warehousesTable)
+      .where(
+        and(
+          eq(warehousesTable.id, id),
+          eq(warehousesTable.organizationId, t.organizationId),
+        ),
+      )
+      .limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const { name, code, addressLine1, city, state, country, isDefault, shopifyLocationId } =
+      req.body as {
+        name?: string;
+        code?: string;
+        addressLine1?: string | null;
+        city?: string | null;
+        state?: string | null;
+        country?: string | null;
+        isDefault?: boolean;
+        shopifyLocationId?: string | null;
+      };
+
+    // System warehouses cannot have their code changed
+    if (existing.isSystem && code !== undefined && code.trim().toUpperCase() !== existing.code) {
+      res.status(400).json({ error: "The code of a system warehouse cannot be changed." });
+      return;
+    }
+
+    const updates: Partial<typeof warehousesTable.$inferInsert> = {};
+    if (name !== undefined) updates.name = name.trim();
+    if (code !== undefined) updates.code = code.trim().toUpperCase();
+    if (addressLine1 !== undefined) updates.addressLine1 = addressLine1;
+    if (city !== undefined) updates.city = city;
+    if (state !== undefined) updates.state = state;
+    if (country !== undefined) updates.country = country;
+    if (isDefault !== undefined) updates.isDefault = isDefault;
+    if (shopifyLocationId !== undefined)
+      updates.shopifyLocationId = shopifyLocationId;
+
+    const result = await db.transaction(async (tx) => {
+      // If this warehouse is being set as default, clear others first
+      if (updates.isDefault === true) {
+        await tx
+          .update(warehousesTable)
+          .set({ isDefault: false })
+          .where(
+            and(
+              eq(warehousesTable.organizationId, t.organizationId), // org-scope-allow: scoped to tenant, clearing default flag across all rows
+              ne(warehousesTable.id, id),
+            ),
+          );
+      }
+
+      const [row] = await tx
+        .update(warehousesTable)
+        .set(updates)
+        .where(
+          and(
+            eq(warehousesTable.id, id),
+            eq(warehousesTable.organizationId, t.organizationId),
+          ),
+        )
+        .returning();
+
+      return row!;
+    });
+
+    res.json(serializeWarehouse(result));
+  } catch (err: unknown) {
+    const pg = err as { code?: string; constraint?: string };
+    if (pg.code === "23505") {
+      if (pg.constraint?.includes("name")) {
+        res.status(409).json({ error: "A warehouse with that name already exists." });
+      } else if (pg.constraint?.includes("code")) {
+        res.status(409).json({ error: "A warehouse with that code already exists." });
+      } else if (pg.constraint?.includes("shopify_location")) {
+        res.status(409).json({ error: "This Shopify location is already mapped to another warehouse." });
+      } else {
+        res.status(409).json({ error: "Duplicate warehouse." });
+      }
+      return;
+    }
+    next(err);
+  }
 });
 
-router.delete("/warehouses/:id", (_req, res) => {
-  res.status(403).json({ error: "Warehouse deletion is disabled. Only the 3 fixed system warehouses (Main, Shopify, Store) are allowed." });
+router.delete("/warehouses/:id", async (req, res, next) => {
+  try {
+    const t = req.tenant!;
+    const id = Number(req.params.id);
+
+    const [existing] = await db
+      .select()
+      .from(warehousesTable)
+      .where(
+        and(
+          eq(warehousesTable.id, id),
+          eq(warehousesTable.organizationId, t.organizationId),
+        ),
+      )
+      .limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    if (existing.isSystem) {
+      res.status(400).json({ error: "System warehouses (Main, Shopify, Store) cannot be deleted." });
+      return;
+    }
+    if (existing.isDefault) {
+      res.status(400).json({ error: "Cannot delete the default warehouse. Set another warehouse as default first." });
+      return;
+    }
+
+    await db
+      .delete(warehousesTable)
+      .where(
+        and(
+          eq(warehousesTable.id, id),
+          eq(warehousesTable.organizationId, t.organizationId),
+        ),
+      );
+
+    res.status(204).send();
+  } catch (err: unknown) {
+    const pg = err as { code?: string };
+    if (pg.code === "23503") {
+      res.status(409).json({
+        error:
+          "Cannot delete this warehouse because it is referenced by existing orders, transfers, or POS sessions. Remove those references first.",
+      });
+      return;
+    }
+    next(err);
+  }
 });
 
 export default router;
