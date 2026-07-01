@@ -429,6 +429,26 @@ export interface Item {
   dimensionUnit: string;
   /** @nullable */
   brand: string | null;
+  /**
+     * ISO timestamp when the item was archived. Null when the item is active.
+     * @nullable
+     */
+  archivedAt?: string | null;
+  /**
+     * ISO timestamp of the last update.
+     * @nullable
+     */
+  updatedAt?: string | null;
+  /**
+     * Shopify variant ID when this item is linked to a Shopify product variant.
+     * @nullable
+     */
+  shopifyVariantId?: string | null;
+  /**
+     * Shopify product ID when this item is linked to a Shopify product.
+     * @nullable
+     */
+  shopifyProductId?: string | null;
 }
 
 export interface VariantStock {

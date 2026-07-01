@@ -30,6 +30,7 @@ export async function fetchItemsPaginated(params: {
   priceMin?: number;
   priceMax?: number;
   stockFilter?: string;
+  statusFilter?: "active" | "archived" | "all";
   leafOnly?: boolean;
 }): Promise<ItemsPage> {
   const qs = new URLSearchParams();
@@ -45,6 +46,7 @@ export async function fetchItemsPaginated(params: {
   if (params.priceMin !== undefined) qs.set("priceMin", String(params.priceMin));
   if (params.priceMax !== undefined) qs.set("priceMax", String(params.priceMax));
   if (params.stockFilter) qs.set("stockFilter", params.stockFilter);
+  if (params.statusFilter) qs.set("statusFilter", params.statusFilter);
   if (params.leafOnly) qs.set("leafOnly", "true");
   return customFetch<ItemsPage>(`/api/items?${qs}`);
 }

@@ -3543,6 +3543,16 @@ components:
         dimensionHeight: { type: ["number", "null"] }
         dimensionUnit: { type: string }
         brand: { type: ["string", "null"] }
+        archivedAt:
+          type: ["string", "null"]
+          description: ISO timestamp when the item was archived. Null when the item is active.
+        updatedAt: { type: ["string", "null"], description: ISO timestamp of the last update. }
+        shopifyVariantId:
+          type: ["string", "null"]
+          description: Shopify variant ID when this item is linked to a Shopify product variant.
+        shopifyProductId:
+          type: ["string", "null"]
+          description: Shopify product ID when this item is linked to a Shopify product.
       required:
         [
           id,

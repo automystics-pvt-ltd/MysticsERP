@@ -181,6 +181,18 @@ export function serializeItem(
         ? toNum((i as unknown as { dimensionHeight: string }).dimensionHeight)
         : null,
     dimensionUnit: (i as unknown as { dimensionUnit?: string | null }).dimensionUnit ?? "cm",
+    archivedAt:
+      (i as unknown as { archivedAt?: Date | null }).archivedAt instanceof Date
+        ? (i as unknown as { archivedAt: Date }).archivedAt.toISOString()
+        : null,
+    updatedAt:
+      (i as unknown as { updatedAt?: Date | null }).updatedAt instanceof Date
+        ? (i as unknown as { updatedAt: Date }).updatedAt.toISOString()
+        : null,
+    shopifyVariantId:
+      (i as unknown as { shopifyVariantId?: string | null }).shopifyVariantId ?? null,
+    shopifyProductId:
+      (i as unknown as { shopifyProductId?: string | null }).shopifyProductId ?? null,
   };
 }
 

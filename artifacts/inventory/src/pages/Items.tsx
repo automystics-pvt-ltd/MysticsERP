@@ -37,7 +37,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import {
   Plus,
   Search,
@@ -340,6 +341,7 @@ export default function Items() {
   const brandFilter = filterValues.brand === "all" ? "" : filterValues.brand;
   const stockFilter = filterValues.stock as "all" | "in-stock" | "low-stock" | "out-of-stock";
   // Warehouse filter — last selection remembered in localStorage.
+  const [statusFilter, setStatusFilter] = useState<"active" | "archived" | "all">("active");
   const [warehouseFilter, setWarehouseFilterState] = useState<number | "all">(
     () => {
       if (typeof window === "undefined") return "all";
@@ -418,6 +420,7 @@ export default function Items() {
         stockFilter: stockFilter !== "all" ? stockFilter : undefined,
         priceMin: debouncedPriceMin !== "" ? Number(debouncedPriceMin) : undefined,
         priceMax: debouncedPriceMax !== "" ? Number(debouncedPriceMax) : undefined,
+        statusFilter,
       },
     ],
     queryFn: () =>
@@ -433,6 +436,7 @@ export default function Items() {
         stockFilter: stockFilter !== "all" ? stockFilter : undefined,
         priceMin: debouncedPriceMin !== "" ? Number(debouncedPriceMin) : undefined,
         priceMax: debouncedPriceMax !== "" ? Number(debouncedPriceMax) : undefined,
+        statusFilter,
       }),
     placeholderData: (prev) => prev,
     staleTime: STALE_LIST,
@@ -503,7 +507,7 @@ export default function Items() {
     // Stale variant rows may have been fetched with a different warehouseId —
     // clear them so they are re-fetched with the current filter on next expand.
     setVariantsByParent({});
-  }, [filterValues.cat, filterValues.brand, filterValues.stock, debouncedPriceMin, debouncedPriceMax, debouncedSearch, warehouseFilter]);
+  }, [filterValues.cat, filterValues.brand, filterValues.stock, debouncedPriceMin, debouncedPriceMax, debouncedSearch, warehouseFilter, statusFilter]);
 
   // search/cat/brand/stock are synced by useListFilters; warehouseFilter stays in localStorage.
   useEffect(() => {
@@ -519,6 +523,7 @@ export default function Items() {
     setWarehouseFilterState("all");
     setPriceMin("");
     setPriceMax("");
+    setStatusFilter("active");
     setPage(1);
   }
 
@@ -1151,6 +1156,24 @@ export default function Items() {
         }}
       />
 
+      {/* Shopify-style status tabs */}
+      <div className="flex items-center gap-0 border-b mb-2">
+        {(["active", "all", "archived"] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => { setStatusFilter(tab); setPage(1); setSelectedIds(new Set()); }}
+            className={cn(
+              "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
+              statusFilter === tab
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {tab === "active" ? "Active" : tab === "archived" ? "Archived" : "All"}
+          </button>
+        ))}
+      </div>
+
       <FilterBar
         search={filterValues.search}
         onSearchChange={(v) => { setFilter("search", v); setPage(1); }}
@@ -1308,15 +1331,14 @@ export default function Items() {
                   data-testid="checkbox-select-all-items"
                 />
               </TableHead>
-              <TableHead className="w-[64px]"></TableHead>
-              <TableHead className="w-[180px]">SKU</TableHead>
-              <TableHead className="w-[160px]">Barcode</TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead>Category</TableHead>
-              <TableHead className="text-right">Price</TableHead>
-              {visibleWarehouses.map((wh) => (
-                <TableHead key={wh.id} className="text-right">{wh.name}</TableHead>
-              ))}
+              <TableHead>Product</TableHead>
+              <TableHead className="w-[110px]">Status</TableHead>
+              <TableHead className="w-[210px]">Inventory</TableHead>
+              <TableHead className="w-[130px]">Type</TableHead>
+              <TableHead className="w-[130px]">Vendor</TableHead>
+              <TableHead className="w-[110px]">Channels</TableHead>
+              <TableHead className="w-[100px]">Created</TableHead>
+              <TableHead className="w-[100px]">Updated</TableHead>
               <TableHead className="w-[50px]"></TableHead>
             </TableRow>
           </TableHeader>
@@ -1324,7 +1346,7 @@ export default function Items() {
             {isLoading ? (
               Array.from({ length: 8 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 8 + visibleWarehouses.length }).map((__, j) => (
+                  {Array.from({ length: 10 }).map((__, j) => (
                     <TableCell key={j}>
                       <Skeleton className="h-4 w-full" />
                     </TableCell>
@@ -1333,8 +1355,8 @@ export default function Items() {
               ))
             ) : (itemsPage?.total ?? 0) === 0 ? (
               <TableRow>
-                <TableCell colSpan={8 + visibleWarehouses.length} className="h-32 text-center text-muted-foreground">
-                  {search || categoryFilter || brandFilter || stockFilter !== "all" || warehouseFilter !== "all" || priceMin || priceMax
+                <TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
+                  {search || categoryFilter || brandFilter || stockFilter !== "all" || warehouseFilter !== "all" || priceMin || priceMax || statusFilter !== "active"
                     ? "No items match the current filters."
                     : "No items yet. Click \"Add Item\" to create your first product."}
                 </TableCell>
@@ -1351,6 +1373,7 @@ export default function Items() {
                     key={parent.id}
                     data-testid={`row-item-${parent.id}`}
                   >
+                    {/* Checkbox */}
                     <TableCell className="px-2">
                       <Checkbox
                         checked={selectedIds.has(parent.id)}
@@ -1367,93 +1390,105 @@ export default function Items() {
                         onClick={(e) => e.stopPropagation()}
                       />
                     </TableCell>
+                    {/* Product: thumbnail + expand toggle + name + SKU + badges */}
                     <TableCell>
-                      <ItemThumb url={parent.imageUrl} alt={parent.name} />
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      <div className="flex items-center gap-1">
-                        {isParent ? (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-5 w-5 -ml-1"
-                            onClick={() => handleToggleExpand(parent.id)}
-                            data-testid={`btn-expand-${parent.id}`}
-                            aria-label={isExpanded ? "Collapse" : "Expand"}
-                          >
-                            {isExpanded ? (
-                              <ChevronDown className="h-4 w-4" />
-                            ) : (
-                              <ChevronRight className="h-4 w-4" />
+                      <div className="flex items-center gap-3 min-w-0">
+                        <ItemThumb url={parent.imageUrl} alt={parent.name} />
+                        <div className="flex items-center gap-1 min-w-0">
+                          {isParent && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5 -ml-1 shrink-0"
+                              onClick={() => handleToggleExpand(parent.id)}
+                              data-testid={`btn-expand-${parent.id}`}
+                              aria-label={isExpanded ? "Collapse" : "Expand"}
+                            >
+                              {isExpanded ? (
+                                <ChevronDown className="h-4 w-4" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4" />
+                              )}
+                            </Button>
+                          )}
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <Link
+                                href={`/items/${parent.id}`}
+                                className="font-medium text-primary hover:underline truncate max-w-[240px]"
+                                data-testid={`link-item-${parent.id}`}
+                              >
+                                {parent.name}
+                              </Link>
+                              {parent.isBundle && (
+                                <Badge variant="outline" className="text-[10px] px-1 py-0" data-testid={`badge-bundle-${parent.id}`}>
+                                  Bundle
+                                </Badge>
+                              )}
+                            </div>
+                            {parent.sku && (
+                              <div className="text-xs text-muted-foreground font-mono mt-0.5 truncate">
+                                {parent.sku}
+                              </div>
                             )}
-                          </Button>
-                        ) : (
-                          <span className="inline-block w-5" />
-                        )}
-                        {parent.sku}
+                          </div>
+                        </div>
                       </div>
                     </TableCell>
-                    <TableCell
-                      className="font-mono text-xs text-muted-foreground"
-                      data-testid={`text-barcode-${parent.id}`}
-                    >
-                      {parent.barcode || "-"}
-                    </TableCell>
+                    {/* Status */}
                     <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Link
-                          href={`/items/${parent.id}`}
-                          className="font-medium text-primary hover:underline"
-                          data-testid={`link-item-${parent.id}`}
-                        >
-                          {parent.name}
-                        </Link>
-                        {isParent && (
-                          <Badge variant="outline">
-                            {parent.variantCount} variant
-                            {parent.variantCount === 1 ? "" : "s"}
-                          </Badge>
-                        )}
-                        {parent.isBundle && (
-                          <Badge variant="outline" data-testid={`badge-bundle-${parent.id}`}>
-                            Bundle
-                          </Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>{parent.category || "-"}</TableCell>
-                    <TableCell className="text-right">
-                      {isParent ? (
-                        <span className="text-muted-foreground">—</span>
+                      {parent.archivedAt ? (
+                        <Badge variant="secondary" className="text-xs">Archived</Badge>
                       ) : (
-                        formatCurrency(parent.salePrice)
+                        <Badge variant="outline" className="text-xs border-green-500 text-green-700 bg-green-50 dark:bg-green-950 dark:text-green-400">Active</Badge>
                       )}
                     </TableCell>
-                    {visibleWarehouses.map((wh) => {
-                      const qty = isParent
-                        ? 0
-                        : (parent.warehouseStock ?? []).find((w) => w.warehouseId === wh.id)?.quantity ?? 0;
-                      return (
-                        <TableCell key={wh.id} className="text-right">
-                          {isParent ? (
-                            <span className="text-muted-foreground">—</span>
-                          ) : (
-                            <Badge
-                              variant={
-                                qty <= 0 || (parent.reorderLevel > 0 && qty <= parent.reorderLevel)
-                                  ? "destructive"
-                                  : "secondary"
-                              }
-                              title={parent.isBundle ? "Derived from component stock" : undefined}
-                              data-testid={`text-wh-stock-${parent.id}-${wh.id}`}
-                            >
-                              {qty} {parent.unit}
-                              {parent.isBundle ? " (derived)" : ""}
-                            </Badge>
-                          )}
-                        </TableCell>
-                      );
-                    })}
+                    {/* Inventory */}
+                    <TableCell className="text-sm">
+                      {isParent ? (
+                        <span className="text-muted-foreground text-xs">
+                          {parent.variantCount} variant{parent.variantCount === 1 ? "" : "s"}
+                        </span>
+                      ) : (
+                        (() => {
+                          const total = Number(parent.totalStock ?? 0);
+                          const isLow = parent.reorderLevel > 0 && total <= parent.reorderLevel;
+                          return (
+                            <span className={cn("text-sm", total <= 0 ? "text-destructive" : isLow ? "text-amber-600" : "text-foreground")}>
+                              {total} in stock
+                              {parent.isBundle ? <span className="text-muted-foreground text-xs ml-1">(derived)</span> : null}
+                            </span>
+                          );
+                        })()
+                      )}
+                    </TableCell>
+                    {/* Type (category) */}
+                    <TableCell className="text-sm text-muted-foreground truncate max-w-[130px]">
+                      {parent.category || <span className="text-muted-foreground">—</span>}
+                    </TableCell>
+                    {/* Vendor (brand) */}
+                    <TableCell className="text-sm text-muted-foreground truncate max-w-[130px]">
+                      {parent.brand || <span className="text-muted-foreground">—</span>}
+                    </TableCell>
+                    {/* Channels */}
+                    <TableCell>
+                      {parent.shopifyProductId ? (
+                        <Badge variant="secondary" className="text-xs gap-1">
+                          <Store className="h-3 w-3" />
+                          Shopify
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">—</span>
+                      )}
+                    </TableCell>
+                    {/* Created */}
+                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                      {formatDate(parent.createdAt)}
+                    </TableCell>
+                    {/* Updated */}
+                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                      {parent.updatedAt ? formatDate(parent.updatedAt) : "—"}
+                    </TableCell>
                     <TableCell>
                       <Can module="items" action="edit">
                         <DropdownMenu>
@@ -1513,58 +1548,80 @@ export default function Items() {
                             onClick={(e) => e.stopPropagation()}
                           />
                         </TableCell>
+                        {/* Product: thumb + indent + name + variant label + SKU */}
                         <TableCell>
-                          <ItemThumb url={v.imageUrl} alt={v.name} />
-                        </TableCell>
-                        <TableCell className="font-mono text-xs">
-                          <div className="flex items-center gap-1 pl-6">
-                            <span className="inline-block w-5" />
-                            {v.sku}
+                          <div className="flex items-center gap-3 min-w-0 pl-6">
+                            <ItemThumb url={v.imageUrl} alt={v.name} />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <Link
+                                  href={`/items/${v.id}`}
+                                  className="font-medium text-primary hover:underline truncate max-w-[200px]"
+                                  data-testid={`link-item-${v.id}`}
+                                >
+                                  {v.name}
+                                </Link>
+                                {variantLabel(v.variantOptions) && (
+                                  <Badge variant="secondary" className="font-normal text-[10px] px-1 py-0">
+                                    {variantLabel(v.variantOptions)}
+                                  </Badge>
+                                )}
+                              </div>
+                              {v.sku && (
+                                <div className="text-xs text-muted-foreground font-mono mt-0.5 truncate">
+                                  {v.sku}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </TableCell>
-                        <TableCell
-                          className="font-mono text-xs text-muted-foreground"
-                          data-testid={`text-barcode-${v.id}`}
-                        >
-                          {v.barcode || "-"}
-                        </TableCell>
+                        {/* Status */}
                         <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Link
-                              href={`/items/${v.id}`}
-                              className="font-medium text-primary hover:underline"
-                              data-testid={`link-item-${v.id}`}
-                            >
-                              {v.name}
-                            </Link>
-                            {variantLabel(v.variantOptions) && (
-                              <Badge variant="secondary" className="font-normal">
-                                {variantLabel(v.variantOptions)}
-                              </Badge>
-                            )}
-                          </div>
+                          {v.archivedAt ? (
+                            <Badge variant="secondary" className="text-xs">Archived</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-xs border-green-500 text-green-700 bg-green-50 dark:bg-green-950 dark:text-green-400">Active</Badge>
+                          )}
                         </TableCell>
-                        <TableCell>{v.category || "-"}</TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(v.salePrice)}
+                        {/* Inventory */}
+                        <TableCell className="text-sm">
+                          {(() => {
+                            const total = Number(v.totalStock ?? 0);
+                            const isLow = v.reorderLevel > 0 && total <= v.reorderLevel;
+                            return (
+                              <span className={cn("text-sm", total <= 0 ? "text-destructive" : isLow ? "text-amber-600" : "text-foreground")}>
+                                {total} in stock
+                              </span>
+                            );
+                          })()}
                         </TableCell>
-                        {visibleWarehouses.map((wh) => {
-                          const qty = (v.warehouseStock ?? []).find((w) => w.warehouseId === wh.id)?.quantity ?? 0;
-                          return (
-                            <TableCell key={wh.id} className="text-right">
-                              <Badge
-                                variant={
-                                  qty <= 0 || (v.reorderLevel > 0 && qty <= v.reorderLevel)
-                                    ? "destructive"
-                                    : "secondary"
-                                }
-                                data-testid={`text-wh-stock-${v.id}-${wh.id}`}
-                              >
-                                {qty} {v.unit}
-                              </Badge>
-                            </TableCell>
-                          );
-                        })}
+                        {/* Type */}
+                        <TableCell className="text-sm text-muted-foreground">
+                          {v.category || <span className="text-muted-foreground">—</span>}
+                        </TableCell>
+                        {/* Vendor */}
+                        <TableCell className="text-sm text-muted-foreground">
+                          {v.brand || <span className="text-muted-foreground">—</span>}
+                        </TableCell>
+                        {/* Channels */}
+                        <TableCell>
+                          {v.shopifyVariantId ? (
+                            <Badge variant="secondary" className="text-xs gap-1">
+                              <Store className="h-3 w-3" />
+                              Shopify
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">—</span>
+                          )}
+                        </TableCell>
+                        {/* Created */}
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                          {formatDate(v.createdAt)}
+                        </TableCell>
+                        {/* Updated */}
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                          {v.updatedAt ? formatDate(v.updatedAt) : "—"}
+                        </TableCell>
                         <TableCell>
                           <Can module="items" action="edit">
                             <DropdownMenu>

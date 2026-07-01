@@ -512,7 +512,11 @@ export const ListItemsResponseItem = zod.object({
   "dimensionWidth": zod.number().nullable(),
   "dimensionHeight": zod.number().nullable(),
   "dimensionUnit": zod.string(),
-  "brand": zod.string().nullable()
+  "brand": zod.string().nullable(),
+  "archivedAt": zod.string().nullish().describe('ISO timestamp when the item was archived. Null when the item is active.'),
+  "updatedAt": zod.string().nullish().describe('ISO timestamp of the last update.'),
+  "shopifyVariantId": zod.string().nullish().describe('Shopify variant ID when this item is linked to a Shopify product variant.'),
+  "shopifyProductId": zod.string().nullish().describe('Shopify product ID when this item is linked to a Shopify product.')
 })
 export const ListItemsResponse = zod.array(ListItemsResponseItem)
 
@@ -649,7 +653,11 @@ export const LookupItemByCodeResponse = zod.object({
   "dimensionWidth": zod.number().nullable(),
   "dimensionHeight": zod.number().nullable(),
   "dimensionUnit": zod.string(),
-  "brand": zod.string().nullable()
+  "brand": zod.string().nullable(),
+  "archivedAt": zod.string().nullish().describe('ISO timestamp when the item was archived. Null when the item is active.'),
+  "updatedAt": zod.string().nullish().describe('ISO timestamp of the last update.'),
+  "shopifyVariantId": zod.string().nullish().describe('Shopify variant ID when this item is linked to a Shopify product variant.'),
+  "shopifyProductId": zod.string().nullish().describe('Shopify product ID when this item is linked to a Shopify product.')
 })
 
 
@@ -720,7 +728,11 @@ export const GetItemResponse = zod.object({
   "dimensionWidth": zod.number().nullable(),
   "dimensionHeight": zod.number().nullable(),
   "dimensionUnit": zod.string(),
-  "brand": zod.string().nullable()
+  "brand": zod.string().nullable(),
+  "archivedAt": zod.string().nullish().describe('ISO timestamp when the item was archived. Null when the item is active.'),
+  "updatedAt": zod.string().nullish().describe('ISO timestamp of the last update.'),
+  "shopifyVariantId": zod.string().nullish().describe('Shopify variant ID when this item is linked to a Shopify product variant.'),
+  "shopifyProductId": zod.string().nullish().describe('Shopify product ID when this item is linked to a Shopify product.')
 }),
   "stockByWarehouse": zod.array(zod.object({
   "warehouseId": zod.number(),
@@ -770,7 +782,11 @@ export const GetItemResponse = zod.object({
   "dimensionWidth": zod.number().nullable(),
   "dimensionHeight": zod.number().nullable(),
   "dimensionUnit": zod.string(),
-  "brand": zod.string().nullable()
+  "brand": zod.string().nullable(),
+  "archivedAt": zod.string().nullish().describe('ISO timestamp when the item was archived. Null when the item is active.'),
+  "updatedAt": zod.string().nullish().describe('ISO timestamp of the last update.'),
+  "shopifyVariantId": zod.string().nullish().describe('Shopify variant ID when this item is linked to a Shopify product variant.'),
+  "shopifyProductId": zod.string().nullish().describe('Shopify product ID when this item is linked to a Shopify product.')
 }),
   "stockByWarehouse": zod.array(zod.object({
   "warehouseId": zod.number(),
@@ -867,7 +883,11 @@ export const UpdateItemResponse = zod.object({
   "dimensionWidth": zod.number().nullable(),
   "dimensionHeight": zod.number().nullable(),
   "dimensionUnit": zod.string(),
-  "brand": zod.string().nullable()
+  "brand": zod.string().nullable(),
+  "archivedAt": zod.string().nullish().describe('ISO timestamp when the item was archived. Null when the item is active.'),
+  "updatedAt": zod.string().nullish().describe('ISO timestamp of the last update.'),
+  "shopifyVariantId": zod.string().nullish().describe('Shopify variant ID when this item is linked to a Shopify product variant.'),
+  "shopifyProductId": zod.string().nullish().describe('Shopify product ID when this item is linked to a Shopify product.')
 })
 
 
@@ -5206,7 +5226,11 @@ export const RegenerateItemBarcodeResponse = zod.object({
   "dimensionWidth": zod.number().nullable(),
   "dimensionHeight": zod.number().nullable(),
   "dimensionUnit": zod.string(),
-  "brand": zod.string().nullable()
+  "brand": zod.string().nullable(),
+  "archivedAt": zod.string().nullish().describe('ISO timestamp when the item was archived. Null when the item is active.'),
+  "updatedAt": zod.string().nullish().describe('ISO timestamp of the last update.'),
+  "shopifyVariantId": zod.string().nullish().describe('Shopify variant ID when this item is linked to a Shopify product variant.'),
+  "shopifyProductId": zod.string().nullish().describe('Shopify product ID when this item is linked to a Shopify product.')
 })
 
 

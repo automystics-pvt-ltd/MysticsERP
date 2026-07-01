@@ -183,11 +183,17 @@ router.get("/items", async (req, res, next) => {
     const priceMinF = req.query.priceMin !== undefined ? parseFloat(String(req.query.priceMin)) : null;
     const priceMaxF = req.query.priceMax !== undefined ? parseFloat(String(req.query.priceMax)) : null;
     const stockFilterParam = typeof req.query.stockFilter === "string" ? req.query.stockFilter : "";
+    const statusFilterParam = typeof req.query.statusFilter === "string" ? req.query.statusFilter : "active";
     const conds = [
       eq(itemsTable.organizationId, t.organizationId),
-      // Hide soft-deleted (archived) items from the catalog list.
-      sql`${itemsTable.archivedAt} IS NULL`,
     ];
+    // Status filter: "active" (default) hides archived, "archived" shows only archived, "all" shows both.
+    if (statusFilterParam === "archived") {
+      conds.push(sql`${itemsTable.archivedAt} IS NOT NULL`);
+    } else if (statusFilterParam !== "all") {
+      // Default: hide soft-deleted (archived) items from the catalog list.
+      conds.push(sql`${itemsTable.archivedAt} IS NULL`);
+    }
     if (search) {
       conds.push(
         or(
