@@ -115,6 +115,104 @@ router.post("/shopify/oauth/install", async (req, res, next) => {
   }
 });
 
+// ─── DEV MOCK (SHOPIFY_DEV_MOCK=true) ───────────────────────────────────────
+// Set SHOPIFY_DEV_MOCK=true in your .env to test the full Shopify UI without
+// a real store. All routes below are intercepted with realistic fake data.
+// This block is completely inert in production (env var is never set there).
+if (process.env.SHOPIFY_DEV_MOCK === "true") {
+  const MOCK_JOB_ID = "dev-mock-job-001";
+  const mockJob = () => ({
+    id: MOCK_JOB_ID,
+    status: "completed",
+    totalProducts: 142,
+    processedCount: 142,
+    skippedCount: 5,
+    errorCount: 3,
+    startedAt: new Date(Date.now() - 4 * 60 * 1000).toISOString(),
+    finishedAt: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
+    pausedAt: null,
+    cancelledAt: null,
+    errorMessage: null,
+    organizationId: 0,
+    createdAt: new Date(Date.now() - 4 * 60 * 1000).toISOString(),
+  });
+  const mockItems = () => {
+    const now = Date.now();
+    return [
+      { id: "mi-1", shopifyProductId: "gid://shopify/Product/100", sku: "TSHIRT-BLU-M", title: "Blue Cotton T-Shirt (M)", status: "synced", errorMessage: null, createdAt: new Date(now - 5 * 60 * 1000).toISOString() },
+      { id: "mi-2", shopifyProductId: "gid://shopify/Product/101", sku: "KURTA-RED-L",  title: "Red Handloom Kurta (L)",  status: "synced", errorMessage: null, createdAt: new Date(now - 5 * 60 * 1000).toISOString() },
+      { id: "mi-3", shopifyProductId: "gid://shopify/Product/102", sku: "SAREE-GRN-01", title: "Green Silk Saree",        status: "error",  errorMessage: "SKU not found in inventory", createdAt: new Date(now - 4 * 60 * 1000).toISOString() },
+      { id: "mi-4", shopifyProductId: "gid://shopify/Product/103", sku: null,           title: "Cotton Dupatta",           status: "skipped", errorMessage: null, createdAt: new Date(now - 3 * 60 * 1000).toISOString() },
+      { id: "mi-5", shopifyProductId: "gid://shopify/Product/104", sku: "LEHENGA-PNK",  title: "Pink Bridal Lehenga",     status: "synced", errorMessage: null, createdAt: new Date(now - 3 * 60 * 1000).toISOString() },
+    ];
+  };
+
+  router.get("/shopify/connection", (_req, res) => {
+    res.json({
+      connected: true,
+      shopDomain: "dev-mock-store.myshopify.com",
+      lastSyncedAt: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
+      productCount: 142,
+      scopes: "read_products,write_products,read_inventory,write_inventory,read_orders,write_orders",
+      locationId: "gid://shopify/Location/98765432",
+      lastWebhookAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+      webhooksRegisteredAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      mappedWarehouseCount: 3,
+      totalWarehouseCount: 3,
+    });
+  });
+
+  router.get("/shopify/dashboard", (_req, res) => {
+    res.json({
+      itemsSynced: 134,
+      itemsTotal: 142,
+      errorCount: 3,
+      skippedCount: 5,
+      lastSyncedAt: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
+      inventoryValue: "2847500.00",
+      shopifyTotal: 142,
+      warehouseCount: 3,
+    });
+  });
+
+  router.get("/shopify/product-sync-job/latest", (_req, res) => { res.json(mockJob()); });
+  router.get("/shopify/product-sync-job/:id",    (_req, res) => { res.json(mockJob()); });
+
+  router.post("/shopify/sync", (_req, res) => {
+    res.json({ jobId: MOCK_JOB_ID });
+  });
+
+  router.post("/shopify/product-sync-job/:id/cancel", (_req, res) => {
+    res.json({ ...mockJob(), status: "cancelled", cancelledAt: new Date().toISOString() });
+  });
+  router.post("/shopify/product-sync-job/:id/pause", (_req, res) => {
+    res.json({ ...mockJob(), status: "paused", pausedAt: new Date().toISOString() });
+  });
+  router.post("/shopify/product-sync-job/:id/resume", (_req, res) => {
+    res.json({ ...mockJob(), status: "running" });
+  });
+  router.post("/shopify/product-sync-job/:id/retry-skipped", (_req, res) => {
+    res.json({ jobId: MOCK_JOB_ID, message: "New sync started — skipped items will be retried" });
+  });
+
+  router.get("/shopify/sync-logs", (_req, res) => {
+    res.json(mockItems().map((i) => ({ ...i, shopifyVariantId: null })));
+  });
+
+  router.get("/shopify/product-sync-job/:id/items", (_req, res) => {
+    res.json({ items: mockItems(), total: 5, hasMore: false });
+  });
+
+  router.get("/shopify/export-report.csv", (_req, res) => {
+    const rows = mockItems()
+      .map((i) => `"${i.sku ?? ""}","${i.title}","${i.status}","${i.errorMessage ?? ""}"`)
+      .join("\n");
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", 'attachment; filename="shopify-sync-report-dev.csv"');
+    res.send(`"SKU","Title","Status","Error"\n${rows}`);
+  });
+}
+
 router.get("/shopify/connection", async (req, res, next) => {
   try {
     const t = req.tenant!;
