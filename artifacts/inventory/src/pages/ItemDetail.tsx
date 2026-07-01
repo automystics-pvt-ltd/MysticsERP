@@ -27,6 +27,7 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, Plus, ArrowRight, Trash2, Printer, RefreshCw, Edit, Pencil, AlertTriangle } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -956,9 +957,23 @@ export default function ItemDetail() {
                     <TableCell className="text-right text-muted-foreground">
                       {stock.isVirtual ? "—" : formatCurrency(item.salePrice)}
                     </TableCell>
-                    <TableCell className={`text-right ${stock.quantity < 0 ? "text-destructive font-semibold" : ""}`}>
-                      {stock.quantity < 0 && "⚠ "}
-                      {stock.quantity}
+                    <TableCell className="text-right">
+                      {(() => {
+                        const qty = stock.quantity;
+                        const limit = Number(item.reorderLevel) || 0;
+                        const hasLimit = item.reorderLevel != null && limit > 0;
+                        if (qty < 0) {
+                          return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-500 text-white">⚠ {qty}</span>;
+                        }
+                        const cls = !hasLimit
+                          ? "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                          : qty > limit
+                            ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
+                            : qty === limit
+                              ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300"
+                              : "bg-red-500 text-white";
+                        return <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium", cls)}>{qty} pcs</span>;
+                      })()}
                     </TableCell>
                   </TableRow>
                 ))}
