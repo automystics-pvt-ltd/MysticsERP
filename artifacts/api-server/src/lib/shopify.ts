@@ -248,6 +248,55 @@ async function shopifyGet<T>(
   return (await res.json()) as T;
 }
 
+/**
+ * Like shopifyGet but also returns the Link header for cursor pagination.
+ * Shopify cursor pagination: response Link header contains
+ *   <URL>; rel="next"  (and/or rel="previous")
+ * The URL's `page_info` query param is the cursor for the next page.
+ */
+async function shopifyGetPaged<T>(
+  shopDomain: string,
+  accessToken: string,
+  path: string,
+  query?: Record<string, string>,
+): Promise<{ body: T; nextPageInfo: string | null }> {
+  const qs = query ? `?${new URLSearchParams(query).toString()}` : "";
+  const url = `https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}${path}${qs}`;
+  const res = await fetch(url, {
+    headers: {
+      "X-Shopify-Access-Token": accessToken,
+      "Content-Type": "application/json",
+    },
+  });
+  if (!res.ok) {
+    throw new Error(
+      `Shopify GET ${path} failed: ${res.status} ${await res.text()}`,
+    );
+  }
+  const body = (await res.json()) as T;
+
+  // Parse cursor from Link header: <https://...?page_info=CURSOR&...>; rel="next"
+  let nextPageInfo: string | null = null;
+  const linkHeader = res.headers.get("Link") ?? "";
+  if (linkHeader) {
+    for (const part of linkHeader.split(",")) {
+      if (part.includes('rel="next"')) {
+        const match = part.match(/<([^>]+)>/);
+        if (match?.[1]) {
+          try {
+            const u = new URL(match[1]);
+            nextPageInfo = u.searchParams.get("page_info");
+          } catch {
+            // ignore malformed URL
+          }
+        }
+      }
+    }
+  }
+
+  return { body, nextPageInfo };
+}
+
 async function shopifyPost<T>(
   shopDomain: string,
   accessToken: string,
@@ -431,13 +480,86 @@ export async function fetchShopifyProducts(
   shopDomain: string,
   accessToken: string,
 ): Promise<ShopifyProductFull[]> {
-  const data = await shopifyGet<{ products: ShopifyProductFull[] }>(
-    shopDomain,
-    accessToken,
-    "/products.json",
-    { limit: "250" },
-  );
-  return data.products ?? [];
+  const all: ShopifyProductFull[] = [];
+  let pageInfo: string | null = null;
+
+  do {
+    const params: Record<string, string> = { limit: "250" };
+    if (pageInfo) {
+      // Shopify cursor pagination: once page_info is set, no other filters
+      params["page_info"] = pageInfo;
+    }
+    const { body, nextPageInfo } = await shopifyGetPaged<{ products: ShopifyProductFull[] }>(
+      shopDomain,
+      accessToken,
+      "/products.json",
+      params,
+    );
+    all.push(...(body.products ?? []));
+    pageInfo = nextPageInfo;
+  } while (pageInfo);
+
+  return all;
+}
+
+export interface ShopifyInventoryLevel {
+  inventory_item_id: number;
+  location_id: number;
+  available: number | null;
+}
+
+/**
+ * Fetch inventory levels for a batch of inventory_item_ids.
+ * Shopify allows up to 50 IDs per request.
+ * Returns actual per-location available quantities — more accurate than
+ * the `inventory_quantity` field on the products REST response, which
+ * is deprecated and may return 0 for multi-location stores.
+ */
+export async function fetchInventoryLevels(
+  shopDomain: string,
+  accessToken: string,
+  inventoryItemIds: (number | string)[],
+): Promise<ShopifyInventoryLevel[]> {
+  if (inventoryItemIds.length === 0) return [];
+  const results: ShopifyInventoryLevel[] = [];
+  const BATCH = 50;
+  for (let i = 0; i < inventoryItemIds.length; i += BATCH) {
+    const batch = inventoryItemIds.slice(i, i + BATCH).join(",");
+    const data = await shopifyGet<{ inventory_levels: ShopifyInventoryLevel[] }>(
+      shopDomain,
+      accessToken,
+      "/inventory_levels.json",
+      { inventory_item_ids: batch, limit: "250" },
+    );
+    results.push(...(data.inventory_levels ?? []));
+  }
+  return results;
+}
+
+/**
+ * Fetch the Shopify variant id associated with an inventory_item_id.
+ * Used as a fallback in inventory_levels/update to match items that were
+ * created via order import (which stores shopifyVariantId but not
+ * shopifyInventoryItemId). Returns the variant id string or null.
+ */
+export async function fetchShopifyInventoryItem(
+  shopDomain: string,
+  accessToken: string,
+  inventoryItemId: string,
+): Promise<string | null> {
+  try {
+    // /variants.json?inventory_item_ids=... returns variants matching those item ids
+    const data = await shopifyGet<{ variants: Array<{ id: number }> }>(
+      shopDomain,
+      accessToken,
+      "/variants.json",
+      { inventory_item_ids: inventoryItemId, limit: "1" },
+    );
+    const v = data.variants?.[0];
+    return v ? String(v.id) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

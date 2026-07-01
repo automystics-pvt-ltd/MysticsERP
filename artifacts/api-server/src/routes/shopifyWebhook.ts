@@ -17,6 +17,7 @@ import {
 } from "@workspace/db";
 import { getDefaultWarehouseId } from "../lib/tenant";
 import {
+  fetchShopifyInventoryItem,
   fetchShopifyProduct,
   mapShopifyFulfillmentStatus,
   mapShopifyPaymentStatus,
@@ -702,7 +703,7 @@ export async function processWebhookTopic(
           );
         }
 
-        const itemRows = await db
+        let itemRows = await db
           .select()
           .from(itemsTable)
           .where(
@@ -712,6 +713,53 @@ export async function processWebhookTopic(
             ),
           )
           .limit(1);
+
+        // Fallback: items created via order-import only have shopifyVariantId,
+        // not shopifyInventoryItemId. The inventory_item_id maps 1:1 to a
+        // variant, so we can look up the variant id from Shopify's own data.
+        // As a second chance, fetch the product for this inventory_item_id and
+        // try matching by shopifyVariantId. If found, back-fill
+        // shopifyInventoryItemId so future webhooks hit the fast path.
+        if (!itemRows[0] && org.shopifyAccessToken && org.shopifyShopDomain) {
+          try {
+            const variantId = await fetchShopifyInventoryItem(
+              org.shopifyShopDomain,
+              org.shopifyAccessToken,
+              invItemId,
+            );
+            if (variantId) {
+              const fallbackRows = await db
+                .select()
+                .from(itemsTable)
+                .where(
+                  and(
+                    eq(itemsTable.organizationId, org.id),
+                    eq(itemsTable.shopifyVariantId, variantId),
+                  ),
+                )
+                .limit(1); // org-scope-allow: inventory_levels/update webhook, fallback by shopifyVariantId
+              if (fallbackRows[0]) {
+                // Back-fill shopifyInventoryItemId so the fast path works next time.
+                await db
+                  .update(itemsTable)
+                  .set({ shopifyInventoryItemId: invItemId })
+                  .where(
+                    and(
+                      eq(itemsTable.organizationId, org.id),
+                      eq(itemsTable.id, fallbackRows[0].id),
+                    ),
+                  );
+                itemRows = [{ ...fallbackRows[0], shopifyInventoryItemId: invItemId }];
+              }
+            }
+          } catch (fallbackErr) {
+            logger.warn(
+              { err: fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr), invItemId },
+              "inventory_levels/update: fallback variant lookup failed",
+            );
+          }
+        }
+
         const item = itemRows[0];
         if (!item) break;
         await db.transaction(async (tx) => {
@@ -938,11 +986,15 @@ export async function processWebhookTopic(
                       eq(itemsTable.id, existingId),
                     ),
                   );
-              } else if (topic === "products/create") {
-                // products/create → always create a new item.
-                // products/update → never auto-create: only existing ERP items
-                // are updated; new variants must be imported deliberately.
-                //
+              } else if (
+                topic === "products/create" ||
+                // For products/update: auto-create missing variants only when
+                // the product already has a parent item in ERP (i.e. at least
+                // one variant was previously imported). This handles variants
+                // added to an existing Shopify product after the initial sync
+                // without creating spurious items for brand-new unknown products.
+                (topic === "products/update" && parentItemId !== null)
+              ) {
                 // Barcode priority: Shopify variant barcode (EAN/UPC/GTIN) >
                 // auto-generated. Never auto-generate when Shopify already has
                 // a real barcode — that overwrites the merchant's catalog data.

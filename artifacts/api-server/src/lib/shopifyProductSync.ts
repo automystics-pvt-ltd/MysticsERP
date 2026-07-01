@@ -26,7 +26,7 @@ import {
   type ShopifyProductSyncJob,
 } from "@workspace/db";
 import { logger } from "./logger";
-import { fetchShopifyProducts } from "./shopify";
+import { fetchInventoryLevels, fetchShopifyProducts, type ShopifyInventoryLevel } from "./shopify";
 import { generateUniqueBarcode } from "./barcodeGen";
 import { toNum, toStr } from "./numeric";
 
@@ -279,6 +279,90 @@ export async function pruneOldProductSyncJobs(
   }
 }
 
+// ─── Inventory-level helpers ───────────────────────────────────────────────────
+
+/** One entry tracked per successfully-upserted variant inside a product loop. */
+interface InventoryPair {
+  invItemId: string;
+  itemId: number;
+}
+
+/**
+ * Fetch actual inventory levels from Shopify for a batch of inventory-item IDs
+ * and overwrite the ERP stock figures.  `inventory_quantity` on the products
+ * REST endpoint is deprecated and returns 0 for many stores; the dedicated
+ * `/inventory_levels.json` endpoint is the source of truth.
+ *
+ * The function is best-effort — any Shopify API or DB error is logged and
+ * swallowed so a transient failure never aborts the whole sync run.
+ */
+async function applyProductInventoryLevels(
+  organizationId: number,
+  shopDomain: string,
+  accessToken: string,
+  pairs: InventoryPair[],
+  locationToWarehouse: Map<number, number>,
+  fallbackWarehouseId: number,
+): Promise<void> {
+  if (!pairs.length) return;
+  let levels: ShopifyInventoryLevel[];
+  try {
+    levels = await fetchInventoryLevels(shopDomain, accessToken, pairs.map((p) => p.invItemId));
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      "applyProductInventoryLevels: fetchInventoryLevels failed, skipping stock correction",
+    );
+    return;
+  }
+
+  // Build a quick lookup: inventoryItemId → levels[]
+  const byInvItem = new Map<string, ShopifyInventoryLevel[]>();
+  for (const lvl of levels) {
+    const key = String(lvl.inventory_item_id);
+    const arr = byInvItem.get(key) ?? [];
+    arr.push(lvl);
+    byInvItem.set(key, arr);
+  }
+
+  for (const pair of pairs) {
+    const itemLevels = byInvItem.get(pair.invItemId);
+    if (!itemLevels?.length) continue;
+
+    // Pick the level whose location matches a known ERP warehouse.  Fall back
+    // to the first level if none match (single-location stores don't need an
+    // explicit mapping).
+    const matchedLevel =
+      itemLevels.find((l) => locationToWarehouse.has(l.location_id)) ?? itemLevels[0]!;
+
+    const targetWarehouseId = locationToWarehouse.get(matchedLevel.location_id) ?? fallbackWarehouseId;
+    const qty = matchedLevel.available ?? 0;
+
+    try {
+      await db
+        .insert(itemWarehouseStockTable)
+        .values({
+          organizationId,
+          itemId: pair.itemId,
+          warehouseId: targetWarehouseId,
+          quantity: String(qty),
+        })
+        .onConflictDoUpdate({
+          target: [
+            itemWarehouseStockTable.itemId,
+            itemWarehouseStockTable.warehouseId,
+          ],
+          set: { quantity: String(qty) },
+        });
+    } catch (dbErr) {
+      logger.warn(
+        { err: dbErr instanceof Error ? dbErr.message : String(dbErr), itemId: pair.itemId },
+        "applyProductInventoryLevels: failed to update stock row",
+      );
+    }
+  }
+}
+
 // ─── Worker ────────────────────────────────────────────────────────────────────
 
 /** Main async worker — runs entirely in the background. */
@@ -367,6 +451,32 @@ async function runProductSyncJob(
               eq(warehousesTable.organizationId, organizationId),
             ),
           );
+      }
+    }
+
+    // ── 3b. Build Shopify location → ERP warehouse map ───────────────────────
+    // Used to match inventory levels from Shopify locations to ERP warehouses.
+    const locationToWarehouse = new Map<number, number>();
+    {
+      const whRows = await db
+        .select({ id: warehousesTable.id, shopifyLocationId: warehousesTable.shopifyLocationId })
+        .from(warehousesTable)
+        .where(
+          and(
+            eq(warehousesTable.organizationId, organizationId),
+            isNotNull(warehousesTable.shopifyLocationId),
+            eq(warehousesTable.isVirtual, false),
+          ),
+        );
+      for (const wh of whRows) {
+        if (wh.shopifyLocationId) {
+          locationToWarehouse.set(Number(wh.shopifyLocationId), wh.id);
+        }
+      }
+      // Fall back: always ensure the default warehouse is in the map via the
+      // org-level primary location, even if the DB row hasn't been patched yet.
+      if (org.shopifyLocationId && warehouseId && !locationToWarehouse.has(Number(org.shopifyLocationId))) {
+        locationToWarehouse.set(Number(org.shopifyLocationId), warehouseId);
       }
     }
 
@@ -590,6 +700,43 @@ async function runProductSyncJob(
             }
           }
         }
+
+        // ── Apply actual Shopify inventory levels for this product's variants ──
+        // `inventory_quantity` on the products REST endpoint is deprecated and
+        // returns 0 in many stores. Fetch the real figures from the dedicated
+        // inventory_levels endpoint after all variants have been upserted so we
+        // have valid itemId values to update against.
+        if (!cancelled) {
+          const invPairs: InventoryPair[] = [];
+          for (const v of p.variants) {
+            const vid = String(v.id);
+            if (v.inventory_item_id) {
+              // Find the itemId that was just upserted for this variant.
+              // Re-query by shopifyVariantId — lightweight single-org lookup.
+              const rows = await db
+                .select({ id: itemsTable.id })
+                .from(itemsTable)
+                .where(
+                  and(
+                    eq(itemsTable.organizationId, organizationId),
+                    eq(itemsTable.shopifyVariantId, vid),
+                  ),
+                )
+                .limit(1); // org-scope-allow: Shopify product sync, keyed by shopifyVariantId within org
+              if (rows[0]) {
+                invPairs.push({ invItemId: String(v.inventory_item_id), itemId: rows[0].id });
+              }
+            }
+          }
+          await applyProductInventoryLevels(
+            organizationId,
+            org.shopifyShopDomain,
+            org.shopifyAccessToken,
+            invPairs,
+            locationToWarehouse,
+            warehouseId,
+          );
+        }
       } else {
         // Single-variant (flat) product.
         const v = p.variants[0]!;
@@ -655,6 +802,18 @@ async function runProductSyncJob(
             }
             if (cancelled) break;
           }
+        }
+
+        // Apply actual inventory level for this single-variant product.
+        if (!cancelled && outcome.itemId && v.inventory_item_id) {
+          await applyProductInventoryLevels(
+            organizationId,
+            org.shopifyShopDomain,
+            org.shopifyAccessToken,
+            [{ invItemId: String(v.inventory_item_id), itemId: outcome.itemId }],
+            locationToWarehouse,
+            warehouseId,
+          );
         }
       }
 
