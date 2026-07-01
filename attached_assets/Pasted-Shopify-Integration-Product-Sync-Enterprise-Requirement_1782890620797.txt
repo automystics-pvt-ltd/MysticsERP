@@ -1,0 +1,180 @@
+Shopify Integration & Product Sync - Enterprise Requirements
+1. Simplified Enterprise UI
+After Shopify is connected, display only a clean dashboard with key metrics and actions.
+Hide technical details (API scopes, webhooks, permissions, etc.) under an Advanced Settings section.
+Modern enterprise UI with cards, progress indicators, filters, search, and drill-down reports.
+2. Fixed Warehouses
+Only 3 system warehouses are allowed:
+Main Warehouse
+Shopify Warehouse
+Store Warehouse
+These warehouses cannot be added, edited, or deleted by any user, including Super Admin.
+Validate all product mappings against these warehouses.
+3. Product Sync Validation
+Investigate why product prices differ after sync.
+Validate and synchronize:
+Selling Price
+Compare-at Price (MRP)
+Cost Price
+Tax
+SKU
+Barcode
+Inventory
+Images
+Variants
+Ensure no data mismatches between ERP and Shopify.
+4. Shopify Store Summary Dashboard
+
+Display real-time statistics:
+
+Total Products
+Active Products
+Draft Products
+Archived Products
+Unlisted Products
+Simple Products
+Variant Products
+Total Variants
+Total Collections/Categories
+Total Warehouses/Locations
+Inventory Value
+Last Sync Time
+5. Pre-Sync Confirmation & Audit Trail
+
+Before every Product Sync or Push to Shopify:
+
+Show confirmation:
+
+"Backup before Sync? This operation may update products, prices, inventory, and variants. Do you want to continue?"
+
+Record complete audit details:
+User
+Role
+IP Address
+Device
+Browser
+Location
+Date & Time
+Sync Type
+Products Selected
+Duration
+Result (Success/Failed)
+6. Stock Validation
+Verify stock before and after every sync.
+Prevent incorrect inventory updates.
+Display stock differences before applying changes.
+Generate stock mismatch reports.
+7. Detailed Sync Reports (Clickable)
+
+Every summary card should open a detailed table:
+
+Synced
+Created
+Updated
+Failed
+Skipped
+Missing
+Mismatch
+Pending
+
+Each report should include:
+
+Product Name
+Variant
+SKU
+Barcode
+Shopify ID
+ERP ID
+Previous Value
+New Value
+Sync Status
+Exact Failure/Skip Reason
+Timestamp
+Triggered By
+8. Product Sync = Order Sync Experience
+
+Provide the same enterprise features as Order Sync:
+
+Live progress bar
+Percentage completed
+ETA
+Sync speed
+Live logs
+Pause
+Resume
+Cancel
+Retry Failed
+Retry Skipped
+Retry Selected
+9. Push to Shopify
+
+Support:
+
+Push All Products
+Push Selected Products
+Push by Category
+Push by Brand
+Push by Collection
+Push by Warehouse
+Push Only Updated Products
+Push Missing Products
+Push Price Only
+Push Stock Only
+Push Images Only
+Push Variants Only
+10. Export Reports
+
+Allow exporting every report in:
+
+Excel (.xlsx)
+CSV
+PDF
+
+Export filters:
+
+Date Range
+Category
+Brand
+Warehouse
+Status
+User
+Sync Type
+11. Advanced Re-Sync
+
+Support selective re-sync by:
+
+Selected Products
+Category
+Brand
+Collection
+Warehouse
+Active/Draft/Archived
+Variant Products
+Simple Products
+Failed Items
+Skipped Items
+Missing Items
+Price Only
+Stock Only
+Images Only
+Variants Only
+Full Re-Sync
+12. Additional Enterprise Features
+Dry Run (Preview changes before syncing)
+Conflict detection and resolution
+Duplicate SKU/Barcode detection
+Automatic rollback on critical failures
+Background queue processing
+Email/Notification when sync completes
+Full sync history with searchable logs
+Scheduled automatic sync
+Webhook health monitoring
+Sync performance analytics
+Sync duration and throughput metrics
+Role-based sync permissions
+API rate limit monitoring
+Retry with exponential backoff
+Error categorization (Validation, Network, API, Data Mapping)
+Dashboard for unresolved sync issues
+
+The goal is a professional, enterprise-grade Shopify integration where every sync is traceable, auditable, fast, and provides complete visibility into product synchronization, mismatches, failures, and recovery options.
