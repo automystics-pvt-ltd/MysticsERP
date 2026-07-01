@@ -121,7 +121,7 @@ router.post("/shopify/oauth/install", async (req, res, next) => {
 // Set SHOPIFY_DEV_MOCK=true in your .env to test the full Shopify UI without
 // a real store. All routes below are intercepted with realistic fake data.
 // This block is completely inert in production (env var is never set there).
-if (process.env.SHOPIFY_DEV_MOCK === "true" && process.env.NODE_ENV !== "test") {
+if (process.env.SHOPIFY_DEV_MOCK === "true" && !process.env.VITEST) {
   const MOCK_JOB_ID = "dev-mock-job-001";
   const mockJob = (overrides: Record<string, unknown> = {}) => ({
     id: MOCK_JOB_ID,

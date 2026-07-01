@@ -1,5 +1,6 @@
 - [Bulk order inserts collide on order number](order-number-collisions.md) — `nextOrderNumber` uses a random suffix; any bulk/batch insert of sales/purchase orders must retry on the per-org order-number unique index.
 - [Shopify import job store](shopify-import-job-store.md) — DB-backed; startup "running→failed" reconcile must guard on `startedAt < PROCESS_BOOT_AT` or it fails live jobs.
+- [Detecting vitest in runtime code](vitest-env-detection.md) — use `!process.env.VITEST`, not `NODE_ENV !== "test"`: container sets NODE_ENV=development and vitest inherits it.
 - [Shopify webhook async queue](shopify-webhook-async-queue.md) — processWebhookTopic exported from route file; wired into worker at index.ts to avoid circular imports; avoids Shopify 5s timeout.
 - [Test bootstrap idempotency](test-bootstrap-idempotency.md) — two-path reset (DROP DB → fallback to DROP SCHEMA); never replace result.apply() with a manual statement loop.
 - [Approval rules sla_hours migration](approval-rules-sla-hours.md) — Drizzle selects all schema columns; any new column in approval_rules (or any table) that the migration doesn't apply will 500 every query touching that table.
