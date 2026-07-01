@@ -335,7 +335,7 @@ export default function Items() {
     cat: "all",
     brand: "all",
     stock: "all",
-    status: "active",
+    status: "all",
   });
   const search = filterValues.search;
   const categoryFilter = filterValues.cat === "all" ? "" : filterValues.cat;
@@ -516,7 +516,6 @@ export default function Items() {
     setWarehouseFilterState("all");
     setPriceMin("");
     setPriceMax("");
-    setFilter("status", "active");
     setPage(1);
   }
 
@@ -545,6 +544,24 @@ export default function Items() {
           sku: item.sku,
           axes: Array.isArray(opts.axes) ? opts.axes : [],
         });
+      }
+    }
+    return map;
+  }, [allItemsForOptions]);
+
+  const variantPriceRangeMap = useMemo(() => {
+    const map = new Map<number, { min: number; max: number }>();
+    for (const item of allItemsForOptions ?? []) {
+      if (item.parentItemId != null && item.salePrice != null) {
+        const price = Number(item.salePrice);
+        if (!Number.isFinite(price)) continue;
+        const existing = map.get(item.parentItemId);
+        if (!existing) {
+          map.set(item.parentItemId, { min: price, max: price });
+        } else {
+          existing.min = Math.min(existing.min, price);
+          existing.max = Math.max(existing.max, price);
+        }
       }
     }
     return map;
@@ -1165,7 +1182,6 @@ export default function Items() {
             options: [
               { value: "active", label: "Active" },
               { value: "archived", label: "Archived" },
-              { value: "all", label: "All" },
             ],
           },
           {
@@ -1350,10 +1366,10 @@ export default function Items() {
               </TableHead>
               <TableHead>Product</TableHead>
               <TableHead className="w-[110px]">Status</TableHead>
-              <TableHead className="w-[210px]">Inventory</TableHead>
-              <TableHead className="w-[130px]">Type</TableHead>
-              <TableHead className="w-[130px]">Vendor</TableHead>
-              <TableHead className="w-[110px]">Channels</TableHead>
+              <TableHead className="w-[150px]">Price</TableHead>
+              <TableHead className="w-[60px] text-center">Main</TableHead>
+              <TableHead className="w-[70px] text-center">Shopify</TableHead>
+              <TableHead className="w-[60px] text-center">Store</TableHead>
               <TableHead className="w-[100px]">Created</TableHead>
               <TableHead className="w-[100px]">Updated</TableHead>
               <TableHead className="w-[50px]"></TableHead>
@@ -1373,7 +1389,7 @@ export default function Items() {
             ) : (itemsPage?.total ?? 0) === 0 ? (
               <TableRow>
                 <TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
-                  {search || categoryFilter || brandFilter || stockFilter !== "all" || warehouseFilter !== "all" || priceMin || priceMax || statusFilter !== "active"
+                  {search || categoryFilter || brandFilter || stockFilter !== "all" || warehouseFilter !== "all" || priceMin || priceMax || statusFilter !== "all"
                     ? "No items match the current filters."
                     : "No items yet. Click \"Add Item\" to create your first product."}
                 </TableCell>
@@ -1460,43 +1476,36 @@ export default function Items() {
                         <Badge variant="outline" className="text-xs border-green-500 text-green-700 bg-green-50 dark:bg-green-950 dark:text-green-400">Active</Badge>
                       )}
                     </TableCell>
-                    {/* Inventory */}
+                    {/* Price */}
                     <TableCell className="text-sm">
                       {isParent ? (
-                        <span className="text-muted-foreground text-xs">
-                          {parent.variantCount} variant{parent.variantCount === 1 ? "" : "s"}
-                        </span>
-                      ) : (
                         (() => {
-                          const total = Number(parent.totalStock ?? 0);
-                          const isLow = parent.reorderLevel > 0 && total <= parent.reorderLevel;
-                          return (
-                            <span className={cn("text-sm", total <= 0 ? "text-destructive" : isLow ? "text-amber-600" : "text-foreground")}>
-                              {total} in stock
-                              {parent.isBundle ? <span className="text-muted-foreground text-xs ml-1">(derived)</span> : null}
-                            </span>
-                          );
+                          const range = variantPriceRangeMap.get(parent.id);
+                          if (!range) return <span className="text-muted-foreground text-xs">{parent.variantCount} variant{parent.variantCount === 1 ? "" : "s"}</span>;
+                          return range.min === range.max
+                            ? <span className="font-medium">₹{range.min.toLocaleString("en-IN")}</span>
+                            : <span className="font-medium">₹{range.min.toLocaleString("en-IN")} – ₹{range.max.toLocaleString("en-IN")}</span>;
                         })()
-                      )}
-                    </TableCell>
-                    {/* Type (category) */}
-                    <TableCell className="text-sm text-muted-foreground truncate max-w-[130px]">
-                      {parent.category || <span className="text-muted-foreground">—</span>}
-                    </TableCell>
-                    {/* Vendor (brand) */}
-                    <TableCell className="text-sm text-muted-foreground truncate max-w-[130px]">
-                      {parent.brand || <span className="text-muted-foreground">—</span>}
-                    </TableCell>
-                    {/* Channels */}
-                    <TableCell>
-                      {parent.shopifyProductId ? (
-                        <Badge variant="secondary" className="text-xs gap-1">
-                          <Store className="h-3 w-3" />
-                          Shopify
-                        </Badge>
+                      ) : parent.salePrice != null ? (
+                        <span className="font-medium">₹{Number(parent.salePrice).toLocaleString("en-IN")}</span>
                       ) : (
-                        <span className="text-muted-foreground text-sm">—</span>
+                        <span className="text-muted-foreground">—</span>
                       )}
+                    </TableCell>
+                    {/* Main */}
+                    <TableCell className="text-center">
+                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" title="In ERP" />
+                    </TableCell>
+                    {/* Shopify */}
+                    <TableCell className="text-center">
+                      <span
+                        className={cn("inline-block h-2.5 w-2.5 rounded-full", parent.shopifyProductId ? "bg-green-500" : "bg-gray-300 dark:bg-gray-600")}
+                        title={parent.shopifyProductId ? "Linked to Shopify" : "Not on Shopify"}
+                      />
+                    </TableCell>
+                    {/* Store */}
+                    <TableCell className="text-center">
+                      <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300 dark:bg-gray-600" title="Store not configured" />
                     </TableCell>
                     {/* Created */}
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
@@ -1600,36 +1609,28 @@ export default function Items() {
                             <Badge variant="outline" className="text-xs border-green-500 text-green-700 bg-green-50 dark:bg-green-950 dark:text-green-400">Active</Badge>
                           )}
                         </TableCell>
-                        {/* Inventory */}
+                        {/* Price */}
                         <TableCell className="text-sm">
-                          {(() => {
-                            const total = Number(v.totalStock ?? 0);
-                            const isLow = v.reorderLevel > 0 && total <= v.reorderLevel;
-                            return (
-                              <span className={cn("text-sm", total <= 0 ? "text-destructive" : isLow ? "text-amber-600" : "text-foreground")}>
-                                {total} in stock
-                              </span>
-                            );
-                          })()}
-                        </TableCell>
-                        {/* Type */}
-                        <TableCell className="text-sm text-muted-foreground">
-                          {v.category || <span className="text-muted-foreground">—</span>}
-                        </TableCell>
-                        {/* Vendor */}
-                        <TableCell className="text-sm text-muted-foreground">
-                          {v.brand || <span className="text-muted-foreground">—</span>}
-                        </TableCell>
-                        {/* Channels */}
-                        <TableCell>
-                          {v.shopifyVariantId ? (
-                            <Badge variant="secondary" className="text-xs gap-1">
-                              <Store className="h-3 w-3" />
-                              Shopify
-                            </Badge>
+                          {v.salePrice != null ? (
+                            <span className="font-medium">₹{Number(v.salePrice).toLocaleString("en-IN")}</span>
                           ) : (
-                            <span className="text-muted-foreground text-sm">—</span>
+                            <span className="text-muted-foreground">—</span>
                           )}
+                        </TableCell>
+                        {/* Main */}
+                        <TableCell className="text-center">
+                          <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" title="In ERP" />
+                        </TableCell>
+                        {/* Shopify */}
+                        <TableCell className="text-center">
+                          <span
+                            className={cn("inline-block h-2.5 w-2.5 rounded-full", v.shopifyVariantId ? "bg-green-500" : "bg-gray-300 dark:bg-gray-600")}
+                            title={v.shopifyVariantId ? "Linked to Shopify" : "Not on Shopify"}
+                          />
+                        </TableCell>
+                        {/* Store */}
+                        <TableCell className="text-center">
+                          <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300 dark:bg-gray-600" title="Store not configured" />
                         </TableCell>
                         {/* Created */}
                         <TableCell className="text-xs text-muted-foreground whitespace-nowrap">

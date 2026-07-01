@@ -242,6 +242,7 @@ export function BarcodeScannerDialog({
                 ref={videoRef}
                 className="h-full w-full object-cover"
                 muted
+                autoPlay
                 playsInline
                 data-testid="video-barcode-scanner"
               />
