@@ -6,5 +6,7 @@ export const modules: ModuleMap = {
   "./components/mockups/erp-premium/Dashboard.tsx": () => import("../components/mockups/erp-premium/Dashboard.tsx"),
   "./components/mockups/erp-redesign/Dashboard.tsx": () => import("../components/mockups/erp-redesign/Dashboard.tsx"),
   "./components/mockups/erp-redesign/ListView.tsx": () => import("../components/mockups/erp-redesign/ListView.tsx"),
-  "./components/mockups/erp-redesign/ThemeSettings.tsx": () => import("../components/mockups/erp-redesign/ThemeSettings.tsx")
+  "./components/mockups/erp-redesign/ThemeSettings.tsx": () => import("../components/mockups/erp-redesign/ThemeSettings.tsx"),
+  "./components/mockups/shopify-enterprise/ConnectedDashboard.tsx": () => import("../components/mockups/shopify-enterprise/ConnectedDashboard.tsx"),
+  "./components/mockups/shopify-enterprise/SyncReports.tsx": () => import("../components/mockups/shopify-enterprise/SyncReports.tsx")
 };
