@@ -401,6 +401,55 @@ router.get("/items", async (req, res, next) => {
           breakdownMap.set(id, bundlePerWh.get(id) ?? []);
         }
       }
+      // Variant parents have no item_warehouse_stock rows of their own;
+      // aggregate their children's per-warehouse stock so parent rows in
+      // the list show accurate per-warehouse breakdown instead of all-zero.
+      if (parentIds.length > 0) {
+        const parentBreakRows = await db
+          .select({
+            parentItemId: itemsTable.parentItemId,
+            warehouseId: itemWarehouseStockTable.warehouseId,
+            warehouseName: warehousesTable.name,
+            qty: sql<string>`COALESCE(SUM(${itemWarehouseStockTable.quantity}), 0)`,
+          })
+          .from(itemsTable)
+          .innerJoin(
+            itemWarehouseStockTable,
+            and(
+              eq(itemWarehouseStockTable.itemId, itemsTable.id),
+              eq(itemWarehouseStockTable.organizationId, t.organizationId),
+            ),
+          )
+          .innerJoin(
+            warehousesTable,
+            and(
+              eq(warehousesTable.id, itemWarehouseStockTable.warehouseId),
+              eq(warehousesTable.organizationId, t.organizationId),
+              eq(warehousesTable.isVirtual, false),
+            ),
+          )
+          .where(
+            and(
+              eq(itemsTable.organizationId, t.organizationId),
+              inArray(itemsTable.parentItemId, parentIds),
+              sql`${itemsTable.archivedAt} IS NULL`,
+            ),
+          )
+          .groupBy(
+            itemsTable.parentItemId,
+            itemWarehouseStockTable.warehouseId,
+            warehousesTable.name,
+          );
+        for (const r of parentBreakRows) {
+          if (r.parentItemId == null) continue;
+          if (!breakdownMap.has(r.parentItemId)) breakdownMap.set(r.parentItemId, []);
+          breakdownMap.get(r.parentItemId)!.push({
+            warehouseId: r.warehouseId,
+            warehouseName: r.warehouseName,
+            quantity: toNum(r.qty),
+          });
+        }
+      }
     }
 
     let result = rows.map((r) =>

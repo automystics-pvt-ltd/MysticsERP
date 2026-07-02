@@ -567,15 +567,6 @@ export default function Items() {
     return map;
   }, [allItemsForOptions]);
 
-  const variantTotalStockMap = useMemo(() => {
-    const map = new Map<number, number>();
-    for (const item of allItemsForOptions ?? []) {
-      if (item.parentItemId != null) {
-        map.set(item.parentItemId, (map.get(item.parentItemId) ?? 0) + (Number(item.totalStock) || 0));
-      }
-    }
-    return map;
-  }, [allItemsForOptions]);
 
   const exportColumns = useMemo(
     (): ExportColumn<Item>[] => [
@@ -1378,9 +1369,9 @@ export default function Items() {
               <TableHead className="w-[200px]">Barcode</TableHead>
               <TableHead className="w-[110px]">Status</TableHead>
               <TableHead className="w-[150px]">Price</TableHead>
-              <TableHead className="w-[90px] text-center">Main</TableHead>
-              <TableHead className="w-[90px] text-center">Shopify</TableHead>
-              <TableHead className="w-[80px] text-center">Store</TableHead>
+              {visibleWarehouses.map((w) => (
+                <TableHead key={w.id} className="w-[90px] text-center">{w.name}</TableHead>
+              ))}
               <TableHead className="w-[100px]">Created</TableHead>
               <TableHead className="w-[100px]">Updated</TableHead>
               <TableHead className="w-[50px]"></TableHead>
@@ -1399,7 +1390,7 @@ export default function Items() {
               ))
             ) : (itemsPage?.total ?? 0) === 0 ? (
               <TableRow>
-                <TableCell colSpan={11} className="h-32 text-center text-muted-foreground">
+                <TableCell colSpan={8 + visibleWarehouses.length} className="h-32 text-center text-muted-foreground">
                   {search || categoryFilter || brandFilter || stockFilter !== "all" || warehouseFilter !== "all" || priceMin || priceMax || statusFilter !== "all"
                     ? "No items match the current filters."
                     : "No items yet. Click \"Add Item\" to create your first product."}
@@ -1511,30 +1502,24 @@ export default function Items() {
                         <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
-                    {/* Main */}
-                    <TableCell className="text-center">
-                      {(() => {
-                        const stock = isParent ? (variantTotalStockMap.get(parent.id) ?? 0) : (Number(parent.totalStock) || 0);
-                        const limit = Number(parent.reorderLevel) || 0;
-                        const hasLimit = parent.reorderLevel != null && limit > 0;
-                        const cls = !hasLimit
-                          ? "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
-                          : stock > limit
-                            ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
-                            : stock === limit
-                              ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300"
-                              : "bg-red-500 text-white";
-                        return <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium", cls)}>{stock} pcs</span>;
-                      })()}
-                    </TableCell>
-                    {/* Shopify */}
-                    <TableCell className="text-center">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-500 text-white">0 pcs</span>
-                    </TableCell>
-                    {/* Store */}
-                    <TableCell className="text-center">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-500 text-white">0 pcs</span>
-                    </TableCell>
+                    {/* Per-warehouse stock breakdown */}
+                    {visibleWarehouses.map((w) => {
+                      const qty = parent.warehouseStock?.find((ws) => ws.warehouseId === w.id)?.quantity ?? 0;
+                      const limit = Number(parent.reorderLevel) || 0;
+                      const hasLimit = parent.reorderLevel != null && limit > 0;
+                      const cls = !hasLimit
+                        ? "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                        : qty > limit
+                          ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
+                          : qty === limit
+                            ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300"
+                            : "bg-red-500 text-white";
+                      return (
+                        <TableCell key={w.id} className="text-center">
+                          <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium", cls)}>{qty} pcs</span>
+                        </TableCell>
+                      );
+                    })}
                     {/* Created */}
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                       {formatDate(parent.createdAt)}
@@ -1653,30 +1638,24 @@ export default function Items() {
                             <span className="text-muted-foreground">—</span>
                           )}
                         </TableCell>
-                        {/* Main */}
-                        <TableCell className="text-center">
-                          {(() => {
-                            const stock = Number(v.totalStock) || 0;
-                            const limit = Number(v.reorderLevel) || 0;
-                            const hasLimit = v.reorderLevel != null && limit > 0;
-                            const cls = !hasLimit
-                              ? "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
-                              : stock > limit
-                                ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
-                                : stock === limit
-                                  ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300"
-                                  : "bg-red-500 text-white";
-                            return <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium", cls)}>{stock} pcs</span>;
-                          })()}
-                        </TableCell>
-                        {/* Shopify */}
-                        <TableCell className="text-center">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-500 text-white">0 pcs</span>
-                        </TableCell>
-                        {/* Store */}
-                        <TableCell className="text-center">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-500 text-white">0 pcs</span>
-                        </TableCell>
+                        {/* Per-warehouse stock breakdown */}
+                        {visibleWarehouses.map((w) => {
+                          const qty = v.warehouseStock?.find((ws) => ws.warehouseId === w.id)?.quantity ?? 0;
+                          const limit = Number(v.reorderLevel) || 0;
+                          const hasLimit = v.reorderLevel != null && limit > 0;
+                          const cls = !hasLimit
+                            ? "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                            : qty > limit
+                              ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
+                              : qty === limit
+                                ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300"
+                                : "bg-red-500 text-white";
+                          return (
+                            <TableCell key={w.id} className="text-center">
+                              <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium", cls)}>{qty} pcs</span>
+                            </TableCell>
+                          );
+                        })}
                         {/* Created */}
                         <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                           {formatDate(v.createdAt)}
